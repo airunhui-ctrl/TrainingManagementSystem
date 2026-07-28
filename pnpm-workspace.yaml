@@ -1,0 +1,10 @@
+packages:
+  - "frontend/*"
+  - "backend/*"
+allowBuilds:
+  '@nestjs/core': true
+  '@parcel/watcher': true
+  core-js: true
+  core-js-pure: true
+  esbuild: true
+  vue-demi: true

@@ -1,0 +1,17 @@
+$yellow: #FFD21F;
+$navy: #142B4A;
+$blue: #2F80ED;
+$bg: #F6F8FB;
+$muted: #7D8DA5;
+$danger: #F04444;
+$success: #21A366;
+$radius-lg: 20px;
+$radius-md: 14px;
+$radius-pill: 999px;
+
+page { background: $bg; color: $navy; font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; }
+.card { background: #fff; border-radius: $radius-lg; box-shadow: 0 10px 28px rgba(20, 43, 74, .07); }
+.primary-btn { color: $navy; background: $yellow; border-radius: $radius-pill; font-weight: 800; }
+.primary-btn::after { border: 0; }
+.muted { color: $muted; }
+.page-padding { padding: 32rpx; }

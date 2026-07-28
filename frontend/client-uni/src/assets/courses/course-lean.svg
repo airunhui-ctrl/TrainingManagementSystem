@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" role="img" aria-label="组织效能课程">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b775f"/><stop offset=".52" stop-color="#49bd86"/><stop offset="1" stop-color="#d6eb70"/></linearGradient></defs>
+  <rect width="900" height="560" fill="url(#g)"/><path d="M0 430c180-50 300-32 460 32s282 70 440-18v116H0Z" fill="#07534f" opacity=".5"/><g fill="none" stroke="#eaffd5" stroke-width="4" opacity=".58"><path d="M40 80h820M40 130h820M40 180h820"/><path d="m90 260 130-80 130 80 130-80 130 80 130-80"/></g>
+  <g transform="translate(160 252)"><rect x="0" y="0" width="575" height="148" rx="14" fill="#fff" opacity=".86"/><rect x="32" y="27" width="150" height="70" rx="8" fill="#8de5b3"/><rect x="212" y="27" width="150" height="70" rx="8" fill="#ffd76b"/><rect x="392" y="27" width="150" height="70" rx="8" fill="#85bdf3"/><path d="M184 62h28M364 62h28" stroke="#1e7e68" stroke-width="10" stroke-linecap="round"/><path d="M70 122h440" stroke="#2c9170" stroke-width="9" stroke-linecap="round"/></g>
+  <g fill="#f9c7aa"><circle cx="120" cy="382" r="28"/><circle cx="785" cy="385" r="28"/></g><g fill="#24695d"><path d="M72 510c5-78 22-110 48-110s44 32 48 110Z"/><path d="M737 510c5-78 22-110 48-110s44 32 48 110Z"/></g>
+</svg>

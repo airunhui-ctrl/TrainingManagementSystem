@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id
+  username      String         @unique
+  passwordHash  String
+  role          String         @default("user")
+  name          String?
+  company       String?
+  avatarText    String?
+  registeredAt  DateTime       @default(now())
+  enabled       Boolean        @default(true)
+  points        Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  refreshTokens RefreshToken[]
+  orders        Order[]
+  invoices      Invoice[]
+  previews      Preview[]
+  feedbacks     Feedback[]
+  pointLedgers  PointLedger[]
+}
+
+model RefreshToken {
+  id        String    @id
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Course {
+  id                    String                @id
+  title                 String
+  subtitle              String?
+  category              String
+  date                  String
+  location              String
+  instructor            String
+  price                 Float
+  originalPrice         Float?
+  specialPrice          Float?
+  allowMultiParticipant Boolean               @default(true)
+  registrationDeadline  String?
+  capacity              Int
+  enrolled              Int                   @default(0)
+  status                String
+  description           String
+  registrationTemplateId String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  registrationTemplate  RegistrationTemplate? @relation(fields: [registrationTemplateId], references: [id], onDelete: SetNull)
+  orders                Order[]
+  previews              Preview[]
+
+  @@index([registrationTemplateId])
+}
+
+model RegistrationTemplate {
+  id        String   @id
+  name      String   @default("报名模板")
+  version   Int      @default(1)
+  payload   String
+  updatedAt DateTime @updatedAt
+  courses   Course[]
+}
+
+model Order {
+  id               String         @id
+  userId           String
+  courseId         String
+  participantCount Int
+  participants     String
+  originalAmount   Float
+  discount         Float
+  amount           Float
+  status           String
+  paymentMethod    String?
+  paymentChannel   String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id])
+  course           Course         @relation(fields: [courseId], references: [id])
+  paymentProofs    PaymentProof[]
+
+  @@index([userId, createdAt])
+  @@index([courseId, status])
+}
+
+model PaymentProof {
+  id           String    @id
+  orderId      String
+  originalName String
+  storedName   String
+  mimeType     String
+  size         Int
+  path         String
+  status       String    @default("pending")
+  remark       String?
+  createdAt    DateTime  @default(now())
+  reviewedAt   DateTime?
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}
+
+model Invoice {
+  id          String    @id
+  userId      String
+  orderIds    String
+  payload     String
+  status      String
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model Preview {
+  id       String   @id
+  userId   String
+  courseId String
+  viewedAt DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+model Feedback {
+  id        String    @id
+  userId    String
+  payload   String
+  status    String
+  createdAt DateTime  @default(now())
+  repliedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model PointLedger {
+  id        String   @id
+  userId    String
+  points    Int
+  reason    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Message {
+  id        String   @id
+  payload   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id
+  actor     String
+  action    String
+  detail    String
+  createdAt DateTime @default(now())
+}
+
+model Banner {
+  id        String   @id
+  payload   String
+  enabled   Boolean  @default(true)
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PaymentSetting {
+  id        String   @id
+  payload   String
+  updatedAt DateTime @updatedAt
+}
+
+model DiscountRule {
+  id             String   @id
+  minPeople      Int
+  discountRate   Float
+  scopeCourseIds String   @default("[]")
+  enabled        Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+}
+
+model SystemConfig {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}

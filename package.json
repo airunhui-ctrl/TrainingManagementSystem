@@ -1,0 +1,15 @@
+{
+  "name": "hexagon-training-mvp",
+  "private": true,
+  "scripts": {
+    "dev:client": "pnpm --dir frontend/client-uni dev:h5",
+    "dev:admin": "pnpm --dir frontend/admin-react dev",
+    "dev:api": "pnpm --dir backend/api start:dev",
+    "build:client": "pnpm --dir frontend/client-uni build:h5",
+    "build:admin": "pnpm --dir frontend/admin-react build",
+    "build:api": "pnpm --dir backend/api build",
+    "preview:static": "node mvp/scripts/serve.mjs",
+    "verify": "node mvp/scripts/verify.mjs"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

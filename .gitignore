@@ -1,0 +1,16 @@
+node_modules/
+**/dist/
+.pnpm-store/
+coverage/
+# 操作系统和编辑器生成文件
+.DS_Store
+Thumbs.db
+# 项目文档、功能清单、计划和本地输出仅供本地协作，不提交到 GitHub
+/Docs/
+.env
+backend/api/data/*.db
+backend/api/data/*.db-shm
+backend/api/data/*.db-wal
+backend/api/storage/payment-proofs/*
+!backend/api/storage/payment-proofs/.gitkeep
+*.log
