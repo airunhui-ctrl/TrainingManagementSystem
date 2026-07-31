@@ -10,6 +10,7 @@ class QuoteDto { @IsString() courseId!: string; @IsInt() @Min(1) participantCoun
 class ParticipantDto { @IsObject() data!: Record<string, string> }
 class CreateOrderDto { @IsString() courseId!: string; @IsArray() @ValidateNested({ each: true }) @Type(() => ParticipantDto) participants!: ParticipantDto[]; @IsOptional() @IsIn(['online', 'offline']) paymentMethod?: 'online' | 'offline' }
 class PayDto { @IsIn(['online', 'offline']) method!: 'online' | 'offline'; @IsOptional() @IsString() proof?: string; @IsOptional() @IsIn(['wechat', 'alipay']) channel?: 'wechat' | 'alipay' }
+class PaymentIntentDto { @IsIn(['wechat', 'alipay']) channel!: 'wechat' | 'alipay' }
 class InvoiceDto { @IsString() title!: string; @IsString() taxNo!: string; @IsString() email!: string; @IsOptional() @IsString() remark?: string; @IsArray() @IsString({ each: true }) orderIds!: string[] }
 
 @Controller()
@@ -22,6 +23,7 @@ export class MvpController {
   @Post('orders/quote') quote(@Body() dto: QuoteDto) { return this.mvp.quote(dto.courseId, dto.participantCount) }
   @Get('banners') async banners() { return { items: (await this.mvp.listBanners()).filter((item) => item.enabled) } }
   @Get('payment-settings/public') publicPaymentSettings() { return this.mvp.getPublicPaymentSettings() }
+  @Get('media/course-images/:name') async courseImage(@Param('name') name: string) { const result = await this.mvp.readCourseImage(name); return new StreamableFile(result.buffer, { type: result.mimeType }) }
 
   @UseGuards(JwtGuard)
   @Post('orders') createOrder(@Req() request: any, @Body() dto: CreateOrderDto) { return this.mvp.createOrder(request.user.sub, dto.courseId, dto.participants.map((item) => item.data), dto.paymentMethod) }
@@ -31,6 +33,8 @@ export class MvpController {
   @Get('previews') async previews(@Req() request: any) { return { items: await this.mvp.listPreviews(request.user.sub) } }
   @UseGuards(JwtGuard)
   @Post('orders/:id/pay') pay(@Req() request: any, @Param('id') id: string, @Body() dto: PayDto) { return this.mvp.payOrder(request.user.sub, id, dto.method, dto.proof, dto.channel) }
+  @UseGuards(JwtGuard)
+  @Post('orders/:id/payment-intent') paymentIntent(@Req() request: any, @Param('id') id: string, @Body() dto: PaymentIntentDto) { return this.mvp.createPaymentIntent(request.user.sub, id, dto.channel) }
   @UseGuards(JwtGuard)
   @Post('orders/:id/payment-proof')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
@@ -52,6 +56,10 @@ export class MvpController {
   @UseGuards(JwtGuard)
   @Post('feedback') feedback(@Req() request: any, @Body() payload: Record<string, any>) { return this.mvp.submitFeedback(request.user.sub, payload) }
 
+  @UseGuards(JwtGuard, AdminGuard)
+  @Post('admin/uploads/course-image')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
+  courseImageUpload(@Req() request: any, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择课程图片'); return this.mvp.uploadCourseImage(file, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/dashboard') dashboard() { return this.mvp.dashboard() }
   @UseGuards(JwtGuard, AdminGuard)

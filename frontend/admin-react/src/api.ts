@@ -34,6 +34,40 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, retried 
   return response.json() as Promise<T>
 }
 
+export async function apiFetchBlob(path: string, retried = false): Promise<Blob> {
+  const token = authStorage.get()
+  const headers = new Headers()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers })
+  if (response.status === 401 && !retried && authStorage.getRefresh()) {
+    try { await refreshAccessToken(); return apiFetchBlob(path, true) } catch { /* clear below */ }
+  }
+  if (response.status === 401) { authStorage.clear(); window.location.assign('/login') }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: string } | null
+    throw new Error(payload?.message || `请求失败：${response.status}`)
+  }
+  return response.blob()
+}
+
+export async function apiUpload<T>(path: string, file: File, fieldName = 'file', retried = false): Promise<T> {
+  const token = authStorage.get()
+  const form = new FormData()
+  form.append(fieldName, file)
+  const headers = new Headers()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: 'POST', headers, body: form })
+  if (response.status === 401 && !retried && authStorage.getRefresh()) {
+    try { await refreshAccessToken(); return apiUpload<T>(path, file, fieldName, true) } catch { /* clear below */ }
+  }
+  if (response.status === 401) { authStorage.clear(); window.location.assign('/login') }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: string } | null
+    throw new Error(payload?.message || `上传失败：${response.status}`)
+  }
+  return response.json() as Promise<T>
+}
+
 export async function adminLogin(username: string, password: string) {
   const response = await fetch(`${API_BASE_URL}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) })
   if (!response.ok) throw new Error('账号或密码错误')

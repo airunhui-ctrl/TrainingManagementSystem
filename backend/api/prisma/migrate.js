@@ -27,6 +27,12 @@ const sqlDate = (value) => {
 
 const normalized = exists('User') && typeOf('User', 'createdAt') === 'DATETIME' && exists('Course') && has('Course', 'category') && typeOf('Course', 'createdAt') === 'DATETIME'
 if (normalized) {
+  if (exists('User') && !has('User', 'phone')) db.exec(`ALTER TABLE "User" ADD COLUMN "phone" TEXT`)
+  if (exists('User') && !has('User', 'gender')) db.exec(`ALTER TABLE "User" ADD COLUMN "gender" TEXT`)
+  if (exists('User') && !has('User', 'email')) db.exec(`ALTER TABLE "User" ADD COLUMN "email" TEXT`)
+  if (exists('User') && !has('User', 'wechatOpenId')) db.exec(`ALTER TABLE "User" ADD COLUMN "wechatOpenId" TEXT`)
+  if (exists('User') && !has('User', 'lastLoginAt')) db.exec(`ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME`)
+  if (exists('Course') && !has('Course', 'image')) db.exec(`ALTER TABLE "Course" ADD COLUMN "image" TEXT`)
   if (exists('DiscountRule') && !has('DiscountRule', 'scopeCourseIds')) db.exec(`ALTER TABLE "DiscountRule" ADD COLUMN "scopeCourseIds" TEXT NOT NULL DEFAULT '[]'`)
   if (exists('Course') && !has('Course', 'registrationTemplateId')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationTemplateId" TEXT`)
   if (exists('RegistrationTemplate') && !has('RegistrationTemplate', 'name')) db.exec(`ALTER TABLE "RegistrationTemplate" ADD COLUMN "name" TEXT NOT NULL DEFAULT '报名模板'`)
@@ -41,7 +47,7 @@ if (normalized) {
     : ''
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${rebuildTemplateTable} ${migration}`)
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=3; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=4; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite schema already current: ${dbPath}`)
   db.close()
   process.exit(0)
@@ -73,12 +79,12 @@ try {
   for (const indexName of ['User_username_key','RefreshToken_tokenHash_key','RegistrationTemplate_courseId_key','Order_userId_createdAt_idx','Order_courseId_status_idx','PaymentProof_orderId_createdAt_idx','Invoice_userId_createdAt_idx','Preview_userId_courseId_key','Feedback_userId_createdAt_idx']) db.exec(`DROP INDEX IF EXISTS "${indexName}"`)
   db.exec(migration)
 
-  const insertUser = db.prepare('INSERT INTO "User"(id,username,passwordHash,role,name,company,avatarText,registeredAt,enabled,points,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(username) DO NOTHING')
-  for (const user of legacyUsers) insertUser.run(user.id,user.username,user.passwordHash,user.role === 'admin' ? 'admin' : 'user',user.name || '',user.company || '',user.avatarText || null,sqlDate(user.registeredAt || user.createdAt) || BigInt(now),user.enabled === 0 ? 0 : 1,Number(user.points || 0),sqlDate(user.createdAt) || BigInt(now),sqlDate(user.updatedAt) || BigInt(now))
+  const insertUser = db.prepare('INSERT INTO "User"(id,username,passwordHash,role,name,company,avatarText,phone,gender,email,wechatOpenId,lastLoginAt,registeredAt,enabled,points,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(username) DO NOTHING')
+  for (const user of legacyUsers) insertUser.run(user.id,user.username,user.passwordHash,user.role === 'admin' ? 'admin' : 'user',user.name || '',user.company || '',user.avatarText || null,user.phone || null,user.gender || null,user.email || null,user.wechatOpenId || null,sqlDate(user.lastLoginAt),sqlDate(user.registeredAt || user.createdAt) || BigInt(now),user.enabled === 0 ? 0 : 1,Number(user.points || 0),sqlDate(user.createdAt) || BigInt(now),sqlDate(user.updatedAt) || BigInt(now))
 
   const courses = Array.isArray(state.courses) && state.courses.length ? state.courses : currentCourses
-  const insertCourse = db.prepare('INSERT INTO "Course"(id,title,subtitle,category,date,location,instructor,price,originalPrice,specialPrice,allowMultiParticipant,registrationDeadline,capacity,enrolled,status,description,registrationTemplateId,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
-  for (const item of courses) insertCourse.run(item.id,item.title,item.subtitle || '',item.category || '综合管理',item.date || '',item.location || '',item.instructor || '',Number(item.price || 0),item.originalPrice ?? null,item.specialPrice ?? null,item.allowMultiParticipant === false ? 0 : 1,item.registrationDeadline || null,Number(item.capacity || 0),Number(item.enrolled || 0),item.status || '报名中',item.description || '',item.registrationTemplateId || null,sqlDate(item.createdAt) || BigInt(now),sqlDate(item.updatedAt) || BigInt(now))
+  const insertCourse = db.prepare('INSERT INTO "Course"(id,title,subtitle,category,date,location,instructor,image,price,originalPrice,specialPrice,allowMultiParticipant,registrationDeadline,capacity,enrolled,status,description,registrationTemplateId,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
+  for (const item of courses) insertCourse.run(item.id,item.title,item.subtitle || '',item.category || '综合管理',item.date || '',item.location || '',item.instructor || '',item.image || null,Number(item.price || 0),item.originalPrice ?? null,item.specialPrice ?? null,item.allowMultiParticipant === false ? 0 : 1,item.registrationDeadline || null,Number(item.capacity || 0),Number(item.enrolled || 0),item.status || '报名中',item.description || '',item.registrationTemplateId || null,sqlDate(item.createdAt) || BigInt(now),sqlDate(item.updatedAt) || BigInt(now))
 
   const templates = state.templates ? Object.entries(state.templates).map(([courseId, fields]) => ({ id:`tpl-${courseId}`,courseId,name:`${courseId}报名模板`,version:1,payload:JSON.stringify(fields) })) : currentTemplates
   const insertTemplate = db.prepare('INSERT INTO "RegistrationTemplate"(id,courseId,name,version,payload,updatedAt) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
@@ -126,7 +132,7 @@ try {
 
   for (const name of [...tables].reverse()) { const backup = `__backup_${name}`; if (exists(backup)) db.exec(`DROP TABLE "${backup}"`) }
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=3; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=4; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite legacy data migrated: ${dbPath}`)
 } catch (error) {
   db.exec('ROLLBACK')

@@ -54,7 +54,7 @@ import bannerImage from '../../assets/courses/banner-training.svg'
 import talentImage from '../../assets/courses/course-talent.svg'
 import managementImage from '../../assets/courses/course-management.svg'
 import leanImage from '../../assets/courses/course-lean.svg'
-import { api, type ApiCourse } from '../../common/api'
+import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
 
 type DisplayCourse = ApiCourse & { image: string }
 
@@ -82,14 +82,14 @@ const bannerSlides = computed(() => {
   return candidates.map((course, index) => ({
     id: `banner-${course.id}`,
     courseId: course.id,
-    image: index === 0 ? bannerImage : course.image,
+    image: apiAssetUrl(course.image) || bannerImage,
     kicker: `${course.category} · 名师公开课`,
     title: course.title,
     subtitle: course.subtitle,
   }))
 })
 
-const toDisplayCourse = (course: ApiCourse): DisplayCourse => ({ ...course, image: imageByCourseId[course.id] || bannerImage })
+const toDisplayCourse = (course: ApiCourse): DisplayCourse => ({ ...course, image: apiAssetUrl(course.image) || imageByCourseId[course.id] || bannerImage })
 const shortDate = (date: string) => date.split(' ')[0].replace(/^\d{4}-/, '')
 const openDetail = (id: string) => uni.navigateTo({ url: `/pages/detail/detail?id=${id}` })
 const handleBannerTouchStart = (event: any) => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { adminLogin, apiFetch } from './api'
+import { adminLogin, apiFetch, apiFetchBlob, apiUpload, API_BASE_URL } from './api'
 import { authStorage } from './auth'
 
 type Module = { key: string; label: string; endpoint?: string; editable?: boolean }
@@ -16,6 +16,8 @@ type MessageForm = { id?: string; title: string; content: string; channel: strin
 type ConfigForm = { key: string; value: string; description: string }
 type PointsForm = { userId: string; userName: string; points: string; reason: string }
 type FeedbackForm = { id: string; reply: string }
+type ReviewState = { order: TableItem; proof: TableItem; imageUrl: string }
+type EnrollmentSummaryDetailState = { summary: TableItem; items: TableItem[] }
 type CourseForm = {
   id?: string
   title: string
@@ -35,12 +37,13 @@ type CourseForm = {
   allowMultiParticipant: boolean
   description: string
   descriptionRichText: string
+  image: string
 }
 
 const emptyCourseForm = (): CourseForm => ({
   title: '', subtitle: '', category: '综合管理', date: '', location: '', instructor: '',
   price: '', originalPrice: '', specialPrice: '', capacity: '30', enrolled: '0', status: '报名中',
-  registrationDeadline: '', registrationTemplateId: '', allowMultiParticipant: true, description: '', descriptionRichText: '',
+  registrationDeadline: '', registrationTemplateId: '', allowMultiParticipant: true, description: '', descriptionRichText: '', image: '',
 })
 
 const modules: Module[] = [
@@ -111,8 +114,8 @@ const moduleColumns: Record<string, string[]> = {
   banners: ['id', 'title', 'courseTitle', 'sort', 'enabled', 'startsAt', 'endsAt'],
   templates: ['id', 'courseIds', 'courseNames', 'name', 'courseCount', 'fields'],
   enrollments: ['courseId', 'courseTitle', 'registrationDeadline', 'enrollmentCount', 'paidCount', 'unpaidCount'],
-  'enrollment-details': ['id', 'orderId', 'courseTitle', 'accountUsername', 'accountUserName', 'name', 'phone', 'company', 'role', 'paymentStatus'],
-  students: ['id', 'orderId', 'courseTitle', 'accountUsername', 'accountUserName', 'name', 'phone', 'company', 'role', 'paymentStatus'],
+  'enrollment-details': ['name', 'phone', 'courseTitle', 'company', 'role', 'paymentStatus', 'orderId', 'accountUsername', 'accountUserName', 'id'],
+  students: ['name', 'phone', 'courseTitle', 'company', 'role', 'paymentStatus', 'orderId', 'accountUsername', 'accountUserName', 'id'],
   orders: ['id', 'userId', 'courseId', 'participantCount', 'amount', 'status', 'paymentMethod', 'createdAt'],
   invoices: ['id', 'userId', 'title', 'taxNo', 'email', 'status', 'invoiceNo', 'createdAt'],
   users: ['id', 'username', 'name', 'role', 'enabled', 'registeredAt', 'lastActiveAt', 'courseCount', 'previewCount', 'points'],
@@ -161,6 +164,13 @@ const filterMatches = (item: TableItem, field: string, expected: string) => {
 const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 const plainTextToRichText = (value: string) => value.trim() ? `<p>${escapeHtml(value.trim()).replace(/\r?\n/g, '<br />')}</p>` : '<p><br /></p>'
 const richTextToPlainText = (value: string) => value.replace(/<br\s*\/?\s*>/gi, '\n').replace(/<\/p\s*>|<\/div\s*>|<\/h[1-6]\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+const assetUrl = (value: unknown) => {
+  const source = String(value || '').trim()
+  if (!source) return ''
+  if (/^(data:|https?:\/\/)/i.test(source)) return source
+  const path = source.startsWith('/api') ? source.slice(4) : source.startsWith('/') ? source : `/${source}`
+  return `${API_BASE_URL.replace(/\/$/, '')}${path}`
+}
 
 function Login({ done }: { done: () => void }) {
   const [username, setUsername] = useState('admin')
@@ -206,19 +216,26 @@ function App() {
   const [pointsForm, setPointsForm] = useState<PointsForm>(emptyPointsForm)
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const [feedbackForm, setFeedbackForm] = useState<FeedbackForm>(emptyFeedbackForm)
+  const [reviewState, setReviewState] = useState<ReviewState | null>(null)
+  const [reviewRemark, setReviewRemark] = useState('')
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [courseForm, setCourseForm] = useState<CourseForm>(emptyCourseForm)
   const [courseSubmitting, setCourseSubmitting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [openNavGroup, setOpenNavGroup] = useState('')
+  const loadVersion = useRef(0)
   const [selectedDetail, setSelectedDetail] = useState<{ module: string; item: TableItem; proof?: TableItem | null; relatedOrder?: TableItem; intent?: 'view' | 'process' } | null>(null)
+  const [enrollmentSummaryDetail, setEnrollmentSummaryDetail] = useState<EnrollmentSummaryDetailState | null>(null)
   const current = useMemo(() => modules.find(item => item.key === active)!, [active])
   const activeNavGroup = useMemo(() => navGroups.find(group => group.moduleKeys.includes(active)), [active])
 
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
   const navigate = (moduleKey: string) => { setActive(moduleKey); setSidebarOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const load = async (targetPage = page, keyword = queryKeyword, status = statusFilter) => {
-    if (active === 'dashboard') { setData(await apiFetch('/admin/dashboard')); return }
+    const version = ++loadVersion.current
+    const commit = (value: any) => { if (version === loadVersion.current) setData(value) }
+    if (active === 'dashboard') { commit(await apiFetch('/admin/dashboard')); return }
     if (current.endpoint) {
       const serverFilterParam = active === 'courses' || active === 'orders' || active === 'invoices' || active === 'feedbacks' ? 'status' : active === 'users' ? 'role' : ''
       const filterQuery = serverFilterParam && status ? `&${serverFilterParam}=${encodeURIComponent(status)}` : ''
@@ -230,26 +247,26 @@ function App() {
           apiFetch(current.endpoint + params),
           apiFetch<{ items?: TableItem[] }>('/admin/templates'),
         ])
-        setData(courseData)
-        setTemplateOptions(Array.isArray(templateData?.items) ? templateData.items.map(item => ({ id: String(item.id), name: String(item.name || item.id) })) : [])
+        commit(courseData)
+        if (version === loadVersion.current) setTemplateOptions(Array.isArray(templateData?.items) ? templateData.items.map(item => ({ id: String(item.id), name: String(item.name || item.id) })) : [])
       } else if (active === 'banners' || active === 'templates' || active === 'rules') {
         const [bannerData, courseData] = await Promise.all([
           apiFetch(`${current.endpoint}${params}`),
           apiFetch<{ items?: CourseOption[] }>('/courses?page=1&pageSize=100'),
         ])
-        setData(bannerData)
-        setCourseOptions(Array.isArray(courseData?.items) ? courseData.items.map(item => ({ id: String(item.id), title: String(item.title) })) : [])
+        commit(bannerData)
+        if (version === loadVersion.current) setCourseOptions(Array.isArray(courseData?.items) ? courseData.items.map(item => ({ id: String(item.id), title: String(item.title) })) : [])
       } else {
-        setData(await apiFetch(`${current.endpoint}${params}`))
+        commit(await apiFetch(`${current.endpoint}${params}`))
       }
     }
   }
 
+  useEffect(() => {
+    loadVersion.current += 1; setData(null); setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setCourseForm(emptyCourseForm()); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setSelectedDetail(null); setEnrollmentSummaryDetail(null); setReviewState(null); setReviewRemark(''); setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setAuditActionFilter(''); setPage(1)
+  }, [active])
   useEffect(() => { if (loggedIn) load().catch((error) => flash(error instanceof Error ? error.message : '加载失败，请重新登录')) }, [active, loggedIn, page, queryKeyword, statusFilter, auditActionFilter])
   useEffect(() => { if (activeNavGroup) setOpenNavGroup(activeNavGroup.key) }, [activeNavGroup])
-  useEffect(() => {
-    setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setCourseForm(emptyCourseForm()); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setSelectedDetail(null); setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setAuditActionFilter(''); setPage(1)
-  }, [active])
 
   const openCourseEditor = (item?: TableItem) => {
     setCourseForm(item ? {
@@ -259,12 +276,17 @@ function App() {
       price: String(item.price ?? ''), originalPrice: String(item.originalPrice ?? item.price ?? ''), specialPrice: String(item.specialPrice ?? ''),
       capacity: String(item.capacity ?? 30), enrolled: String(item.enrolled ?? 0), status: String(item.status || '报名中'),
       registrationDeadline: String(item.registrationDeadline || ''), registrationTemplateId: String(item.registrationTemplateId || templateOptions[0]?.id || ''), allowMultiParticipant: item.allowMultiParticipant !== false,
-      description: String(item.description || ''), descriptionRichText: String(item.descriptionRichText || plainTextToRichText(String(item.description || ''))),
+      description: String(item.description || ''), descriptionRichText: String(item.descriptionRichText || plainTextToRichText(String(item.description || ''))), image: String(item.image || ''),
     } : emptyCourseForm())
     setCourseModalOpen(true)
   }
 
   const updateCourseField = <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => setCourseForm(currentForm => ({ ...currentForm, [key]: value }))
+  const uploadCourseImage = async (file: File) => {
+    if (!file.type.startsWith('image/')) return flash('请选择图片文件')
+    if (file.size > 5 * 1024 * 1024) return flash('课程图片不能超过 5MB')
+    try { const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', file); updateCourseField('image', result.url); flash('课程图片已上传') } catch (error) { flash(error instanceof Error ? error.message : '课程图片上传失败') }
+  }
 
   const openTemplateEditor = (item?: TableItem) => {
     const fields = Array.isArray(item?.fields) ? item.fields : defaultTemplateFields
@@ -301,6 +323,39 @@ function App() {
   const savePoints = async () => { const points = Number(pointsForm.points); if (!pointsForm.userId || !Number.isInteger(points) || points === 0 || !pointsForm.reason.trim()) return flash('请输入非零整数积分和调整原因'); try { await apiFetch(`/admin/points/${encodeURIComponent(pointsForm.userId)}/adjust`, { method: 'POST', body: JSON.stringify({ points, reason: pointsForm.reason.trim() }) }); setPointsModalOpen(false); flash('积分已调整'); await load(1, queryKeyword) } catch (error) { flash(error instanceof Error ? error.message : '积分调整失败') } }
   const saveFeedback = async () => { if (!feedbackForm.id || !feedbackForm.reply.trim()) return flash('请填写回复内容'); try { await apiFetch(`/admin/feedbacks/${feedbackForm.id}/resolve`, { method: 'POST', body: JSON.stringify({ reply: feedbackForm.reply.trim() }) }); setFeedbackModalOpen(false); flash('反馈已处理'); await load(1, queryKeyword) } catch (error) { flash(error instanceof Error ? error.message : '反馈处理失败') } }
 
+  const closeReview = () => {
+    if (reviewState?.imageUrl) URL.revokeObjectURL(reviewState.imageUrl)
+    setReviewState(null)
+    setReviewRemark('')
+  }
+
+  const openOrderReview = async (item: TableItem) => {
+    try {
+      const proof = await apiFetch<TableItem | null>(`/admin/orders/${encodeURIComponent(item.id)}/payment-proof`)
+      if (!proof) return flash('该订单暂无可审核的支付凭证')
+      let imageUrl = ''
+      if (String(proof.mimeType || '').startsWith('image/')) {
+        imageUrl = URL.createObjectURL(await apiFetchBlob(`/admin/orders/${encodeURIComponent(item.id)}/payment-proof/file`))
+      }
+      setReviewRemark(String(proof.remark || ''))
+      setReviewState({ order: item, proof, imageUrl })
+    } catch (error) { flash(error instanceof Error ? error.message : '加载支付凭证失败') }
+  }
+
+  const submitOrderReview = async (approved: boolean) => {
+    if (!reviewState || reviewSubmitting) return
+    const remark = reviewRemark.trim()
+    if (!approved && !remark) return flash('驳回凭证时请填写原因')
+    setReviewSubmitting(true)
+    try {
+      await apiFetch(`/admin/orders/${encodeURIComponent(reviewState.order.id)}/review`, { method: 'POST', body: JSON.stringify({ approved, remark: remark || '审核通过' }) })
+      setReviewSubmitting(false)
+      closeReview()
+      flash(approved ? '支付凭证已审核通过' : '支付凭证已驳回')
+      await load(1, queryKeyword)
+    } catch (error) { flash(error instanceof Error ? error.message : '支付凭证审核失败') } finally { setReviewSubmitting(false) }
+  }
+
   const saveCourse = async () => {
     const form = courseForm
     const numericFields = { price: Number(form.price), originalPrice: Number(form.originalPrice), specialPrice: form.specialPrice === '' ? null : Number(form.specialPrice), capacity: Number(form.capacity), enrolled: Number(form.enrolled) }
@@ -323,12 +378,14 @@ function App() {
 
   const operate = async (item: TableItem) => {
     if (active === 'orders') {
+      if (item.status === '待审核') return openOrderReview(item)
       if (item.status === '已支付') await apiFetch(`/admin/orders/${item.id}/refund`, { method: 'POST' })
-      else await apiFetch(`/admin/orders/${item.id}/review`, { method: 'POST', body: JSON.stringify({ approved: true, remark: '审核通过' }) })
+      else return flash('只有待审核订单可以审核支付凭证')
     } else if (active === 'invoices') await apiFetch(`/admin/invoices/${item.id}/process`, { method: 'POST', body: JSON.stringify({ approved: true, invoiceNo: `MOCK-${Date.now()}` }) })
     else if (active === 'users') await apiFetch(`/admin/users/${item.id}/reset-password`, { method: 'POST' })
     else if (active === 'banners') return openBannerEditor(item)
     else if (active === 'courses') return openCourseEditor(item)
+    else if (active === 'enrollments') return openEnrollmentSummaryDetail(item)
     else if (active === 'templates') return openTemplateEditor(item)
     else if (active === 'rules') return openRuleEditor(item)
     else if (active === 'payment') return openPaymentEditor(item)
@@ -363,6 +420,15 @@ function App() {
     setSelectedDetail({ module: active, item, proof, relatedOrder, intent })
   }
 
+  const openEnrollmentSummaryDetail = async (summary: TableItem) => {
+    try {
+      const result = await apiFetch<{ items: TableItem[] }>('/admin/enrollments')
+      // 汇总接口将“已取消”排除在有效报名人数外，详情也保持同一统计口径。
+      const items = (result.items || []).filter(item => String(item.courseId) === String(summary.courseId) && item.paymentStatus !== '已取消')
+      setEnrollmentSummaryDetail({ summary, items })
+    } catch (error) { flash(error instanceof Error ? error.message : '报名详情加载失败') }
+  }
+
   if (!loggedIn) return <Login done={() => setLoggedIn(true)} />
   const items = Array.isArray(data?.items) ? data.items : data ? [data] : []
   const filterDefinition = getListFilterDefinition(active, items, courseOptions)
@@ -377,7 +443,7 @@ function App() {
   const pagedItems = serverPagedModules.has(active) ? filteredItems : filteredItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
   const auditActionOptions = active === 'audits' ? Array.from(new Set([...(Array.isArray(data?.actions) ? data.actions : []), auditActionFilter].filter(Boolean))).sort() : []
-  const actionLabel = ['courses', 'templates', 'banners', 'payment', 'rules', 'messages', 'configs', 'points'].includes(active) ? (active === 'templates' ? '编辑模板' : active === 'points' ? '调整积分' : '编辑') : active === 'orders' ? '审核 / 退款' : active === 'users' ? '重置密码' : active === 'feedbacks' ? '回复处理' : '处理'
+  const actionLabel = active === 'enrollments' ? '查看详情' : ['courses', 'templates', 'banners', 'payment', 'rules', 'messages', 'configs', 'points'].includes(active) ? (active === 'templates' ? '编辑模板' : active === 'points' ? '调整积分' : '编辑') : active === 'orders' ? '审核 / 退款' : active === 'users' ? '重置密码' : active === 'feedbacks' ? '回复处理' : '处理'
   const secondaryActionLabel = active === 'users' || active === 'banners' ? '启用 / 禁用' : active === 'invoices' ? '驳回' : undefined
   const exportCurrent = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(pagedItems, null, 2)], { type: 'application/json' }))
@@ -429,13 +495,14 @@ function App() {
         <section className="list-section action-section" aria-label="功能操作">
           <div className="action-toolbar"><button onClick={exportCurrent}>导出当前页</button>{createAction}</div>
         </section>
-        {selectedDetail && <DetailPanel detail={selectedDetail} onClose={() => setSelectedDetail(null)} />}
-        <section className="list-section table-section" aria-label="数据列表">
-          <DataTable moduleKey={active} items={pagedItems} onOperate={operate} onDetail={['orders', 'invoices', 'enrollment-details', 'students', 'feedbacks'].includes(active) ? openDetail : undefined} actionLabel={actionLabel} secondaryActionLabel={secondaryActionLabel} onSecondary={secondaryActionLabel ? secondaryOperate : undefined} />
-        </section>
-        <div className="list-footer"><div className="pagination"><span>共 {totalItems} 条，第 {Math.min(page, totalPages)} / {totalPages} 页（每页 {PAGE_SIZE} 条）</span><div><button disabled={page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>上一页</button><button disabled={page >= totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>下一页</button></div></div></div>
-      </section>}
-      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} submitting={courseSubmitting} onChange={updateCourseField} onClose={() => setCourseModalOpen(false)} onSave={saveCourse} onDelete={deleteCourse} />}
+         {selectedDetail && <DetailPanel detail={selectedDetail} onClose={() => setSelectedDetail(null)} />}
+         <section className="list-section table-section" aria-label="数据列表">
+           <DataTable moduleKey={active} items={pagedItems} onOperate={operate} onDetail={['orders', 'invoices', 'enrollment-details', 'students', 'feedbacks'].includes(active) ? openDetail : undefined} actionLabel={actionLabel} secondaryActionLabel={secondaryActionLabel} onSecondary={secondaryActionLabel ? secondaryOperate : undefined} />
+         </section>
+         <div className="list-footer"><div className="pagination"><span>共 {totalItems} 条，第 {Math.min(page, totalPages)} / {totalPages} 页（每页 {PAGE_SIZE} 条）</span><div><button disabled={page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>上一页</button><button disabled={page >= totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>下一页</button></div></div></div>
+         {active === 'enrollments' && <EnrollmentSummaryChart items={items} />}
+       </section>}
+      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} submitting={courseSubmitting} onChange={updateCourseField} onUploadImage={uploadCourseImage} onClose={() => setCourseModalOpen(false)} onSave={saveCourse} onDelete={deleteCourse} />}
       {templateModalOpen && <TemplateModal form={templateForm} onChange={setTemplateForm} onFieldChange={updateTemplateField} onClose={() => setTemplateModalOpen(false)} onSave={saveTemplate} />}
       {bannerModalOpen && <BannerModal form={bannerForm} courses={courseOptions} onChange={setBannerForm} onClose={() => setBannerModalOpen(false)} onSave={saveBanner} onDelete={deleteBanner} />}
       {paymentModalOpen && <PaymentModal form={paymentForm} onChange={setPaymentForm} onClose={() => setPaymentModalOpen(false)} onSave={savePayment} />}
@@ -444,12 +511,22 @@ function App() {
       {configModalOpen && <ConfigModal form={configForm} onChange={setConfigForm} onClose={() => setConfigModalOpen(false)} onSave={saveConfig} />}
       {pointsModalOpen && <PointsModal form={pointsForm} onChange={setPointsForm} onClose={() => setPointsModalOpen(false)} onSave={savePoints} />}
       {feedbackModalOpen && <FeedbackModal form={feedbackForm} onChange={setFeedbackForm} onClose={() => setFeedbackModalOpen(false)} onSave={saveFeedback} />}
+      {enrollmentSummaryDetail && <EnrollmentSummaryDetailPanel detail={enrollmentSummaryDetail} onClose={() => setEnrollmentSummaryDetail(null)} />}
+      {reviewState && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeReview() }}>
+        <section className="detail-modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
+          <div className="detail-head"><div><h3 id="review-modal-title">审核线下支付凭证</h3><p>订单 {reviewState.order.id} · {reviewState.order.courseTitle || reviewState.order.courseId || '培训订单'}</p></div><button type="button" onClick={closeReview} disabled={reviewSubmitting}>关闭</button></div>
+          <div className="review-meta"><span>凭证文件：{reviewState.proof.originalName || '支付凭证'}</span><span>状态：{reviewState.proof.status || 'pending'}</span><span>{reviewState.proof.mimeType || '-'} · {reviewState.proof.size || 0} bytes</span></div>
+          {reviewState.imageUrl ? <img className="payment-proof-preview" src={reviewState.imageUrl} alt="线下支付凭证预览" /> : <p className="detail-muted">当前凭证不是可直接预览的图片，请通过接口下载后核验。</p>}
+          <label className="review-remark-field">审核备注<textarea value={reviewRemark} onChange={event => setReviewRemark(event.target.value)} placeholder="通过可填写到账信息；驳回时必须填写原因" /></label>
+          <div className="modal-actions"><button type="button" onClick={closeReview} disabled={reviewSubmitting}>取消</button><button type="button" className="danger-button" onClick={() => submitOrderReview(false)} disabled={reviewSubmitting}>驳回凭证</button><button type="button" className="primary" onClick={() => submitOrderReview(true)} disabled={reviewSubmitting}>{reviewSubmitting ? '提交中…' : '审核通过'}</button></div>
+        </section>
+      </div>}
       {notice && <div className="notice">{notice}</div>}
     </main>
   </div>
 }
 
-function CourseModal({ form, templates, submitting, onChange, onClose, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onClose: () => void; onSave: () => void; onDelete: () => void }) {
+function CourseModal({ form, templates, submitting, onChange, onUploadImage, onClose, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onClose: () => void; onSave: () => void; onDelete: () => void }) {
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="course-modal" role="dialog" aria-modal="true" aria-labelledby="course-modal-title">
       <div className="modal-head"><div><h2 id="course-modal-title">{form.id ? '编辑课程' : '新增课程'}</h2><p>维护课程基础信息、排课信息、价格和报名规则</p></div><button type="button" className="modal-close" onClick={onClose} aria-label="关闭">×</button></div>
@@ -462,6 +539,7 @@ function CourseModal({ form, templates, submitting, onChange, onClose, onSave, o
         <label className="wide-field">上课时间<input value={form.date} onChange={event => onChange('date', event.target.value)} placeholder="如：2026-08-06 09:00 - 08-08 17:00" /></label>
         <label>上课地点<input value={form.location} onChange={event => onChange('location', event.target.value)} placeholder="请输入上课地点" /></label>
         <label>讲师<input value={form.instructor} onChange={event => onChange('instructor', event.target.value)} placeholder="请输入讲师" /></label>
+        <label className="wide-field course-image-field">课程图片<input type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) void onUploadImage(file); event.target.value = '' }} /><small className="field-hint">用于 C 端首页课程卡片、首页轮播和课程详情顶部；建议上传 16:9 图片，单张不超过 5MB。</small>{form.image && <img className="course-image-preview" src={assetUrl(form.image)} alt="课程图片预览" />}</label>
         <label>课程原价<input type="number" min="0" value={form.originalPrice} onChange={event => onChange('originalPrice', event.target.value)} /></label>
         <label>课程售价<input type="number" min="0" value={form.price} onChange={event => onChange('price', event.target.value)} /></label>
         <label>课程特价<input type="number" min="0" value={form.specialPrice} onChange={event => onChange('specialPrice', event.target.value)} placeholder="可选" /></label>
@@ -671,6 +749,82 @@ function Dashboard({ data, onNavigate }: { data: any; onNavigate: (key: string) 
     <section className="panel"><h2>运营待办</h2><p>请依次处理线下支付审核、开票申请和用户反馈；所有处理结果将写入操作审计。</p></section>
     <section className="panel"><div className="panel-head"><h2>课程开展统计</h2></div><DataTable moduleKey="dashboard" items={stats} onOperate={() => undefined} showAction={false} /></section>
   </div>
+}
+
+function EnrollmentSummaryChart({ items }: { items: TableItem[] }) {
+  const rows = items
+  const chartPageSize = 5
+  const [chartPage, setChartPage] = useState(1)
+  const chartTotalPages = Math.max(1, Math.ceil(rows.length / chartPageSize))
+  const chartRows = rows.slice((chartPage - 1) * chartPageSize, chartPage * chartPageSize)
+  useEffect(() => { setChartPage(1) }, [items])
+  const max = Math.max(1, ...rows.map(item => Number(item.enrollmentCount || 0)))
+  const number = (value: unknown) => Math.max(0, Number(value || 0))
+  const percent = (value: number, total: number) => total ? Math.round(value / total * 100) : 0
+  const tooltip = (course: string, total: number, paid: number, unpaid: number, other: number) => [
+    course,
+    `总报名：${total} 人`,
+    `已支付：${paid} 人（${percent(paid, total)}%）`,
+    `未支付：${unpaid} 人（${percent(unpaid, total)}%）`,
+    ...(other ? [`其他状态：${other} 人（${percent(other, total)}%）`] : []),
+  ].join('\n')
+  return <section className="enrollment-chart panel" aria-label="课程报名人数汇总图表">
+    <div className="chart-heading"><div><h3>课程报名人数汇总</h3><p>按课程查看总报名、已支付和未支付人数</p></div><span>{rows.length} 门课程</span></div>
+    {rows.length ? <>
+      <div className="chart-list">{chartRows.map(item => {
+      const total = number(item.enrollmentCount)
+      const paid = Math.min(total, number(item.paidCount))
+      const unpaid = Math.min(Math.max(0, total - paid), number(item.unpaidCount))
+      const other = Math.max(0, total - paid - unpaid)
+      const trackWidth = total ? Math.max(4, total / max * 100) : 0
+      const course = String(item.courseTitle || item.courseId)
+      const details = tooltip(course, total, paid, unpaid, other)
+      return <div className="chart-row" key={String(item.courseId)}>
+        <div className="chart-label"><b>{course}</b><small>总报名 {total} 人</small></div>
+        <div className="chart-bars">
+          <div className="chart-track-wrap">
+            <div className="chart-track" tabIndex={0} title={details} aria-label={details.replace(/\n/g, '，')}>
+              <i className="chart-segment paid" style={{ width: `${trackWidth * (paid / Math.max(1, total))}%` }} />
+              <i className="chart-segment unpaid" style={{ width: `${trackWidth * (unpaid / Math.max(1, total))}%` }} />
+              {other > 0 && <i className="chart-segment other" style={{ width: `${trackWidth * (other / Math.max(1, total))}%` }} />}
+            </div>
+            <div className="chart-tooltip" role="tooltip"><b>{course}</b><span>总报名：{total} 人</span><span className="tooltip-paid">已支付：{paid} 人（{percent(paid, total)}%）</span><span className="tooltip-unpaid">未支付：{unpaid} 人（{percent(unpaid, total)}%）</span>{other > 0 && <span className="tooltip-other">其他状态：{other} 人（{percent(other, total)}%）</span>}</div>
+          </div>
+          <div className="chart-legend"><span className="chart-total-note">总计 {total}</span><span><i className="legend-dot paid" />已支付 {paid}</span><span><i className="legend-dot unpaid" />未支付 {unpaid}</span>{other > 0 && <span><i className="legend-dot other" />其他 {other}</span>}<small>悬停查看明细</small></div>
+        </div>
+      </div>
+    })}</div>
+      <div className="chart-pagination"><span>共 {rows.length} 门课程，第 {chartPage} / {chartTotalPages} 页（每页 {chartPageSize} 门）</span><div><button type="button" disabled={chartPage <= 1} onClick={() => setChartPage(page => Math.max(1, page - 1))}>上一页</button><button type="button" disabled={chartPage >= chartTotalPages} onClick={() => setChartPage(page => Math.min(chartTotalPages, page + 1))}>下一页</button></div></div>
+    </> : <p className="empty">暂无课程报名数据</p>}
+  </section>
+}
+
+function EnrollmentSummaryDetailPanel({ detail, onClose }: { detail: EnrollmentSummaryDetailState; onClose: () => void }) {
+  const [selectedStatus, setSelectedStatus] = useState<'paid' | 'unpaid' | null>(null)
+  const paid = detail.items.filter(item => item.paymentStatus === '已支付')
+  const unpaid = detail.items.filter(item => item.paymentStatus !== '已支付')
+  const renderRows = (rows: TableItem[], empty: string) => rows.length ? <div className="enrollment-detail-list">{rows.map((row, index) => <article className="enrollment-detail-row" key={String(row.id || index)}><div className="enrollment-detail-head"><b>{row.name || `报名人 ${index + 1}`}</b><span>{row.paymentStatus || '-'}</span></div><div className="enrollment-detail-fields">{Object.entries(row).filter(([key, value]) => !['id', 'courseId', 'courseTitle', 'paymentStatus', 'orderId', 'accountUserId', 'accountUsername', 'accountUserName'].includes(key) && value !== undefined && value !== '').map(([key, value]) => <span key={key}>{displayColumnLabel(key)}：{String(value)}</span>)}</div><small>订单：{row.orderId || '-'} · 下单账号：{row.accountUsername || '-'}</small></article>)}</div> : <p className="detail-muted">{empty}</p>
+  const selectedItems = selectedStatus === 'paid' ? paid : unpaid
+  const selectedTitle = selectedStatus === 'paid' ? '已支付报名人详情' : '未支付/其他状态报名人详情'
+  return <>
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="detail-modal enrollment-summary-modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-summary-detail-title">
+        <div className="detail-head"><div><h3 id="enrollment-summary-detail-title">{detail.summary.courseTitle || detail.summary.courseId} · 报名详情</h3><p>总报名 {detail.summary.enrollmentCount || 0} 人，请选择要查看的报名人状态</p></div><button type="button" onClick={onClose}>关闭</button></div>
+        <div className="summary-detail-stats"><span>总计 <b>{detail.items.length}</b></span><span className="paid-stat">已支付 <b>{paid.length}</b></span><span className="unpaid-stat">未支付/其他 <b>{unpaid.length}</b></span></div>
+        <div className="summary-detail-actions" aria-label="报名人详情分类">
+          <button type="button" className="summary-status-button paid-button" onClick={() => setSelectedStatus('paid')} disabled={!paid.length}><span>已支付报名人详情</span><b>{paid.length} 人</b><small>查看已完成支付的报名人信息</small></button>
+          <button type="button" className="summary-status-button unpaid-button" onClick={() => setSelectedStatus('unpaid')} disabled={!unpaid.length}><span>未支付报名人详情</span><b>{unpaid.length} 人</b><small>查看待支付或其他状态的报名人信息</small></button>
+        </div>
+        <p className="detail-muted summary-detail-hint">点击上方按钮后，将在弹窗中展示对应状态的报名人详细信息。</p>
+      </section>
+    </div>
+    {selectedStatus && <div className="modal-backdrop enrollment-participant-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedStatus(null) }}>
+      <section className="detail-modal enrollment-participant-modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-participant-title">
+        <div className="detail-head"><div><h3 id="enrollment-participant-title">{detail.summary.courseTitle || detail.summary.courseId} · {selectedTitle}</h3><p>共 {selectedItems.length} 人，以下为该状态下的报名信息</p></div><button type="button" onClick={() => setSelectedStatus(null)}>返回</button></div>
+        {renderRows(selectedItems, selectedStatus === 'paid' ? '暂无已支付报名人' : '暂无未支付报名人')}
+      </section>
+    </div>}
+  </>
 }
 
 function DataTable({ moduleKey, items, onOperate, onDetail, actionLabel = '处理', showAction = true, secondaryActionLabel, onSecondary }: { moduleKey: string; items: TableItem[]; onOperate: (item: TableItem) => void; onDetail?: (item: TableItem) => void; actionLabel?: string; showAction?: boolean; secondaryActionLabel?: string; onSecondary?: (item: TableItem) => void }) {

@@ -47,7 +47,7 @@ import bannerImage from '../../assets/courses/banner-training.svg'
 import talentImage from '../../assets/courses/course-talent.svg'
 import managementImage from '../../assets/courses/course-management.svg'
 import leanImage from '../../assets/courses/course-lean.svg'
-import { api, type ApiCourse } from '../../common/api'
+import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
 import { tokenStorage } from '../../common/auth'
 
 type DisplayCourse = ApiCourse & { image: string; descriptionRichText?: string }
@@ -105,7 +105,7 @@ const loadCourse = async (id: string) => {
   try {
     const result = await api.getCourse(id)
     introExpanded.value = false
-    course.value = { ...result, image: imageByCourseId[result.id] || bannerImage }
+    course.value = { ...result, image: apiAssetUrl(result.image) || imageByCourseId[result.id] || bannerImage }
     if (tokenStorage.getAccessToken()) void api.recordPreview(result.id).catch(() => undefined)
   } catch {
     course.value = null

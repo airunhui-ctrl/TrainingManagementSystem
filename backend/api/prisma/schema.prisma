@@ -15,6 +15,11 @@ model User {
   name          String?
   company       String?
   avatarText    String?
+  phone         String?
+  gender        String?
+  email         String?
+  wechatOpenId  String?
+  lastLoginAt   DateTime?
   registeredAt  DateTime       @default(now())
   enabled       Boolean        @default(true)
   points        Int            @default(0)
@@ -46,6 +51,7 @@ model Course {
   date                  String
   location              String
   instructor            String
+  image                 String?
   price                 Float
   originalPrice         Float?
   specialPrice          Float?
