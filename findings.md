@@ -147,3 +147,11 @@
 - 页面当前学员优先采用显式默认关系，再按账号资料匹配；当前账号 `demo` 的运行态数据返回 15 个 active 关系、0 个显式默认，因姓名/手机号/企业均未匹配而按要求显示空状态。
 - 中文首字母使用 `Intl.Collator('zh-Hans-u-co-pinyin')` 与代表字比较，不使用错误的 Unicode/GBK 直接编码区间；避免中文姓名全部落入 `#`。
 - H5 构建、根目录 verify、接口读取和 diff 检查均通过；仅有既存 Sass 弃用警告。
+
+## 2026-08-03 单机部署分析
+
+- 根目录脚本确认：`build:api`、`build:admin`、`build:client` 和 `verify` 可作为发布前门禁；生产 API 入口为 `backend/api/dist/main.js`。
+- `backend/api/src/main.ts` 将全局前缀设为 `/api`，默认端口为 `3100`；生产建议只监听本机，由 Nginx 反向代理。
+- 管理端和 C 端构建产物的 HTML 当前引用绝对 `/assets/...`，因此两个前端应使用两个域名或独立站点；同域名子路径部署需要额外配置 base 后重新构建验收。
+- `backend/api/prisma/migrate.js` 使用 SQLite 兼容迁移；有数据的生产环境不可直接运行含 seed 的 `db:init`。SQLite WAL 数据库不可直接复制，必须 checkpoint 后使用 `VACUUM INTO` 备份。
+- 当前 `WECHAT_ADAPTER`/`PAYMENT_ADAPTER` 是生产配置门禁；支付 `real` 尚不代表已接入真实支付 SDK。上线文档已明确该边界。

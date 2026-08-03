@@ -152,3 +152,10 @@
 - 页面按显式默认、账号手机号/姓名/企业匹配当前学员；无匹配时展示空状态；其他 active 学员按中文拼音首字母分组。
 - 报名页原有字段回填逻辑保持不变：常用字段自动回填，模板其他字段继续手动填写。
 - 验证通过：`pnpm.cmd run build:client`、`pnpm.cmd run verify`、`git diff --check`；运行态 `/students` 返回 15 个 active 学员关系。
+
+## 2026-08-03 单机服务器部署方案
+
+- 已核对生产入口、构建产物和端口：API `3100`、管理端 `dist`、C 端 H5 `dist/build/h5`。
+- 已确认当前 H5/管理端资源使用绝对 `/assets`，部署方案采用两个域名/独立 Nginx server 块，避免 `/admin`、`/h5` 子路径资源冲突。
+- 已新增 `Docs/Summary/2026-08-03_单机服务器部署指南.md` 和 `Docs/Plans/2026-08-03_单机部署实施方案.md`。
+- 已记录 SQLite 单实例约束、WAL-safe 备份、systemd、Nginx、首次验收和 P9 回滚门禁；未在未授权情况下连接或修改远程服务器。
