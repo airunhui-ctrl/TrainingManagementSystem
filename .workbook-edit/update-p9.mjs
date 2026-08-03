@@ -1,0 +1,10 @@
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path = 'D:/Projects/TrainingManagementSystem/Docs/FeatureList/培训管理系统功能清单.xlsx';
+const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(path));
+wb.worksheets.getItem('标准功能清单').getRange('N109:N109').values = [['✓']];
+wb.worksheets.getItem('详细原子功能').getRange('O404:O406').values = Array.from({ length: 3 }, () => ['✓']);
+wb.worksheets.getItem('使用说明').getRange('B11:B12').values = [[39], [270]];
+wb.worksheets.getItem('使用说明').getRange('A37:F37').values = [['本次更新', '2026-07-31', 'P9 已完成：全量回归、三端构建、schema/Mock/diff 门禁、WAL-safe 数据库备份和发布/回滚清单。', null, null, null]];
+const output = await SpreadsheetFile.exportXlsx(wb);
+await output.save(path);
+console.log(JSON.stringify({ counts: wb.worksheets.getItem('使用说明').getRange('A11:B12').values, standard: wb.worksheets.getItem('标准功能清单').getRange('A109:N109').values.map((row) => [row[0], row[13]]), atomic: wb.worksheets.getItem('详细原子功能').getRange('A404:O406').values.map((row) => [row[0], row[14]]) }));

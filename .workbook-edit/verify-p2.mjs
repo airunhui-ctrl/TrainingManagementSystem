@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path = 'D:/Projects/TrainingManagementSystem/Docs/FeatureList/培训管理系统功能清单.xlsx';
+const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(path));
+const standard = wb.worksheets.getItem('标准功能清单');
+const atomic = wb.worksheets.getItem('详细原子功能');
+const guide = wb.worksheets.getItem('使用说明');
+console.log(JSON.stringify({standard: standard.getRange('A102:N106').values.map((row) => [row[0], row[13]]), atomic: atomic.getRange('A380:O396').values.filter((row) => row[0].includes('WEB-STU-007') || row[0].includes('WEB-DATA-003')).map((row) => [row[0], row[14]]), counts: guide.getRange('A9:B12').values}));
+const rendered = await wb.render({ sheetName: '标准功能清单', range: 'A96:N109', scale: 1.2, format: 'png' });
+await fs.writeFile('after-standard.png', new Uint8Array(await rendered.arrayBuffer()));
+const rendered2 = await wb.render({ sheetName: '详细原子功能', range: 'A384:O406', scale: 1.2, format: 'png' });
+await fs.writeFile('after-atomic.png', new Uint8Array(await rendered2.arrayBuffer()));
+const errors = await wb.inspect({ kind: 'match', searchTerm: '#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A', options: { useRegex: true, maxResults: 50 }, maxChars: 5000 });
+console.log(errors.ndjson);

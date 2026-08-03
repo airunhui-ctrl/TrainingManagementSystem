@@ -7,7 +7,9 @@ const value = raw.replace(/^file:/, '')
 const dbPath = isAbsolute(value) ? value : resolve(process.cwd(), value)
 mkdirSync(dirname(dbPath), { recursive: true })
 const db = new DatabaseSync(dbPath)
-const migration = readFileSync(resolve(__dirname, 'migrations/0001_init/migration.sql'), 'utf8')
+const migration = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql']
+  .map((file) => readFileSync(resolve(__dirname, 'migrations', file), 'utf8'))
+  .join('\n')
 
 const exists = (name) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name))
 const info = (name) => exists(name) ? db.prepare(`PRAGMA table_info("${name}")`).all() : []
@@ -47,7 +49,7 @@ if (normalized) {
     : ''
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${rebuildTemplateTable} ${migration}`)
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=4; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=6; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite schema already current: ${dbPath}`)
   db.close()
   process.exit(0)
@@ -132,7 +134,7 @@ try {
 
   for (const name of [...tables].reverse()) { const backup = `__backup_${name}`; if (exists(backup)) db.exec(`DROP TABLE "${backup}"`) }
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=4; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=6; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite legacy data migrated: ${dbPath}`)
 } catch (error) {
   db.exec('ROLLBACK')

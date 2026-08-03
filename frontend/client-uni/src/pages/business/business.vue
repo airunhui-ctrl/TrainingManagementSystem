@@ -259,8 +259,8 @@ onShow(loadAll)
 .preview-time, .invoice-meta { display: block; margin-top: 8rpx; color: $muted; font-size: 20rpx; }
 .preview-arrow { color: #aab4c1; font-size: 36rpx; }
 
-.modal-mask { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; background: rgba(20, 43, 74, .48); }
-.payment-proof-modal { box-sizing: border-box; width: 100%; max-height: 88vh; overflow: hidden; border-radius: 28rpx 28rpx 0 0; background: #fff; }
+.modal-mask { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 32rpx; background: rgba(20, 43, 74, .48); }
+.payment-proof-modal { box-sizing: border-box; width: 100%; max-width: 680rpx; max-height: 88vh; overflow: hidden; border-radius: 28rpx; background: #fff; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; padding: 30rpx 30rpx 22rpx; border-bottom: 1rpx solid #edf0f4; }
 .modal-title { display: block; color: $navy; font-size: 30rpx; font-weight: 900; }
 .modal-subtitle { display: block; margin-top: 8rpx; color: $muted; font-size: 19rpx; }
@@ -290,5 +290,5 @@ onShow(loadAll)
 .invoice-field { box-sizing: border-box; display: block; width: calc(100% - 60rpx); height: 74rpx; margin: 18rpx 30rpx 0; padding: 0 20rpx; border: 1rpx solid #dce4ee; border-radius: 14rpx; color: $navy; background: #fbfcfe; font-size: 22rpx; }
 .dialog-actions { display: flex; gap: 14rpx; margin: 24rpx 30rpx 0; }
 .dialog-actions button { flex: 1; height: 68rpx; margin: 0; border-radius: $radius-pill; font-size: 22rpx; line-height: 68rpx; }
-@media (min-width: 700px) { .payment-proof-modal { width: 680rpx; margin-bottom: 40rpx; border-radius: 28rpx; } }
+@media (min-width: 700px) { .payment-proof-modal { width: 680rpx; } }
 </style>

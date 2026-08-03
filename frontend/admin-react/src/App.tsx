@@ -52,10 +52,10 @@ const modules: Module[] = [
   { key: 'courses', label: '课程管理', endpoint: '/courses', editable: true },
   { key: 'templates', label: '报名模板', endpoint: '/admin/templates', editable: true },
   { key: 'enrollments', label: '报名汇总', endpoint: '/admin/enrollment-summary' },
-  { key: 'enrollment-details', label: '报名明细', endpoint: '/admin/enrollments' },
+  { key: 'enrollment-details', label: '报名明细', endpoint: '/admin/enrollment-records' },
   { key: 'orders', label: '订单与支付', endpoint: '/admin/orders' },
   { key: 'invoices', label: '开票管理', endpoint: '/admin/invoices' },
-  { key: 'students', label: '学员管理', endpoint: '/admin/students' },
+  { key: 'students', label: '学员管理', endpoint: '/admin/student-profiles' },
   { key: 'users', label: '用户管理', endpoint: '/admin/users' },
   { key: 'payment', label: '支付设置', endpoint: '/admin/payment-settings', editable: true },
   { key: 'rules', label: '运营优惠', endpoint: '/admin/discount-rules', editable: true },
@@ -71,7 +71,7 @@ const navGroups: NavGroup[] = [
   { key: 'users', label: '用户与运营', icon: '人', moduleKeys: ['students', 'users', 'rules', 'feedbacks', 'messages', 'points'] },
   { key: 'system', label: '系统管理', icon: '设', moduleKeys: ['payment', 'configs', 'audits'] },
 ]
-const serverPagedModules = new Set(['courses', 'orders', 'invoices', 'users', 'feedbacks'])
+const serverPagedModules = new Set(['courses', 'orders', 'invoices', 'users', 'feedbacks', 'enrollment-details', 'students'])
 const PAGE_SIZE = 5
 const TEMPLATE_FIELD_PAGE_SIZE = 4
 
@@ -106,7 +106,7 @@ const columnLabels: Record<string, string> = {
   key: '配置项', value: '配置值', actor: '操作人', action: '操作类型', detail: '操作详情',
   accountName: '收款户名', bankName: '开户银行', accountNo: '银行账号', qrCodeText: '收款码',
   onlineWechatEnabled: '微信支付', onlineAlipayEnabled: '支付宝支付',
-  paymentProofStatus: '凭证状态', originalName: '原始文件名', mimeType: '文件类型', size: '文件大小', path: '访问路径', reviewedAt: '审核时间',
+  paymentProofStatus: '凭证状态', originalName: '原始文件名', mimeType: '文件类型', size: '文件大小', path: '访问路径', reviewedAt: '审核时间', department: '部门', position: '职务', orderStatus: '订单状态', templateId: '模板编号', templateVersion: '模板版本', formPayload: '报名表单快照', cancelledAt: '取消时间',
 }
 
 const moduleColumns: Record<string, string[]> = {
@@ -114,8 +114,8 @@ const moduleColumns: Record<string, string[]> = {
   banners: ['id', 'title', 'courseTitle', 'sort', 'enabled', 'startsAt', 'endsAt'],
   templates: ['id', 'courseIds', 'courseNames', 'name', 'courseCount', 'fields'],
   enrollments: ['courseId', 'courseTitle', 'registrationDeadline', 'enrollmentCount', 'paidCount', 'unpaidCount'],
-  'enrollment-details': ['name', 'phone', 'courseTitle', 'company', 'role', 'paymentStatus', 'orderId', 'accountUsername', 'accountUserName', 'id'],
-  students: ['name', 'phone', 'courseTitle', 'company', 'role', 'paymentStatus', 'orderId', 'accountUsername', 'accountUserName', 'id'],
+  'enrollment-details': ['name', 'phone', 'courseTitle', 'company', 'department', 'position', 'status', 'orderStatus', 'orderId', 'accountUsername', 'registeredAt', 'id'],
+  students: ['name', 'phone', 'company', 'department', 'position', 'status', 'enrollmentCount', 'updatedAt', 'id'],
   orders: ['id', 'userId', 'courseId', 'participantCount', 'amount', 'status', 'paymentMethod', 'createdAt'],
   invoices: ['id', 'userId', 'title', 'taxNo', 'email', 'status', 'invoiceNo', 'createdAt'],
   users: ['id', 'username', 'name', 'role', 'enabled', 'registeredAt', 'lastActiveAt', 'courseCount', 'previewCount', 'points'],
@@ -145,7 +145,8 @@ const getListFilterDefinition = (active: string, items: TableItem[], courseOptio
   if (active === 'courses') return { label: '课程状态', field: 'status', options: ['报名中', '名额紧张', '已结束', '已下架'].map(value => ({ value, label: value })) }
   if (active === 'banners') return { label: '启用状态', field: 'enabled', options: [{ value: 'true', label: '已启用' }, { value: 'false', label: '已停用' }] }
   if (active === 'templates') return { label: '适用课程', field: 'courseIds', options: courseOptions.map(course => ({ value: course.id, label: course.title })) }
-  if (['enrollments', 'enrollment-details', 'students'].includes(active)) return { label: '关联课程', field: 'courseId', options: uniqueFilterOptions(items, 'courseId', 'courseTitle') }
+  if (['enrollments', 'enrollment-details'].includes(active)) return { label: '关联课程', field: 'courseId', options: uniqueFilterOptions(items, 'courseId', 'courseTitle') }
+  if (active === 'students') return { label: '档案状态', field: 'status', options: ['active', 'inactive', 'merged'].map(value => ({ value, label: value === 'active' ? '启用' : value === 'inactive' ? '停用' : '已合并' })) }
   if (active === 'orders') return { label: '订单状态', field: 'status', options: ['待支付', '待审核', '已支付', '已取消', '已退款'].map(value => ({ value, label: value })) }
   if (active === 'invoices') return { label: '开票状态', field: 'status', options: ['待处理', '已开票', '已驳回'].map(value => ({ value, label: value })) }
   if (active === 'users') return { label: '用户角色', field: 'role', options: [{ value: 'user', label: '普通用户' }, { value: 'admin', label: '管理员' }] }
@@ -237,7 +238,7 @@ function App() {
     const commit = (value: any) => { if (version === loadVersion.current) setData(value) }
     if (active === 'dashboard') { commit(await apiFetch('/admin/dashboard')); return }
     if (current.endpoint) {
-      const serverFilterParam = active === 'courses' || active === 'orders' || active === 'invoices' || active === 'feedbacks' ? 'status' : active === 'users' ? 'role' : ''
+      const serverFilterParam = active === 'courses' || active === 'orders' || active === 'invoices' || active === 'feedbacks' || active === 'enrollment-details' || active === 'students' ? 'status' : active === 'users' ? 'role' : ''
       const filterQuery = serverFilterParam && status ? `&${serverFilterParam}=${encodeURIComponent(status)}` : ''
       const params = serverPagedModules.has(active)
         ? `?keyword=${encodeURIComponent(keyword)}${filterQuery}&page=${targetPage}&pageSize=${PAGE_SIZE}`
@@ -407,6 +408,13 @@ function App() {
   }
 
   const openDetail = async (item: TableItem, intent: 'view' | 'process' = 'view') => {
+    if (active === 'students') {
+      try {
+        const profile = await apiFetch<TableItem>(`/admin/student-profiles/${encodeURIComponent(item.id)}`)
+        setSelectedDetail({ module: active, item: profile, intent })
+      } catch (error) { flash(error instanceof Error ? error.message : '学员档案加载失败') }
+      return
+    }
     let proof: TableItem | null | undefined
     let relatedOrder: TableItem | undefined
     const orderId = active === 'orders' ? item.id : item.orderId
@@ -446,6 +454,13 @@ function App() {
   const actionLabel = active === 'enrollments' ? '查看详情' : ['courses', 'templates', 'banners', 'payment', 'rules', 'messages', 'configs', 'points'].includes(active) ? (active === 'templates' ? '编辑模板' : active === 'points' ? '调整积分' : '编辑') : active === 'orders' ? '审核 / 退款' : active === 'users' ? '重置密码' : active === 'feedbacks' ? '回复处理' : '处理'
   const secondaryActionLabel = active === 'users' || active === 'banners' ? '启用 / 禁用' : active === 'invoices' ? '驳回' : undefined
   const exportCurrent = () => {
+    if (active === 'students') {
+      apiFetch<{ items: TableItem[] }>('/admin/student-profiles/export').then(result => {
+        const url = URL.createObjectURL(new Blob([JSON.stringify(result.items || [], null, 2)], { type: 'application/json' }))
+        const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'student-profiles.json'; anchor.click(); URL.revokeObjectURL(url)
+      }).catch(error => flash(error instanceof Error ? error.message : '导出学员档案失败'))
+      return
+    }
     const url = URL.createObjectURL(new Blob([JSON.stringify(pagedItems, null, 2)], { type: 'application/json' }))
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${active}-page-${page}.json`; anchor.click(); URL.revokeObjectURL(url)
   }
@@ -839,6 +854,8 @@ function DataTable({ moduleKey, items, onOperate, onDetail, actionLabel = '处�
 
 function DetailPanel({ detail, onClose }: { detail: { module: string; item: TableItem; proof?: TableItem | null; relatedOrder?: TableItem; intent?: 'view' | 'process' }; onClose: () => void }) {
   const item = detail.item
+  if (detail.module === 'students') return <StudentProfileDetailPanel item={item} onClose={onClose} />
+  if (detail.module === 'enrollment-details') return <EnrollmentRecordDetailPanel item={item} onClose={onClose} />
   const relatedOrder = detail.relatedOrder
   const participants = Array.isArray(relatedOrder?.participants) ? relatedOrder.participants : Array.isArray(item.participants) ? item.participants : []
   const title = detail.module === 'enrollment-details' || detail.module === 'students' ? '报名明细详情' : '详情核对'
@@ -859,6 +876,30 @@ function DetailPanel({ detail, onClose }: { detail: { module: string; item: Tabl
       </>}
       {otherKeys.length > 0 && <><h4>其他信息</h4><div className="detail-grid">{otherKeys.map(key => <div key={`other-${key}`}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div></>}
       {detail.intent === 'process' && <p className="detail-process-hint">报名明细处理以关联订单的支付审核、退款或取消结果为准，请在“订单与支付”模块执行状态操作。</p>}
+      <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
+    </section>
+  </div>
+}
+
+function StudentProfileDetailPanel({ item, onClose }: { item: TableItem; onClose: () => void }) {
+  const relations = Array.isArray(item.accountRelations) ? item.accountRelations : []
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="student-profile-title">
+      <div className="detail-head"><div><h3 id="student-profile-title">学员档案详情</h3><p>{item.id}</p></div><button type="button" onClick={onClose}>关闭</button></div>
+      <h4>基础资料</h4><div className="detail-grid">{['name', 'phone', 'email', 'company', 'department', 'position', 'status', 'enrollmentCount', 'createdAt', 'updatedAt'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
+      <h4>授权账号（{relations.length}）</h4>{relations.length ? <div className="participant-list">{relations.map((relation: TableItem) => <div key={relation.id || relation.userId}><b>{relation.username || relation.userId}</b><span>{relation.userName || '-'} · {relation.relationType || '其他'} · {relation.isDefault ? '默认报名人' : '普通关系'} · {relation.status || 'active'}</span></div>)}</div> : <p className="detail-muted">暂无授权账号</p>}
+      <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
+    </section>
+  </div>
+}
+
+function EnrollmentRecordDetailPanel({ item, onClose }: { item: TableItem; onClose: () => void }) {
+  const payload = item.formPayload && typeof item.formPayload === 'object' ? item.formPayload : {}
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-record-title">
+      <div className="detail-head"><div><h3 id="enrollment-record-title">报名履历详情</h3><p>{item.id}</p></div><button type="button" onClick={onClose}>关闭</button></div>
+      <h4>学员与课程</h4><div className="detail-grid">{['name', 'phone', 'company', 'department', 'position', 'courseTitle', 'date', 'location', 'orderId', 'orderStatus', 'status', 'accountUsername', 'accountUserName', 'registeredAt', 'cancelledAt', 'templateId', 'templateVersion'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
+      <h4>当次报名表单快照</h4><div className="participant-list"><div><span>{Object.entries(payload).map(([key, value]) => `${displayColumnLabel(key)}：${formatValue(value)}`).join(' · ') || '无表单字段'}</span></div></div>
       <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
     </section>
   </div>

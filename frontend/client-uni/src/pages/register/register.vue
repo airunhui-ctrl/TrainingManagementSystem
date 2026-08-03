@@ -2,6 +2,12 @@
   <view class="page">
     <view v-for="(participant,index) in participants" :key="index" class="card form-card">
       <view class="form-head"><text>报名人员 {{ index + 1 }}</text><text v-if="index" class="remove" @tap="remove(index)">删除</text></view>
+      <view v-if="students.length" class="student-source">
+        <text class="source-label">报名档案</text>
+        <picker mode="selector" :range="studentPickerOptions(index)" :value="selectedStudentIndex(index)" @change="selectStudent(index, Number($event.detail.value))">
+          <view class="picker source-picker">{{ participant.studentId ? studentPickerOptions(index)[selectedStudentIndex(index)] : '临时填写本次报名人' }}⌄</view>
+        </picker>
+      </view>
       <view v-for="field in fields" :key="field.key" class="field"><text class="label">{{field.label}}<text v-if="field.required" class="required"> *</text></text>
         <picker v-if="field.type==='select'" mode="selector" :range="field.options || []" @change="participant[field.key]=(field.options || [])[Number($event.detail.value)]"><view class="picker">{{participant[field.key] || '请选择'}}⌄</view></picker>
         <radio-group v-else-if="field.type==='radio'" class="option-group" @change="participant[field.key]=$event.detail.value"><label v-for="option in field.options || []" :key="option" class="option"><radio :value="option" :checked="participant[field.key]===option" color="#2F80ED" />{{option}}</label></radio-group>
@@ -47,6 +53,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
 import { requestNativePayment } from '../../common/payment'
 type Field={key:string;label:string;type:'text'|'phone'|'select'|'radio'|'checkbox';required:boolean;options?:string[]}
+type StudentOption={id:string;name:string;phone?:string|null;gender?:string|null;email?:string|null;company?:string|null;department?:string|null;position?:string|null;isDefault?:boolean}
 const courseId=ref('course-1'), fields=ref<Field[]>([]), loading=ref(false), quote=reactive({amount:0,discount:0})
 type PaymentMethod = 'wechat' | 'alipay' | 'offline'
 type PaymentOrder = { id: string; amount: number; originalAmount: number; discount: number; participantCount: number; status: string }
@@ -54,8 +61,21 @@ type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string
 const paymentModalOpen=ref(false), paying=ref(false), nativePaymentLoading=ref(false), showQrFallback=ref(false), selectedPaymentMethod=ref<PaymentMethod | ''>(''), paymentOrder=reactive<PaymentOrder>({id:'',amount:0,originalAmount:0,discount:0,participantCount:0,status:'待支付'}), paymentInfo=reactive<PaymentInfo>({})
 const paymentOptions=[{key:'wechat' as const,label:'微信支付',hint:'优先打开微信支付',icon:'微'},{key:'alipay' as const,label:'支付宝支付',hint:'优先打开支付宝支付',icon:'支'},{key:'offline' as const,label:'线下对公转账',hint:'转账后上传凭证审核',icon:'公'}]
 const blank=()=>Object.fromEntries(fields.value.map(field=>[field.key,''])) as Record<string,string>
-const participants=reactive<Record<string,string>[]>([])
-const load=async()=>{const result=await api.getRegistrationTemplate(courseId.value);fields.value=result.fields as Field[];participants.splice(0,participants.length,blank());refreshQuote()}
+const students=ref<StudentOption[]>([])
+const participants=reactive<Array<Record<string,string> & {studentId?:string}>>([])
+const studentPickerOptions=(index:number)=>['临时填写本次报名人',...students.value.map((student)=>`${student.name}${student.phone ? `（${student.phone}）` : ''}`)]
+const selectedStudentIndex=(index:number)=>{const id=participants[index]?.studentId;const found=students.value.findIndex((student)=>student.id===id);return found < 0 ? 0 : found + 1}
+const setMappedStudentFields=(participant:Record<string,string>, student:StudentOption)=>{
+  const aliases:Record<string,string[]>={name:['name','realName','姓名'],phone:['phone','mobile','手机号'],gender:['gender','性别'],email:['email','邮箱'],company:['company','企业','企业名称'],department:['department','部门'],position:['position','职务']}
+  for(const field of fields.value){const source=Object.entries(aliases).find(([,keys])=>keys.includes(field.key))?.[0];if(source) participant[field.key]=String((student as any)[source] || '')}
+}
+const selectStudent=(index:number, optionIndex:number)=>{
+  const participant=participants[index]; if(!participant)return
+  if(optionIndex===0){delete participant.studentId;return}
+  const student=students.value[optionIndex-1]; if(!student)return
+  participant.studentId=student.id; setMappedStudentFields(participant,student)
+}
+const load=async()=>{const result=await api.getRegistrationTemplate(courseId.value);fields.value=result.fields as Field[];try{students.value=(await api.listStudents()).items as StudentOption[]}catch{students.value=[]};participants.splice(0,participants.length,blank());const defaultStudent=students.value.find((student)=>student.isDefault);if(defaultStudent){participants[0].studentId=defaultStudent.id;setMappedStudentFields(participants[0],defaultStudent)}refreshQuote()}
 const refreshQuote=async()=>{if(!participants.length)return;try{const result=await api.quoteOrder(courseId.value,participants.length);quote.amount=result.amount;quote.discount=result.discount}catch{}}
 const add=()=>{participants.push(blank());refreshQuote()};const remove=(index:number)=>{participants.splice(index,1);refreshQuote()}
 const validateParticipants=()=>{
@@ -98,6 +118,7 @@ watch(()=>participants.length,refreshQuote);onLoad(query=>{if(query?.id)courseId
 
 <style scoped lang="scss">
 .page{min-height:100vh;padding:28rpx 28rpx 48rpx}.form-card{box-sizing:border-box;padding:28rpx;margin-bottom:22rpx}.form-head{display:flex;justify-content:space-between;margin-bottom:18rpx;font-size:31rpx;font-weight:900}.remove{color:$danger;font-size:22rpx}.field{min-width:0;margin-top:20rpx}.label{display:block;margin-bottom:10rpx;color:#64748B;font-size:22rpx}.required{color:$danger}.field input,.picker{box-sizing:border-box;display:block;width:100%;max-width:100%;height:82rpx;line-height:82rpx;padding:0 24rpx;border:1rpx solid #DCE4EE;border-radius:14rpx;background:#FBFCFE;color:$navy;font-size:24rpx}.picker{display:flex;justify-content:space-between}.option-group{display:flex;flex-wrap:wrap;gap:14rpx}.option{display:flex;align-items:center;gap:6rpx;padding:14rpx 16rpx;border:1rpx solid #DCE4EE;border-radius:12rpx;color:$navy;font-size:22rpx}.add{box-sizing:border-box;width:100%;margin-bottom:22rpx;padding:26rpx;border:1rpx dashed #A9C6EC;color:$blue;background:#F5F9FF;text-align:center;font-weight:800}.total-card{box-sizing:border-box;display:flex;justify-content:space-between;width:100%;padding:28rpx;margin-bottom:22rpx}.muted,.discount,.total{display:block}.muted{color:$muted;font-size:21rpx}.discount{margin-top:8rpx;color:#C97900;font-size:23rpx}.total{margin-top:8rpx;font-size:42rpx;font-weight:900}.submit{box-sizing:border-box;width:100%;height:84rpx;line-height:84rpx}
+.student-source{margin-bottom:18rpx;padding:16rpx;border-radius:14rpx;background:#f5f9ff}.source-label{display:block;margin-bottom:8rpx;color:#64748B;font-size:21rpx}.source-picker{height:70rpx;line-height:70rpx;background:#fff;font-size:22rpx}
 .modal-mask{position:fixed;inset:0;z-index:90;display:flex;align-items:flex-end;justify-content:center;background:rgba(12,31,65,.48)}
 .payment-modal{box-sizing:border-box;width:100%;max-height:90vh;overflow-y:auto;padding:30rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));border-radius:28rpx 28rpx 0 0;background:#fff}
 .modal-head{display:flex;align-items:flex-start;justify-content:space-between}.modal-title{display:block;color:$navy;font-size:34rpx;font-weight:900}.modal-subtitle{display:block;margin-top:8rpx;color:$muted;font-size:20rpx}.modal-close{color:#8391a3;font-size:44rpx;line-height:1}.bill-total{display:flex;align-items:center;justify-content:space-between;margin-top:24rpx;padding:22rpx;border-radius:16rpx;background:#f7f9fc;color:$muted;font-size:22rpx}.bill-amount{color:#e97520;font-size:42rpx;font-weight:900}.payment-title{display:block;margin-top:28rpx;color:$navy;font-size:25rpx;font-weight:800}.payment-options{display:flex;flex-direction:column;gap:12rpx;margin-top:14rpx}.payment-option{display:flex;align-items:center;gap:16rpx;padding:18rpx;border:1rpx solid #e3e9f1;border-radius:16rpx;background:#fff}.payment-option.active{border-color:#2f80ed;background:#f2f7ff}.payment-option-icon{display:flex;align-items:center;justify-content:center;width:54rpx;height:54rpx;border-radius:16rpx;color:#fff;background:#2f80ed;font-size:20rpx;font-weight:900}.payment-option:nth-child(2) .payment-option-icon{background:#18a86a}.payment-option:nth-child(3) .payment-option-icon{background:#e99428}.payment-option-name,.payment-option-hint{display:block}.payment-option-name{color:$navy;font-size:24rpx;font-weight:800}.payment-option-hint{margin-top:5rpx;color:$muted;font-size:19rpx}.payment-option-check{margin-left:auto;color:$blue;font-size:34rpx}.qr-panel,.offline-panel{margin-top:22rpx;padding:22rpx;border-radius:18rpx;background:#f8fbff;text-align:center}.qr-title{display:block;color:$navy;font-size:24rpx;font-weight:800}.qr-box{display:flex;align-items:center;justify-content:center;margin:18rpx auto 12rpx}.qr-grid{display:grid;grid-template-columns:repeat(21,1fr);width:330rpx;height:330rpx;padding:12rpx;border:10rpx solid #fff;background:#fff;box-shadow:0 4rpx 16rpx rgba(20,43,74,.12)}.qr-cell{background:#fff}.qr-cell.dark{background:#101923}.qr-tip,.qr-amount,.offline-tip{display:block;color:$muted;font-size:20rpx}.qr-amount{margin-top:8rpx;color:#e97520;font-size:26rpx;font-weight:900}.pay-confirm,.later-button{box-sizing:border-box;width:100%;height:76rpx;margin-top:20rpx;border:0;border-radius:999rpx;color:#17366d;background:$yellow;font-size:24rpx;line-height:76rpx;font-weight:900}.offline-title-row{display:flex;align-items:center;justify-content:space-between}.offline-amount{color:#e97520;font-size:28rpx;font-weight:900}.transfer-list{margin-top:16rpx;padding:0 18rpx;border-radius:14rpx;background:#fff;text-align:left}.transfer-row{display:flex;justify-content:space-between;gap:20rpx;padding:16rpx 0;border-bottom:1rpx solid #edf1f5;color:$muted;font-size:20rpx}.transfer-row:last-child{border-bottom:0}.transfer-row text:last-child{max-width:65%;color:$navy;text-align:right;word-break:break-all}.offline-tip{margin-top:16rpx;line-height:1.5;text-align:left}.later-button{margin-top:22rpx;color:$navy;background:#eef3f8}

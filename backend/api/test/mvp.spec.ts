@@ -23,6 +23,10 @@ describe('Prisma 业务仓储', () => {
     expect((await db.user.findUnique({ where: { username: 'operator' } }))?.role).toBe('admin')
     expect(await db.course.count()).toBe(6)
     expect(await db.registrationTemplate.count()).toBe(2)
+    expect(await db.student.count()).toBe(0)
+    expect(await db.accountStudent.count()).toBe(0)
+    expect(await db.registrationTemplateVersion.count()).toBe(0)
+    expect(await db.enrollment.count()).toBe(0)
   })
 
   test('阶梯优惠、重复报名、支付、开票和退款形成稳定状态流转', async () => {
@@ -35,6 +39,24 @@ describe('Prisma 业务仓储', () => {
     expect(invoice.status).toBe('待处理')
     expect((await mvp.processInvoice(invoice.id, '已开票', 'TEST-001')).status).toBe('已开票')
     expect((await mvp.refundOrder(order.id)).status).toBe('已取消')
+  })
+
+  test('P3 下单兼容 studentId，事务双写并在越权时整体回滚', async () => {
+    const participant = { name: '可复用学员', phone: '13800000021', company: '双写企业', companySize: '50-200人' }
+    const first = await mvp.createOrder('u-demo', 'course-2', [participant], 'offline')
+    const student = await db.student.findFirst({ where: { phoneNormalized: participant.phone } })
+    expect(student?.name).toBe(participant.name)
+    expect(await db.accountStudent.count({ where: { userId: 'u-demo', studentId: student!.id, status: 'active' } })).toBe(1)
+    expect(await db.enrollment.count({ where: { orderId: first.id, studentId: student!.id } })).toBe(1)
+    expect((await db.order.findUnique({ where: { id: first.id } }))?.participants).not.toContain('studentId')
+
+    const reused = await mvp.createOrder('u-demo', 'course-1', [{ ...participant, studentId: student!.id }], 'online')
+    expect(await db.enrollment.count({ where: { orderId: reused.id, studentId: student!.id } })).toBe(1)
+
+    const beforeOrders = await db.order.count()
+    await expect(mvp.createOrder('u-admin', 'course-2', [{ name: participant.name, phone: '13800000022', company: '越权企业', companySize: '50-200人', studentId: student!.id }], 'online')).rejects.toThrow('不属于当前账号')
+    expect(await db.order.count()).toBe(beforeOrders)
+    expect(await db.enrollment.count({ where: { studentId: student!.id } })).toBe(2)
   })
 
   test('列表分页和关键词筛选由数据库执行', async () => {

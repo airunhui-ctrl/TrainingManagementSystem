@@ -1,0 +1,10 @@
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path = 'D:/Projects/TrainingManagementSystem/Docs/FeatureList/培训管理系统功能清单.xlsx';
+const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(path));
+wb.worksheets.getItem('标准功能清单').getRange('N56:N57').values = [['✓'], ['✓']];
+wb.worksheets.getItem('详细原子功能').getRange('O202:O209').values = Array.from({ length: 8 }, () => ['✓']);
+wb.worksheets.getItem('使用说明').getRange('B11:B12').values = [[34], [253]];
+wb.worksheets.getItem('使用说明').getRange('A34:F34').values = [['本次更新', '2026-07-31', '学员域重构、Mock 脱离与首版真实联动任务已纳入清单；P1 数据模型、P2 历史回填对账、P3 事务双写、P4 学员 API 与 P5 管理端档案/报名明细拆分已完成，绿色勾选只表示当前代码和验收证据完整实现。', null, null, null]];
+const output = await SpreadsheetFile.exportXlsx(wb);
+await output.save(path);
+console.log(JSON.stringify({counts: wb.worksheets.getItem('使用说明').getRange('A11:B12').values, standard: wb.worksheets.getItem('标准功能清单').getRange('A56:N57').values.map((row) => [row[0], row[13]]), atomic: wb.worksheets.getItem('详细原子功能').getRange('A202:O209').values.map((row) => [row[0], row[14]])}));

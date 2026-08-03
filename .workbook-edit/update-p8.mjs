@@ -1,0 +1,10 @@
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path = 'D:/Projects/TrainingManagementSystem/Docs/FeatureList/培训管理系统功能清单.xlsx';
+const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(path));
+wb.worksheets.getItem('标准功能清单').getRange('N108:N108').values = [['✓']];
+wb.worksheets.getItem('详细原子功能').getRange('O400:O403').values = Array.from({ length: 4 }, () => ['✓']);
+wb.worksheets.getItem('使用说明').getRange('B11:B12').values = [[38], [267]];
+wb.worksheets.getItem('使用说明').getRange('A36:F36').values = [['本次更新', '2026-07-31', 'P8 已完成：移除未引用 C 端演示 mock 文件，统一 API 环境模板，新增微信 code2Session 与支付 disabled/fake/real adapter 边界。', null, null, null]];
+const output = await SpreadsheetFile.exportXlsx(wb);
+await output.save(path);
+console.log(JSON.stringify({ counts: wb.worksheets.getItem('使用说明').getRange('A11:B12').values, standard: wb.worksheets.getItem('标准功能清单').getRange('A108:N108').values.map((row) => [row[0], row[13]]), atomic: wb.worksheets.getItem('详细原子功能').getRange('A400:O403').values.map((row) => [row[0], row[14]]) }));

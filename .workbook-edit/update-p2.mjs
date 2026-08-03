@@ -1,0 +1,18 @@
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path = 'D:/Projects/TrainingManagementSystem/Docs/FeatureList/培训管理系统功能清单.xlsx';
+const input = await FileBlob.load(path);
+const wb = await SpreadsheetFile.importXlsx(input);
+const standard = wb.worksheets.getItem('标准功能清单');
+const atomic = wb.worksheets.getItem('详细原子功能');
+const guide = wb.worksheets.getItem('使用说明');
+standard.getRange('N102').values = [['✓']];
+standard.getRange('N106').values = [['✓']];
+atomic.getRange('O380:O383').values = [['✓'], ['✓'], ['✓'], ['✓']];
+atomic.getRange('O394:O396').values = [['✓'], ['✓'], ['✓']];
+guide.getRange('B11:B12').values = [[25], [224]];
+guide.getRange('A34:F34').values = [['本次更新', '2026-07-31', '学员域重构、Mock 脱离与首版真实联动任务已纳入清单；P1 数据模型迁移与 P2 历史回填/对账已完成，绿色勾选只表示当前代码和验收证据完整实现。', null, null, null]];
+const output = await SpreadsheetFile.exportXlsx(wb);
+await output.save(path);
+console.log('updated', path);
+console.log((await wb.inspect({ kind: 'region', sheetId: '标准功能清单', range: 'A102:N106', maxChars: 5000 })).ndjson);
+console.log((await wb.inspect({ kind: 'region', sheetId: '详细原子功能', range: 'A380:O396', maxChars: 5000 })).ndjson);

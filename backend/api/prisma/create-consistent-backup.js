@@ -1,0 +1,8 @@
+const { DatabaseSync } = require('node:sqlite')
+const [source, target] = process.argv.slice(2)
+if (!source || !target) throw new Error('source and target are required')
+const db = new DatabaseSync(source)
+db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`)
+db.close()
+console.log(JSON.stringify({ source, target }))

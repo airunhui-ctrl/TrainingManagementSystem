@@ -4,6 +4,7 @@
     { "path": "pages/detail/detail", "style": { "navigationStyle": "custom", "navigationBarTitleText": "课程详情" } },
     { "path": "pages/register/register", "style": { "navigationBarTitleText": "填写报名信息" } },
     { "path": "pages/business/business", "style": { "navigationBarTitleText": "订单" } },
+    { "path": "pages/students/students", "style": { "navigationBarTitleText": "我的学员" } },
     { "path": "pages/mine/mine", "style": { "navigationBarTitleText": "我的" } },
     { "path": "pages/login/login", "style": { "navigationBarTitleText": "登录" } }
   ],

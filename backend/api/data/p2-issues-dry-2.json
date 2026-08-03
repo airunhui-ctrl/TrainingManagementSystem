@@ -1,0 +1,335 @@
+{
+  "batchId": "p2-issues-dry-2",
+  "status": "dry-run",
+  "databaseFile": "D:\\Projects\\TrainingManagementSystem\\backend\\api\\data\\training.p2-issues-test.db",
+  "dryRun": true,
+  "orders": 22,
+  "processedOrders": 22,
+  "participants": 22,
+  "enrollments": 0,
+  "students": 0,
+  "createdStudents": 0,
+  "createdEnrollments": 0,
+  "skippedParticipants": 1,
+  "issueCount": 2,
+  "ordersWithDifferences": 2,
+  "orderReports": [
+    {
+      "orderId": "ORDER-DEMO-001",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-DEMO-002",
+      "courseId": "course-2",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-DEMO-003",
+      "courseId": "course-4",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-DEMO-004",
+      "courseId": "course-5",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-DEMO-005",
+      "courseId": "course-3",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-DEMO-006",
+      "courseId": "course-6",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-4797620266",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-4799156391",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-DEMO-007",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1784873310197-33cd6e",
+      "courseId": "course-2",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1784876785061-8435d5",
+      "courseId": "course-1",
+      "expectedParticipantCount": 2,
+      "parsedParticipantCount": 2,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 2,
+      "createdEnrollments": 2,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-DEMO-008",
+      "courseId": "course-5",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785304035759-f35df3",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785402030585-dea9f0",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785402358437-583225",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785402593452-7acdfd",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785402624686-5bcfbd",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785403174952-616a47",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785404989942-85571f",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "HX-1785465769651-eaf564",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 1,
+      "createdEnrollments": 1,
+      "skipped": 0,
+      "issues": 0
+    },
+    {
+      "orderId": "ORDER-BAD-JSON",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 0,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 0,
+      "createdEnrollments": 0,
+      "skipped": 0,
+      "issues": 1
+    },
+    {
+      "orderId": "ORDER-PHONE-CONFLICT",
+      "courseId": "course-1",
+      "expectedParticipantCount": 1,
+      "parsedParticipantCount": 1,
+      "enrollmentCountBefore": 0,
+      "enrollmentCountAfter": 0,
+      "createdEnrollments": 0,
+      "skipped": 1,
+      "issues": 1
+    }
+  ],
+  "courseReports": [
+    {
+      "courseId": "course-1",
+      "courseTitle": "人才选拔与结构化面试实战公开课",
+      "orders": 14,
+      "participants": 15,
+      "enrollments": 14,
+      "issues": 1
+    },
+    {
+      "courseId": "course-2",
+      "courseTitle": "企业经营管理领军人才训练营",
+      "orders": 2,
+      "participants": 2,
+      "enrollments": 2,
+      "issues": 0
+    },
+    {
+      "courseId": "course-4",
+      "courseTitle": "数据驱动的绩效管理实战",
+      "orders": 1,
+      "participants": 1,
+      "enrollments": 1,
+      "issues": 0
+    },
+    {
+      "courseId": "course-5",
+      "courseTitle": "高效团队沟通与协作工作坊",
+      "orders": 2,
+      "participants": 2,
+      "enrollments": 2,
+      "issues": 0
+    },
+    {
+      "courseId": "course-3",
+      "courseTitle": "企业精益突破之道实战公开课",
+      "orders": 1,
+      "participants": 1,
+      "enrollments": 1,
+      "issues": 0
+    },
+    {
+      "courseId": "course-6",
+      "courseTitle": "AI 赋能培训管理实战营",
+      "orders": 1,
+      "participants": 1,
+      "enrollments": 1,
+      "issues": 0
+    }
+  ],
+  "issues": [
+    {
+      "id": "issue-470b403381b563f4ed99a844",
+      "batchId": "p2-issues-dry-2",
+      "orderId": "ORDER-BAD-JSON",
+      "sourceParticipantIndex": null,
+      "issueType": "INVALID_PARTICIPANTS_JSON",
+      "message": "participants 不是合法 JSON 数组",
+      "rawPayload": "\"{bad-json\"",
+      "status": "open",
+      "createdAt": "2026-07-31T07:53:58.958Z"
+    },
+    {
+      "id": "issue-3a757bfa8ed1113b5ae1eb01",
+      "batchId": "p2-issues-dry-2",
+      "orderId": "ORDER-PHONE-CONFLICT",
+      "sourceParticipantIndex": 0,
+      "issueType": "PHONE_NAME_CONFLICT",
+      "message": "手机号 13900000011 与已有姓名不一致",
+      "rawPayload": "{\"name\":\"冲突姓名\",\"phone\":\"13900000011\",\"company\":\"X\"}",
+      "status": "open",
+      "createdAt": "2026-07-31T07:53:58.960Z"
+    }
+  ],
+  "generatedAt": "2026-07-31T07:53:58.960Z"
+}

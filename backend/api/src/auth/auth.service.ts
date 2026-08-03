@@ -1,7 +1,8 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { hashPassword, passwordMatches, PrismaService } from '../prisma.service'
+import { resolveWechatIdentity } from '../channel-adapters'
 
 export type UserRole = 'admin' | 'user'
 export interface DemoUser { id: string; username: string; role: UserRole }
@@ -25,9 +26,9 @@ export class AuthService {
    * 使用客户端提供的 deviceId/profileKey 生成稳定的开发环境身份，便于联调，不能作为生产鉴权依据。
    */
   async wechatLogin(code: string, profile: Record<string, any> = {}) {
-    const identity = String(profile.openId || profile.unionId || profile.deviceId || code || '').trim()
-    if (!identity) throw new UnauthorizedException('微信登录凭证无效')
-    const wechatOpenId = `mock:${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`
+    let identity: { openId: string; unionId?: string }
+    try { identity = await resolveWechatIdentity(code, profile) } catch (error: any) { throw new UnauthorizedException(error?.message || '微信登录凭证无效') }
+    const wechatOpenId = identity.openId
     let row = await this.db.user.findFirst({ where: { wechatOpenId } })
     const name = String(profile.nickName || profile.name || '').trim()
     const avatarText = String(name || '微').slice(0, 2)

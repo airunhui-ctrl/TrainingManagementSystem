@@ -1,0 +1,10 @@
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path = 'D:/Projects/TrainingManagementSystem/Docs/FeatureList/培训管理系统功能清单.xlsx';
+const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(path));
+wb.worksheets.getItem('标准功能清单').getRange('N107:N107').values = [['✓']];
+wb.worksheets.getItem('详细原子功能').getRange('O397:O399').values = Array.from({ length: 3 }, () => ['✓']);
+wb.worksheets.getItem('使用说明').getRange('B11:B12').values = [[37], [263]];
+wb.worksheets.getItem('使用说明').getRange('A35:F35').values = [['本次更新', '2026-07-31', 'P7 已完成：新增学员域双读对账报告、差异门禁、legacy/new 读取模式切换和可回退开关。', null, null, null]];
+const output = await SpreadsheetFile.exportXlsx(wb);
+await output.save(path);
+console.log(JSON.stringify({ counts: wb.worksheets.getItem('使用说明').getRange('A11:B12').values, standard: wb.worksheets.getItem('标准功能清单').getRange('A107:N107').values.map((row) => [row[0], row[13]]), atomic: wb.worksheets.getItem('详细原子功能').getRange('A397:O399').values.map((row) => [row[0], row[14]]) }));

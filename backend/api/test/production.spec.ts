@@ -51,6 +51,10 @@ describe('生产化 API 闭环', () => {
     expect((await request('/admin/dashboard', {}, demoToken)).response.status).toBe(403)
     expect((await request('/admin/dashboard', {}, adminToken)).response.status).toBe(200)
     expect((await login('operator')).user.role).toBe('admin')
+    const reconciliation = await request('/admin/student-domain/reconciliation', {}, adminToken)
+    expect(reconciliation.response.status).toBe(200)
+    expect(reconciliation.data.canSwitch).toBe(true)
+    expect((await request('/admin/student-domain/read-mode', {}, adminToken)).data.mode).toBe('legacy')
   })
 
   test('刷新令牌轮换、旧令牌吊销且 refresh token 不能冒充 access token', async () => {

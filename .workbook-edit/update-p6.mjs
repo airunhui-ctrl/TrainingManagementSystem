@@ -1,0 +1,10 @@
+import { FileBlob, SpreadsheetFile } from '@oai/artifact-tool';
+const path = 'D:/Projects/TrainingManagementSystem/Docs/FeatureList/培训管理系统功能清单.xlsx';
+const wb = await SpreadsheetFile.importXlsx(await FileBlob.load(path));
+wb.worksheets.getItem('标准功能清单').getRange('N96:N97').values = [['✓'], ['✓']];
+wb.worksheets.getItem('详细原子功能').getRange('O359:O365').values = Array.from({ length: 7 }, () => ['✓']);
+wb.worksheets.getItem('使用说明').getRange('B11:B12').values = [[36], [260]];
+wb.worksheets.getItem('使用说明').getRange('A34:F34').values = [['本次更新', '2026-07-31', 'P6 已完成：C 端报名页支持已有学员选择、临时填写和 studentId 提交；“我的”页支持学员新增、编辑、默认关系和解除关系。', null, null, null]];
+const output = await SpreadsheetFile.exportXlsx(wb);
+await output.save(path);
+console.log(JSON.stringify({ counts: wb.worksheets.getItem('使用说明').getRange('A11:B12').values, standard: wb.worksheets.getItem('标准功能清单').getRange('A96:N97').values.map((row) => [row[0], row[13]]), atomic: wb.worksheets.getItem('详细原子功能').getRange('A359:O365').values.map((row) => [row[0], row[14]]) }));

@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { basename, extname, join, resolve } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { PrismaService } from '../prisma.service'
+import { createPaymentIntent as createPaymentIntentAdapter } from '../channel-adapters'
 
 export interface RegistrationField {
   key: string
@@ -21,6 +22,18 @@ const pageArgs = (page = 1, pageSize = 20) => {
   return { page: safePage, pageSize: safeSize, skip: (safePage - 1) * safeSize, take: safeSize }
 }
 const id = (prefix: string) => `${prefix}-${Date.now()}-${randomBytes(3).toString('hex')}`
+const stableId = (prefix: string, value: string) => `${prefix}-${createHash('sha256').update(value).digest('hex').slice(0, 24)}`
+const normalizedPhone = (value: unknown) => {
+  const digits = String(value || '').trim().replace(/[\s-]/g, '')
+  if (!digits) return null
+  if (digits.startsWith('+86')) return digits.slice(3)
+  if (digits.startsWith('0086')) return digits.slice(4)
+  return digits
+}
+const maskPhone = (value: string | null | undefined) => {
+  const phone = String(value || '')
+  return phone.length >= 7 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : phone
+}
 const sanitizeRichText = (value: unknown) => String(value || '')
   .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
   .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
@@ -138,13 +151,16 @@ export class MvpService {
     return { courseId, participantCount, unitPrice, originalAmount, discount, amount: originalAmount - discount, discountRate }
   }
 
-  async createOrder(userId: string, courseId: string, participants: Array<Record<string, string>>, paymentMethod: 'online' | 'offline' = 'online') {
+  async createOrder(userId: string, courseId: string, participants: Array<Record<string, string> & { studentId?: string }>, paymentMethod: 'online' | 'offline' = 'online') {
     if (!participants.length) throw new BadRequestException('至少需要一名报名人')
     const template = await this.getTemplate(courseId)
     for (const [index, participant] of participants.entries()) {
-      const missing = template.fields.find((field) => field.required && !String(participant[field.key] || '').trim())
+      const snapshot = { ...participant }
+      delete snapshot.studentId
+      const missing = template.fields.find((field) => field.required && !String(snapshot[field.key] || '').trim())
       if (missing) throw new BadRequestException(`第 ${index + 1} 位报名人的${missing.label}不能为空`)
-      if (participant.phone && !/^1\d{10}$/.test(participant.phone)) throw new BadRequestException(`第 ${index + 1} 位报名人的手机号格式不正确`)
+      const phone = normalizedPhone(snapshot.phone)
+      if (phone && !/^1\d{10}$/.test(phone)) throw new BadRequestException(`第 ${index + 1} 位报名人的手机号格式不正确`)
     }
     return this.db.$transaction(async (tx) => {
       const course = await tx.course.findUnique({ where: { id: courseId } })
@@ -152,19 +168,59 @@ export class MvpService {
       if (!course.allowMultiParticipant && participants.length > 1) throw new BadRequestException('该课程不支持多人报名')
       if (course.enrolled + participants.length > course.capacity) throw new BadRequestException('课程剩余名额不足')
       const activeOrders = await tx.order.findMany({ where: { courseId, status: { not: '已取消' } }, select: { participants: true } })
-      const registeredPhones = new Set(activeOrders.flatMap((order) => json<Array<Record<string, string>>>(order.participants, []).map((item) => item.phone).filter(Boolean)))
-      const duplicated = participants.find((item) => item.phone && registeredPhones.has(item.phone))
-      if (duplicated) throw new BadRequestException(`手机号 ${duplicated.phone} 已报名本课程`)
+      const registeredPhones = new Set(activeOrders.flatMap((order) => json<Array<Record<string, string>>>(order.participants, []).map((item) => normalizedPhone(item.phone)).filter(Boolean)))
+      const duplicated = participants.find((item) => {
+        const phone = normalizedPhone(item.phone)
+        return Boolean(phone && registeredPhones.has(phone))
+      })
+      if (duplicated) throw new BadRequestException(`手机号 ${normalizedPhone(duplicated.phone)} 已报名本课程`)
       const rule = await this.applicableDiscountRule(tx, courseId, participants.length)
       const unitPrice = course.specialPrice ?? course.price
       const originalAmount = unitPrice * participants.length
       const discountRate = rule ? Math.max(0, Math.min(1, 1 - rule.discountRate)) : 0
       const discount = Math.round(originalAmount * discountRate)
+      const snapshots = participants.map((participant) => { const snapshot = { ...participant }; delete snapshot.studentId; return snapshot })
       const order = await tx.order.create({ data: {
-        id: id('HX'), userId, courseId, participants: JSON.stringify(participants), participantCount: participants.length,
+        id: id('HX'), userId, courseId, participants: JSON.stringify(snapshots), participantCount: participants.length,
         originalAmount, discount, amount: originalAmount - discount,
         status: '待支付', paymentMethod,
       }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      const templateVersion = await tx.registrationTemplateVersion.upsert({
+        where: { templateId_version: { templateId: template.templateId, version: template.version || 1 } },
+        create: { id: stableId('rtv', `${template.templateId}:${template.version || 1}`), templateId: template.templateId, version: template.version || 1, payload: JSON.stringify(template.fields), checksum: createHash('sha256').update(JSON.stringify(template.fields)).digest('hex'), status: 'published', publishedAt: new Date(), },
+        update: {},
+      })
+      for (const [index, participant] of participants.entries()) {
+        const snapshot = snapshots[index]
+        const phone = normalizedPhone(snapshot.phone)
+        let student = null
+        if (participant.studentId) {
+          const relation = await tx.accountStudent.findFirst({ where: { userId, studentId: participant.studentId, status: 'active' }, include: { student: true } })
+          if (!relation) throw new BadRequestException(`第 ${index + 1} 位报名人不属于当前账号或关系已解除`)
+          student = relation.student
+        } else if (phone) {
+          const candidates = await tx.student.findMany({ where: { phoneNormalized: phone }, orderBy: { createdAt: 'asc' } })
+          if (candidates.length > 1) throw new BadRequestException(`第 ${index + 1} 位报名人的手机号存在多个学员档案，请先人工确认`)
+          if (candidates.length === 1 && String(candidates[0].name).trim() !== String(snapshot.name || '').trim()) throw new BadRequestException(`第 ${index + 1} 位报名人的手机号与已有学员姓名不一致`)
+          student = candidates[0] || null
+        }
+        if (!student) {
+          const studentId = stableId('stu', phone ? `phone:${phone}` : `account:${userId}:${order.id}:${index}`)
+          student = await tx.student.upsert({
+            where: { id: studentId },
+            create: { id: studentId, name: String(snapshot.name || '').trim(), phone: snapshot.phone || null, phoneNormalized: phone, gender: snapshot.gender || null, email: snapshot.email || null, company: snapshot.company || null, department: snapshot.department || null, position: snapshot.position || snapshot.role || null, status: 'active', extraPayload: JSON.stringify(snapshot), createdByUserId: userId },
+            update: {},
+          })
+        }
+        await tx.accountStudent.upsert({
+          where: { userId_studentId: { userId, studentId: student.id } },
+          create: { id: stableId('acct-stu', `${userId}:${student.id}`), userId, studentId: student.id, relationType: participant.studentId ? 'selected' : 'self_or_proxy', source: participant.studentId ? 'user_selected' : 'order_created', status: 'active', createdByUserId: userId },
+          update: { status: 'active', revokedAt: null },
+        })
+        await tx.enrollment.create({ data: {
+          id: stableId('enr', `${order.id}:${index}`), studentId: student.id, courseId, orderId: order.id, accountUserId: userId, sourceParticipantIndex: index, templateVersionId: templateVersion.id, templateVersion: templateVersion.version, formPayload: JSON.stringify(snapshot), status: 'registered', registeredAt: order.createdAt,
+        } })
+      }
       await tx.course.update({ where: { id: courseId }, data: { enrolled: { increment: participants.length } } })
       return this.orderView(order)
     })
@@ -204,9 +260,8 @@ export class MvpService {
     if (!order) throw new NotFoundException('订单不存在')
     if (order.status !== '待支付') throw new BadRequestException('当前订单状态不能发起支付')
     const provider = channel === 'wechat' ? 'wxpay' : 'alipay'
-    // 商户号、签名和预支付单号接入后，将 ready 改为 true 并填充 payload，
-    // 客户端即可直接调用小程序原生支付；开发环境保留二维码回退。
-    return { orderId, channel, provider, amount: order.amount, currency: 'CNY', ready: false, payload: null, message: '支付渠道参数尚未配置' }
+    const intent = await createPaymentIntentAdapter(channel, order.amount, orderId)
+    return { orderId, channel, provider, amount: order.amount, currency: 'CNY', ...intent }
   }
 
   async uploadPaymentProof(userId: string, orderId: string, file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
@@ -424,13 +479,69 @@ export class MvpService {
     return courses.map((course) => { const related = orders.filter((order) => order.courseId === course.id); return { courseId: course.id, courseTitle: course.title, registrationDeadline: course.registrationDeadline || course.date, enrollmentCount: related.filter((order) => order.status !== '已取消').reduce((sum, order) => sum + order.participantCount, 0), paidCount: related.filter((order) => order.status === '已支付').reduce((sum, order) => sum + order.participantCount, 0), unpaidCount: related.filter((order) => order.status !== '已取消' && order.status !== '已支付').reduce((sum, order) => sum + order.participantCount, 0) } })
   }
 
+  async reconcileStudentDomain() {
+    const [orders, enrollments, courses] = await Promise.all([
+      this.db.order.findMany({ select: { id: true, courseId: true, status: true, participantCount: true, participants: true } }),
+      this.db.enrollment.findMany({ select: { id: true, orderId: true, courseId: true, status: true } }),
+      this.db.course.findMany({ select: { id: true, title: true, enrolled: true } }),
+    ])
+    const byOrder = new Map<string, typeof enrollments>()
+    for (const enrollment of enrollments) if (enrollment.orderId) byOrder.set(enrollment.orderId, [...(byOrder.get(enrollment.orderId) || []), enrollment])
+    const orderDiffs = orders.flatMap((order) => {
+      const oldCount = json<Array<Record<string, any>>>(order.participants, []).length
+      const rows = byOrder.get(order.id) || []
+      const statusMismatch = order.status === '已取消' ? rows.some((row) => row.status !== 'cancelled') : rows.some((row) => row.status === 'cancelled')
+      return oldCount !== rows.length || statusMismatch ? [{ orderId: order.id, courseId: order.courseId, oldCount, newCount: rows.length, orderStatus: order.status, enrollmentStatuses: rows.map((row) => row.status), reason: oldCount !== rows.length ? 'COUNT_MISMATCH' : 'STATUS_MISMATCH' }] : []
+    })
+    const courseDiffs = courses.flatMap((course) => {
+      const relatedOrders = orders.filter((order) => order.courseId === course.id)
+      const oldCount = relatedOrders.filter((order) => order.status !== '已取消').reduce((sum, order) => sum + order.participantCount, 0)
+      const newCount = enrollments.filter((row) => row.courseId === course.id && row.status !== 'cancelled').length
+      return oldCount === newCount ? [] : [{ courseId: course.id, courseTitle: course.title, storedEnrolled: course.enrolled, oldCount, newCount, reason: 'COURSE_COUNT_MISMATCH' }]
+    })
+    const paidDiffs = orders.flatMap((order) => {
+      const expectedPaid = order.status === '已支付'
+      const rows = byOrder.get(order.id) || []
+      const hasActive = rows.some((row) => row.status !== 'cancelled')
+      return expectedPaid && !hasActive ? [{ orderId: order.id, reason: 'PAID_WITHOUT_ACTIVE_ENROLLMENT' }] : []
+    })
+    return {
+      generatedAt: new Date().toISOString(),
+      readMode: await this.getStudentReadMode(),
+      totals: { orders: orders.length, enrollments: enrollments.length, orderParticipants: orders.reduce((sum, order) => sum + json<Array<any>>(order.participants, []).length, 0), activeEnrollments: enrollments.filter((row) => row.status !== 'cancelled').length },
+      differences: { orderDiffs, courseDiffs, paidDiffs, total: orderDiffs.length + courseDiffs.length + paidDiffs.length },
+      canSwitch: orderDiffs.length === 0 && courseDiffs.length === 0 && paidDiffs.length === 0,
+    }
+  }
+
+  async getStudentReadMode(): Promise<'legacy' | 'new'> {
+    const item = await this.db.systemConfig.findUnique({ where: { key: 'student.readMode' } })
+    return item?.value === 'new' ? 'new' : 'legacy'
+  }
+
+  async setStudentReadMode(mode: 'legacy' | 'new', actor = 'admin') {
+    if (!['legacy', 'new'].includes(mode)) throw new BadRequestException('学员读取模式只能是 legacy 或 new')
+    if (mode === 'new') {
+      const report = await this.reconcileStudentDomain()
+      if (!report.canSwitch) throw new BadRequestException(`对账存在 ${report.differences.total} 项差异，暂不能切换新读`)
+    }
+    const item = await this.db.systemConfig.upsert({ where: { key: 'student.readMode' }, create: { key: 'student.readMode', value: mode, description: '学员档案/报名明细兼容期读取模式' }, update: { value: mode, description: '学员档案/报名明细兼容期读取模式' } })
+    await this.audit(actor, '学员读取模式切换', mode)
+    return { mode: item.value as 'legacy' | 'new', updatedAt: item.updatedAt.toISOString(), rollbackAvailable: true }
+  }
+
+  async listCompatEnrollments() { return (await this.getStudentReadMode()) === 'new' ? (await this.listEnrollmentRecords(undefined, undefined, 1, 10000)).items : this.listEnrollments() }
+  async listCompatStudents() { return (await this.getStudentReadMode()) === 'new' ? (await this.listStudentProfilesPage(undefined, undefined, 1, 10000, false)).items : this.listStudents() }
+
   async cancelOrder(userId: string, orderId: string) {
     const item = await this.db.$transaction(async (tx) => {
       const order = await tx.order.findFirst({ where: { id: orderId, userId } })
       if (!order) throw new NotFoundException('订单不存在')
       if (order.status === '已支付') throw new BadRequestException('已支付订单请申请退款')
       if (order.status !== '已取消') await tx.course.update({ where: { id: order.courseId }, data: { enrolled: { decrement: Math.min(order.participantCount, (await tx.course.findUniqueOrThrow({ where: { id: order.courseId } })).enrolled) } } })
-      return tx.order.update({ where: { id: orderId }, data: { status: '已取消' }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      const updated = await tx.order.update({ where: { id: orderId }, data: { status: '已取消' }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      await tx.enrollment.updateMany({ where: { orderId }, data: { status: 'cancelled', cancelledAt: new Date() } })
+      return updated
     })
     await this.audit(userId, '取消报名', orderId)
     return this.orderView(item)
@@ -456,7 +567,9 @@ export class MvpService {
       if (order.status !== '已支付') throw new BadRequestException('只有已支付订单可以退款')
       const course = await tx.course.findUniqueOrThrow({ where: { id: order.courseId } })
       await tx.course.update({ where: { id: order.courseId }, data: { enrolled: Math.max(0, course.enrolled - order.participantCount) } })
-      return tx.order.update({ where: { id: orderId }, data: { status: '已取消' }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      const updated = await tx.order.update({ where: { id: orderId }, data: { status: '已取消' }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      await tx.enrollment.updateMany({ where: { orderId }, data: { status: 'cancelled', cancelledAt: new Date() } })
+      return updated
     })
     await this.audit(actor, '退款完成', orderId)
     return this.orderView(result)
@@ -547,6 +660,216 @@ export class MvpService {
   }
 
   async listStudents() { return this.listEnrollments() }
+
+  private studentView(student: any, reveal = false) {
+    return {
+      id: student.id,
+      name: student.name,
+      phone: reveal ? student.phone : maskPhone(student.phone),
+      phoneNormalized: reveal ? student.phoneNormalized : undefined,
+      gender: student.gender,
+      email: reveal ? student.email : (student.email ? `${String(student.email).slice(0, 2)}***` : null),
+      company: student.company,
+      department: student.department,
+      position: student.position,
+      status: student.status,
+      mergedIntoId: student.mergedIntoId,
+      createdAt: new Date(student.createdAt).toISOString(),
+      updatedAt: new Date(student.updatedAt).toISOString(),
+      accountRelations: student.accountRelations?.map((relation: any) => ({ id: relation.id, userId: relation.userId, username: relation.user?.username, userName: relation.user?.name, relationType: relation.relationType, isDefault: relation.isDefault, status: relation.status })) || [],
+      enrollmentCount: student._count?.enrollments ?? student.enrollments?.length ?? 0,
+    }
+  }
+
+  async listEnrollmentRecords(keyword?: string, status?: string, page = 1, pageSize = 20) {
+    const args = pageArgs(page, pageSize)
+    const where: any = {
+      ...(status ? { status } : {}),
+      ...(keyword ? { OR: [{ id: { contains: keyword } }, { orderId: { contains: keyword } }, { student: { name: { contains: keyword } } }, { student: { phoneNormalized: { contains: normalizedPhone(keyword) || keyword } } }, { course: { title: { contains: keyword } } }] } : {}),
+    }
+    const [items, total] = await this.db.$transaction([
+      this.db.enrollment.findMany({ where, include: { student: true, course: { select: { id: true, title: true, date: true, location: true } }, order: { select: { id: true, status: true, paymentMethod: true, paymentChannel: true, amount: true } }, accountUser: { select: { id: true, username: true, name: true } }, templateVersionRef: { select: { templateId: true, version: true } } }, orderBy: { registeredAt: 'desc' }, skip: args.skip, take: args.take }),
+      this.db.enrollment.count({ where }),
+    ])
+    return { items: items.map((item) => ({
+      id: item.id, studentId: item.studentId, name: item.student.name, phone: item.student.phone, company: item.student.company, department: item.student.department, position: item.student.position,
+      courseId: item.courseId, courseTitle: item.course.title, date: item.course.date, location: item.course.location, orderId: item.orderId, orderStatus: item.order?.status || null, paymentMethod: item.order?.paymentMethod || null, paymentChannel: item.order?.paymentChannel || null, amount: item.order?.amount || 0,
+      accountUserId: item.accountUserId, accountUsername: item.accountUser.username, accountUserName: item.accountUser.name || item.accountUser.username, status: item.status, templateId: item.templateVersionRef?.templateId || null, templateVersion: item.templateVersion, formPayload: json<Record<string, any>>(item.formPayload, {}), registeredAt: item.registeredAt.toISOString(), cancelledAt: item.cancelledAt?.toISOString() || null,
+    })), page: args.page, pageSize: args.pageSize, total }
+  }
+
+  async listStudentProfilesPage(keyword?: string, status?: string, page = 1, pageSize = 20, reveal = false) {
+    const args = pageArgs(page, pageSize)
+    const where: any = {
+      ...(status ? { status } : {}),
+      ...(keyword ? { OR: [{ name: { contains: keyword } }, { phoneNormalized: { contains: normalizedPhone(keyword) || keyword } }, { company: { contains: keyword } }] } : {}),
+    }
+    const [items, total] = await this.db.$transaction([
+      this.db.student.findMany({ where, include: { accountRelations: { where: { status: 'active' }, include: { user: { select: { username: true, name: true } } } }, _count: { select: { enrollments: true } } }, orderBy: { updatedAt: 'desc' }, skip: args.skip, take: args.take }),
+      this.db.student.count({ where }),
+    ])
+    return { items: items.map((item) => this.studentView(item, reveal)), page: args.page, pageSize: args.pageSize, total }
+  }
+
+  async getStudentProfile(studentId: string, reveal = false) {
+    const student = await this.db.student.findUnique({ where: { id: studentId }, include: { accountRelations: { where: { status: 'active' }, include: { user: { select: { id: true, username: true, name: true } } } }, _count: { select: { enrollments: true } } } })
+    if (!student) throw new NotFoundException('学员档案不存在')
+    return this.studentView(student, reveal)
+  }
+
+  async exportStudentProfiles(keyword?: string, status?: string, reveal = false, actor = 'admin') {
+    const result = await this.listStudentProfilesPage(keyword, status, 1, 100, reveal)
+    await this.audit(actor, '导出学员档案', `${result.total} 条`)
+    return { ...result, exportedAt: new Date().toISOString() }
+  }
+
+  async updateStudentProfile(studentId: string, payload: Record<string, any>, actor = 'admin') {
+    const current = await this.db.student.findUnique({ where: { id: studentId } })
+    if (!current) throw new NotFoundException('学员档案不存在')
+    const phone = payload.phone !== undefined ? normalizedPhone(payload.phone) : current.phoneNormalized
+    if (phone) {
+      const conflict = await this.db.student.findFirst({ where: { phoneNormalized: phone, id: { not: studentId }, status: { not: 'merged' } } })
+      if (conflict) throw new BadRequestException('手机号已对应其他学员档案，请先执行合并')
+    }
+    const item = await this.db.student.update({ where: { id: studentId }, data: {
+      ...(payload.name !== undefined ? { name: String(payload.name).trim() } : {}),
+      ...(payload.phone !== undefined ? { phone: String(payload.phone).trim() || null, phoneNormalized: phone } : {}),
+      ...(payload.gender !== undefined ? { gender: String(payload.gender).trim() || null } : {}),
+      ...(payload.email !== undefined ? { email: String(payload.email).trim() || null } : {}),
+      ...(payload.company !== undefined ? { company: String(payload.company).trim() || null } : {}),
+      ...(payload.department !== undefined ? { department: String(payload.department).trim() || null } : {}),
+      ...(payload.position !== undefined ? { position: String(payload.position).trim() || null } : {}),
+      ...(payload.extraPayload !== undefined ? { extraPayload: JSON.stringify(payload.extraPayload) } : {}),
+    } })
+    await this.audit(actor, '学员档案更新', `${studentId} ${item.name}`)
+    return this.getStudentProfile(studentId, true)
+  }
+
+  async setStudentStatus(studentId: string, status: 'active' | 'inactive', actor = 'admin') {
+    const item = await this.db.student.update({ where: { id: studentId }, data: { status } })
+    await this.audit(actor, status === 'active' ? '启用学员档案' : '停用学员档案', studentId)
+    return this.getStudentProfile(item.id, true)
+  }
+
+  async listStudentRelationships(studentId: string) {
+    const rows = await this.db.accountStudent.findMany({ where: { studentId }, include: { user: { select: { id: true, username: true, name: true, company: true } } }, orderBy: { createdAt: 'asc' } })
+    return rows.map((item) => ({ id: item.id, userId: item.userId, username: item.user.username, userName: item.user.name, company: item.user.company, relationType: item.relationType, isDefault: item.isDefault, status: item.status, revokedAt: item.revokedAt?.toISOString() || null }))
+  }
+
+  async grantStudentRelationship(studentId: string, userId: string, relationType = '代理报名', actor = 'admin') {
+    const [student, user] = await Promise.all([this.db.student.findUnique({ where: { id: studentId } }), this.db.user.findUnique({ where: { id: userId } })])
+    if (!student) throw new NotFoundException('学员档案不存在')
+    if (!user) throw new NotFoundException('账号不存在')
+    const result = await this.db.$transaction(async (tx) => {
+      await tx.accountStudent.updateMany({ where: { userId, studentId: { not: studentId }, isDefault: true }, data: { isDefault: false } })
+      return tx.accountStudent.upsert({ where: { userId_studentId: { userId, studentId } }, create: { id: stableId('acct-stu', `${userId}:${studentId}`), userId, studentId, relationType, isDefault: false, source: 'admin_granted', status: 'active', createdByUserId: actor }, update: { relationType, status: 'active', revokedAt: null } })
+    })
+    await this.audit(actor, '授权学员关系', `${userId} -> ${studentId}`)
+    return result
+  }
+
+  async revokeStudentRelationship(studentId: string, userId: string, actor = 'admin') {
+    const relation = await this.db.accountStudent.findUnique({ where: { userId_studentId: { userId, studentId } } })
+    if (!relation) throw new NotFoundException('账号与学员关系不存在')
+    const item = await this.db.accountStudent.update({ where: { id: relation.id }, data: { status: 'revoked', isDefault: false, revokedAt: new Date() } })
+    await this.audit(actor, '解除学员关系', `${userId} -> ${studentId}`)
+    return item
+  }
+
+  async setDefaultStudentRelationship(studentId: string, userId: string, actor = 'admin') {
+    const relation = await this.db.accountStudent.findUnique({ where: { userId_studentId: { userId, studentId } } })
+    if (!relation || relation.status !== 'active') throw new BadRequestException('账号没有有效的学员关系')
+    await this.db.$transaction(async (tx) => {
+      await tx.accountStudent.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } })
+      await tx.accountStudent.update({ where: { id: relation.id }, data: { isDefault: true } })
+    })
+    await this.audit(actor, '设置默认报名人', `${userId} -> ${studentId}`)
+    return this.listStudentRelationships(studentId)
+  }
+
+  async listStudentEnrollments(studentId: string) {
+    const rows = await this.db.enrollment.findMany({ where: { studentId }, include: { course: { select: { id: true, title: true } }, order: { select: { id: true, status: true, amount: true } }, templateVersionRef: { select: { templateId: true, version: true } } }, orderBy: { registeredAt: 'desc' } })
+    return rows.map((item) => ({ id: item.id, courseId: item.courseId, courseTitle: item.course.title, orderId: item.orderId, orderStatus: item.order?.status || null, amount: item.order?.amount || 0, status: item.status, templateId: item.templateVersionRef?.templateId || null, templateVersion: item.templateVersion, formPayload: json<Record<string, any>>(item.formPayload, {}), registeredAt: item.registeredAt.toISOString(), cancelledAt: item.cancelledAt?.toISOString() || null }))
+  }
+
+  async matchStudentCandidates(payload: Record<string, any>) {
+    const phone = normalizedPhone(payload.phone)
+    const name = String(payload.name || '').trim()
+    const company = String(payload.company || '').trim()
+    const where: any = phone ? { phoneNormalized: phone } : { ...(name ? { name: { contains: name } } : {}), ...(company ? { company: { contains: company } } : {}) }
+    if (!phone && !name && !company) throw new BadRequestException('至少提供手机号、姓名或公司之一')
+    const items = await this.db.student.findMany({ where, include: { accountRelations: { where: { status: 'active' }, include: { user: { select: { username: true, name: true } } } }, _count: { select: { enrollments: true } } }, orderBy: { updatedAt: 'desc' }, take: 20 })
+    return { items: items.map((item) => this.studentView(item, false)), matchedBy: phone ? 'phone' : 'name_or_company' }
+  }
+
+  async mergeStudents(sourceId: string, targetId: string, actor = 'admin') {
+    if (sourceId === targetId) throw new BadRequestException('不能合并同一学员')
+    const result = await this.db.$transaction(async (tx) => {
+      const [source, target] = await Promise.all([tx.student.findUnique({ where: { id: sourceId }, include: { accountRelations: true } }), tx.student.findUnique({ where: { id: targetId } })])
+      if (!source || !target) throw new NotFoundException('待合并学员不存在')
+      if (source.status === 'merged') throw new BadRequestException('源学员已合并')
+      const sourceEnrollments = await tx.enrollment.findMany({ where: { studentId: sourceId }, select: { orderId: true, sourceParticipantIndex: true } })
+      for (const item of sourceEnrollments) {
+        if (item.orderId && await tx.enrollment.findFirst({ where: { studentId: targetId, orderId: item.orderId, sourceParticipantIndex: item.sourceParticipantIndex } })) throw new BadRequestException('合并后会产生重复报名履历，请人工处理')
+      }
+      for (const relation of source.accountRelations) {
+        const existing = await tx.accountStudent.findUnique({ where: { userId_studentId: { userId: relation.userId, studentId: targetId } } })
+        if (existing) await tx.accountStudent.update({ where: { id: relation.id }, data: { status: 'revoked', isDefault: false, revokedAt: new Date() } })
+        else await tx.accountStudent.update({ where: { id: relation.id }, data: { studentId: targetId } })
+      }
+      await tx.enrollment.updateMany({ where: { studentId: sourceId }, data: { studentId: targetId } })
+      return tx.student.update({ where: { id: sourceId }, data: { status: 'merged', mergedIntoId: targetId } })
+    })
+    await this.audit(actor, '合并学员档案', `${sourceId} -> ${targetId}`)
+    return { sourceId: result.id, targetId, status: result.status }
+  }
+
+  async listAccountStudents(userId: string) {
+    const rows = await this.db.accountStudent.findMany({ where: { userId, status: 'active', student: { status: { not: 'merged' } } }, include: { student: { include: { _count: { select: { enrollments: true } } } } }, orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }] })
+    return { items: rows.map((item) => ({ ...this.studentView(item.student, true), relationId: item.id, relationType: item.relationType, isDefault: item.isDefault })) }
+  }
+
+  async createAccountStudent(userId: string, payload: Record<string, any>) {
+    const name = String(payload.name || '').trim()
+    if (!name) throw new BadRequestException('学员姓名不能为空')
+    const phone = normalizedPhone(payload.phone)
+    if (phone && !/^1\d{10}$/.test(phone)) throw new BadRequestException('手机号格式不正确')
+    if (phone) {
+      const conflict = await this.db.student.findFirst({ where: { phoneNormalized: phone, status: { not: 'merged' } } })
+      if (conflict && String(conflict.name).trim() !== name) throw new BadRequestException('手机号已对应其他姓名，请先选择已有学员或联系管理员')
+      if (conflict) {
+        await this.grantStudentRelationship(conflict.id, userId, String(payload.relationType || '本人/代报名'), userId)
+        return this.getStudentProfile(conflict.id, true)
+      }
+    }
+    const studentId = stableId('stu', phone ? `phone:${phone}` : `account:${userId}:${name}:${Date.now()}`)
+    const student = await this.db.student.create({ data: { id: studentId, name, phone: String(payload.phone || '').trim() || null, phoneNormalized: phone, gender: String(payload.gender || '').trim() || null, email: String(payload.email || '').trim() || null, company: String(payload.company || '').trim() || null, department: String(payload.department || '').trim() || null, position: String(payload.position || '').trim() || null, status: 'active', createdByUserId: userId, extraPayload: JSON.stringify(payload) } })
+    await this.db.accountStudent.create({ data: { id: stableId('acct-stu', `${userId}:${student.id}`), userId, studentId: student.id, relationType: String(payload.relationType || '本人/代报名'), source: 'user_created', status: 'active', isDefault: Boolean(payload.isDefault), createdByUserId: userId } })
+    if (payload.isDefault) await this.db.accountStudent.updateMany({ where: { userId, studentId: { not: student.id }, isDefault: true }, data: { isDefault: false } })
+    await this.audit(userId, '新增我的学员', student.id)
+    return this.getStudentProfile(student.id, true)
+  }
+
+  async updateAccountStudent(userId: string, studentId: string, payload: Record<string, any>) {
+    const relation = await this.db.accountStudent.findFirst({ where: { userId, studentId, status: 'active' } })
+    if (!relation) throw new NotFoundException('学员不在当前账号授权范围内')
+    return this.updateStudentProfile(studentId, payload, userId)
+  }
+
+  async setAccountDefaultStudent(userId: string, studentId: string) {
+    const relation = await this.db.accountStudent.findFirst({ where: { userId, studentId, status: 'active' } })
+    if (!relation) throw new NotFoundException('学员不在当前账号授权范围内')
+    await this.db.$transaction(async (tx) => {
+      await tx.accountStudent.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } })
+      await tx.accountStudent.update({ where: { id: relation.id }, data: { isDefault: true } })
+    })
+    await this.audit(userId, '设置我的默认学员', studentId)
+    return this.listAccountStudents(userId)
+  }
+
+  async revokeAccountStudent(userId: string, studentId: string) {
+    return this.revokeStudentRelationship(studentId, userId, userId)
+  }
 
   async getPaymentSettings() {
     const item = await this.db.paymentSetting.findUnique({ where: { id: 'default' } })

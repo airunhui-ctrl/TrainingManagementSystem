@@ -38,3 +38,101 @@
 | PowerShell 直接调用 `pnpm` 被执行策略拦截 | 使用 `pnpm.cmd` 执行管理端构建 |
 | artifact-tool 脚本在导出/渲染后返回 teardown 错误 | 已确认导出 xlsx、inspect 和四张目标范围预览均已生成，并用独立校验脚本复核 |
 | 全表 render 可能产生超大位图 | 仅渲染 `使用说明`、标准/原子功能前段和模块统计目标范围 |
+
+## 2026-07-31：学员域数据库设计方案
+
+- [x] 核对现有 Prisma schema、学员域现状总结和 P0–P9 任务规划
+- [x] 编写 `Docs/Plans/2026-07-31_学员域数据库设计方案.md`
+- [x] 同步根目录副本 `database_design.md`
+- [x] 校验 Markdown 编码、章节、Mermaid/Prisma 代码块、核心模型和迁移内容
+
+## 2026-07-31：按规划 P1 实施学员域数据模型
+
+- [x] 备份当前 SQLite 主库并记录 P1 备份文件
+- [x] 新增 Prisma `Student`、`AccountStudent`、`RegistrationTemplateVersion`、`Enrollment` 模型及反向关系
+- [x] 新增 `0002_student_domain` 迁移，保留 `Order.participants`
+- [x] 更新自定义迁移器到 0001 → 0002、SQLite `user_version=5`
+- [x] 在测试库和当前主库执行迁移并核对表、索引、旧订单快照
+- [x] 增加迁移回归断言并通过后端测试/构建
+
+### P1 错误记录
+
+| 错误 | 尝试 | 处理 |
+|---|---:|---|
+| `prisma generate` 在替换 `query_engine-windows.dll.node` 时返回 `EPERM rename` | 使用 pnpm 脚本和直接 Prisma CLI 各尝试一次 | `prisma validate`、格式化、后端构建和测试均通过；记录为 Windows 查询引擎文件锁，后续释放占用后重新执行完整 generate |
+| PowerShell 内联 `node -e` 的 `VACUUM INTO` 引号解析失败 | 1 | 改用仓库内一次性备份脚本执行一致性备份，备份成功 |
+| 清理临时 P1 测试数据库的显式删除操作被审批层拒绝 | 1 | 保留在 `backend/api/data/training.p1-migration-test.db`，不影响主库和代码；未再次尝试删除 |
+
+## 2026-07-31 学员域后续阶段执行状态
+
+- [x] P1：Student、AccountStudent、RegistrationTemplateVersion、Enrollment 模型与 0002 迁移
+- [x] P2：历史 participants 回填、异常记录、幂等游标和订单/课程对账
+- [x] P3：CreateOrderDto 兼容 `studentId`，订单与学员域事务双写
+- [x] P4：后端学员 API、授权关系、合并和审计
+- [x] P5：管理端学员档案与报名明细拆分
+- [x] P6：C 端我的学员、已有学员选择和临时填写
+- [x] P7：双读对账、新读切换与回退开关
+- [x] P8：Mock 边界收敛、微信/支付 adapter 与环境门禁
+- [x] P9：端到端回归、发布、备份和回滚演练
+
+### P6 完成（2026-07-31）
+
+- [x] C 端报名页复用已有学员、临时填写、默认学员回填并提交 `studentId`
+- [x] “我的”页新增/编辑/默认/解除学员关系
+- [x] 更新 FeatureList、阶段总结和计划留痕（36/105、260/402）
+- [x] C 端 H5、管理端 Vite、Nest 构建与生产化回归通过
+- [x] P7 双读对账、新读切换与回退开关
+
+### P2 验收留痕
+
+- 主库：20 orders / 21 participants / 21 Student / 21 AccountStudent / 21 Enrollment；issues=0、差异=0。
+- 副本库：dry-run、坏 JSON、手机号冲突、正式回填和重复执行均已验证。
+- 自动化：`backend/api/test/backfill.spec.ts` 通过。
+- 报告：`Docs/Summary/2026-07-31_P2_历史学员回填正式对账报告.json`。
+
+### P3 验收留痕
+
+- 旧请求和新 `studentId` 请求均可下单；新建档案、账号关系和报名履历同步落库。
+- 越权 `studentId`、手机号冲突、容量不足和重复报名均有明确错误；越权测试确认订单/履历整体回滚。
+- 取消/退款会同步履历状态；后端全量 5 套件、12 项测试通过，构建通过。
+- 下一步：P4 暴露分页档案、关系维护、履历查询、合并和审计 API。
+
+### P4 验收留痕
+
+- `/admin/student-profiles` 系列接口覆盖档案、关系、履历、匹配、合并、停用和脱敏导出；旧 `/admin/students` 保持兼容。
+- `backend/api/test/student-api.spec.ts` 通过；全量后端 5 套件、12 项测试和构建通过。
+- 下一步：P5 管理端切换到独立档案列表/详情和报名明细数据源。
+
+### P5 验收留痕
+
+- 学员管理使用 `/admin/student-profiles`，报名明细使用 `/admin/enrollment-records`；旧接口保留兼容。
+- 详情分别展示账号关系/履历摘要与模板版本/表单快照；管理端 Vite 构建通过。
+- 下一步：P6 改造 C 端报名页和“我的”页。
+
+## 2026-08-03：C 端独立“我的学员”页面优化
+
+### 目标
+
+将“我的学员”从“我的”页内嵌列表升级为独立页面入口，放在“账号与安全”下方、“我的积分”上方；页面展示当前学员和其他学员，当前学员优先匹配账号资料，其他学员按姓名拼音首字母分组排序。
+
+### 阶段
+
+- [x] 核对报名模板回填字段与未匹配字段的填写边界
+- [x] 核对现有 `/students` 接口、账号关系和默认学员能力
+- [x] 新增独立学员页面与路由
+- [x] 调整“我的”页入口并移除内嵌列表
+- [x] 实现当前学员匹配、空状态和拼音首字母分组
+- [x] 构建、接口和页面静态验收，更新总结留痕
+
+### 验收结果
+
+- 新增 `pages/students/students` 页面；“我的”页入口位于“账号与安全”下方、“我的积分”上方。
+- 当前学员按显式默认、手机号、姓名、企业匹配；当前账号无匹配时显示空状态。
+- 其他学员按中文拼音排序器转换首字母并分组，拉丁字母直接归一化，数字归入 `#`。
+- C 端 H5 构建、根目录 `verify`、`git diff --check` 和 `/profile`、`/students` 运行态核验通过。
+
+### 决策
+
+- 报名模板仍以模板字段定义为准；只有识别到姓名/手机号/性别/邮箱/企业/部门/职务等字段别名时自动回填，其余字段保留手动填写。
+- 当前学员排序优先级为：账号关系 `isDefault` → 学员手机号/姓名/企业与当前账号资料匹配 → 无当前学员空状态；不自动修改数据库默认关系。
+- 其他学员使用当前账号 `/students` 返回的 active 关系，只做前端分组展示，不改变跨账号授权和历史报名数据。
