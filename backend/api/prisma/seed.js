@@ -3,6 +3,10 @@ const { randomBytes, scryptSync } = require('node:crypto')
 const { dirname, isAbsolute, resolve } = require('node:path')
 const { mkdirSync } = require('node:fs')
 
+const configuredUrl = String(process.env.DATABASE_URL || '').trim()
+if (/^(postgres(ql)?|mysql):\/\//i.test(configuredUrl)) {
+  throw new Error('SQLite seed 不能处理 PostgreSQL/MySQL；请使用 PostgreSQL 专用迁移和导入流程')
+}
 const raw = process.env.DATABASE_FILE || process.env.DATABASE_URL || './data/training.db'
 const value = raw.replace(/^file:/, '')
 const filePath = isAbsolute(value) ? value : resolve(process.cwd(), value)

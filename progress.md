@@ -159,3 +159,101 @@
 - 已确认当前 H5/管理端资源使用绝对 `/assets`，部署方案采用两个域名/独立 Nginx server 块，避免 `/admin`、`/h5` 子路径资源冲突。
 - 已新增 `Docs/Summary/2026-08-03_单机服务器部署指南.md` 和 `Docs/Plans/2026-08-03_单机部署实施方案.md`。
 - 已记录 SQLite 单实例约束、WAL-safe 备份、systemd、Nginx、首次验收和 P9 回滚门禁；未在未授权情况下连接或修改远程服务器。
+
+## 2026-08-03 C 端登录页简化
+
+- 登录页字段文案由“演示账号”改为“账号”，账号和密码初始值均为空，取消自动填充。
+- 删除微信一键登录按钮、快捷账号入口和“MVP 演示密码统一为 123456”提示；同步清理“账号与安全”中的微信绑定提示。
+- 登录页改为简洁卡片布局，保留账号密码登录、密码显示/隐藏和原有登录接口。
+- `pnpm.cmd --dir frontend/client-uni build:h5`、`pnpm.cmd run verify`、`git diff --check` 通过；本地 H5 视觉复核确认输入框为空且上述文案已从构建产物移除。
+
+## 2026-08-03 注册/找回密码与生产化准备
+
+- 后端新增 `POST /api/auth/register`、`/api/auth/password-reset/request`、`/api/auth/password-reset/confirm`，验证码按哈希保存，支持过期、错误次数限制、一次性使用和旧刷新令牌吊销。
+- C 端登录页新增“立即注册”“忘记密码”入口，并新增注册页、找回密码页；开发环境可显示 `devCode`，生产环境不返回验证码。
+- 新增 `PasswordResetChallenge` Prisma 模型、`0004_password_reset` SQLite 迁移和密码找回 webhook/fake/disabled 配置模板。
+- 新增 `backend/api/test/auth-registration-reset.spec.ts`，注册、重复账号、密码找回、挑战复用和未知账号不泄漏测试 3/3 通过；后端构建通过。
+- Prisma Client 重新生成受 Windows 查询引擎文件被运行中 Node 进程占用影响（EPERM），现有生成客户端已含新模型，待停止占用 3100 的旧服务后再执行 `db:generate` 作为环境清理步骤。
+- 当前生产化仍需真实微信登录场景、商户支付渠道、短信/邮件找回渠道和目标 PostgreSQL/MySQL 实例信息；个人微信/支付宝收款码不能替代商户支付接口。
+- 最终验证：`pnpm.cmd run build:client`、管理端构建、根目录 `verify` 和 `git diff --check` 通过；C 端仅有既存 Sass 弃用警告。
+- 全量后端 Jest 在 5 分钟内无输出并超时，未收到断言失败；新增注册/找回密码专项测试已独立 3/3 通过。由于 3100 仍有运行中的 Node 服务，未擅自停止服务重跑 Prisma generate。
+- 内测数据库已执行 `pnpm.cmd --dir backend/api db:migrate`，`user_version=7` 且 `PasswordResetChallenge` 表存在；随后仅重启占用 3100 的旧 API 实例，新 `/api/auth/password-reset/request` 已返回 201，5174/5185 前端服务未中断。
+
+## 2026-08-04 注册/找回密码完善与真实支付安全门禁
+
+- 新增 `PaymentTransaction` 模型和 `0005_payment_transactions` 迁移，内测库升级到 `user_version=8`；重新生成 Prisma Client 成功。
+- 在线支付不再允许客户端调用 `/orders/:id/pay` 直接改为已支付；新增支付状态查询、微信/支付宝回调入口、订单号/金额校验、回调验签后幂等入账。
+- 补充微信支付 v3 H5/Native 下单签名、支付宝 WAP 下单签名、微信 AES-GCM 回调解密和支付宝 RSA2 回调验签代码；未配置真实商户参数时仍明确返回不可用。
+- C 端报名页和订单页改为发起支付意图、跳转/调用原生支付并轮询服务端状态，不再显示伪造二维码或依据前端点击宣称支付成功。
+- 新增 `payment-integrity.spec.ts`；注册/找回密码、支付安全门禁专项测试 4/4，通过生产化 API 5/5，后端/C 端/管理端构建和 `verify` 通过。
+- 真实渠道仍需用户在服务器环境变量注入商户号、AppID、证书、私钥、公钥、HTTPS 回调地址；个人收款码仍只用于线下凭证审核。
+## 2026-08-04 项目现状核验与后续执行清单
+
+- 已核验仓库代码、Docs/Summary、Docs/Plans、Prisma schema 和 SQLite 实例，结论写入 `Docs/Summary/2026-08-04_项目现状核验与内测到生产执行清单.md`。
+- 只读查询确认 SQLite `user_version=8`；User=12、Course=6、Order=21、Student=22、AccountStudent=22、Enrollment=22，PaymentTransaction=0、PasswordResetChallenge=0。
+- 明确区分“代码已实现”和“真实业务未实测”：学员档案 P1-P9 需要业务场景闭环；微信/支付宝需要商户渠道和 HTTPS 回调，个人收款码仅适用于线下凭证审核。
+- 当前优先级确定为：P10 学员档案场景验收 → P11 PostgreSQL 测试迁移 → P12 支付沙箱/小额回调验收 → P13 生产切换。
+## 2026-08-04 PostgreSQL 配置边界修复
+
+- 用户确认目标为 PostgreSQL、H5+小程序、内部测试验证码；服务器为内网地址，尚无域名。
+- 发现并修复 `PrismaService` 将 PostgreSQL/MySQL `DATABASE_URL` 当作 SQLite 文件路径的缺口。
+- 为 SQLite migrate/seed 增加 PostgreSQL/MySQL URL 保护，避免误执行 SQLite 流程。
+- 新增 `backend/api/prisma/prepare-postgresql.cjs`、`export-postgresql.cjs`、`import-postgresql.cjs` 及对应 npm scripts，用于生成 PostgreSQL schema/migration、导出 SQLite 快照和导入对账。
+- 新增 `Docs/Summary/2026-08-04_内测环境配置与数据库实例说明.md`，说明数据库实例字段、内网无域名对支付回调的限制以及用户仍需提供的信息。
+## 2026-08-04 微信小程序 JSAPI 支付补齐
+
+- 发现用户已选择小程序，但原支付适配器只有微信 H5/Native；新增 JSAPI 下单、`openid` 读取和小程序 `requestPayment` 参数签名。
+- 微信登录接口支持 `mini_program`、`h5`、`official_account` 场景；默认小程序 `code2Session`，H5/公众号走网页 OAuth。
+- 新增 `backend/api/test/payment-jsapi.spec.ts`；API 构建、注册/找回密码和支付专项测试通过。
+## 2026-08-04 完成度审计与回归
+
+- 后端全量 Jest：11 个测试套件、25 项通过。
+- API 构建、C 端 H5 构建、管理端构建、根目录 `verify` 和 `git diff --check` 通过；仅保留 Sass/Vite 弃用提示。
+- 本轮仍未执行远程服务器写入、PostgreSQL 安装或真实商户支付，因为服务器系统/数据库实例/公网回调信息尚未确认。
+## 2026-08-04 SQLite → PostgreSQL 导出导入工具
+
+- 新增只读 `export-postgresql.cjs`：导出 `user_version`、24 张业务表、行数和 SHA-256；已在当前 SQLite 上实际验证，导出数据包含 User=12、Order=21、Student=22、Enrollment=22 等计数。
+- 新增 `import-postgresql.cjs`：要求 PostgreSQL `DATABASE_URL` 和已生成 PostgreSQL Client，按外键依赖顺序导入并回报源/目标行数。
+- 发现 `.mjs` 与 CommonJS `require` 冲突，已统一改为 `.cjs` 并通过 Node 语法检查和 SQLite 导出验证。
+- 当前未执行 PostgreSQL 导入，因为服务器实例和连接信息尚未确认，避免误连或覆盖未知数据库。
+- 导入安全策略已固定：刷新令牌和找回密码挑战不迁移，切库后强制重新登录。
+## 2026-08-04 服务器 SSH 探测
+
+- `192.168.0.162:22` 可达，但无 SSH 公钥认证，未尝试密码登录，也未执行远程写入。
+- 新增 `Docs/runtime/check-postgres-server.sh`，用于服务器本地输出非敏感的系统、Node、PostgreSQL、服务和端口信息。
+
+## 2026-08-04 服务器基础信息回传
+
+- 收到服务器终端信息：Ubuntu 24.04 系列、Node.js v22.22.1；`psql` 客户端未安装。
+- 已更新 PostgreSQL 内测环境说明、任务计划和发现记录。
+- 当前仍未执行远程安装或写入；等待 PostgreSQL 服务状态、监听端口和数据库列表的非敏感输出。
+
+## 2026-08-04 个人收款码线下支付闭环
+
+- 管理端支付设置新增微信/支付宝收款码上传。
+- C 端报名账单和订单支付记录弹窗展示个人收款码，并保留凭证上传与管理端审核状态机。
+- 后端新增收款码图片安全存储、公开读取接口和服务层测试；API、管理端、C 端构建通过，专项测试通过。
+- 在线微信/支付宝仍需商户号、应用密钥、证书和公网 HTTPS 回调，个人收款码不能替代。
+
+## 2026-08-04 渠道配置自检
+
+- 新增管理员只读接口 `/api/admin/integration-readiness`，用于服务器注入密钥后检查缺项、HTTPS 回调和找回密码渠道状态。
+- 自检不返回密钥值；生产模式下 fake/disabled 适配器不会被标记为可上线。
+- 管理端新增“渠道自检”页面，展示同一自检结果；管理端构建通过。
+
+## 2026-08-04 PostgreSQL 初始化脚本
+
+- 新增 Ubuntu 24.04 PostgreSQL 初始化脚本，支持安装服务、创建 `training_app`/`training_management`、交互式设置密码和输出无密码连接模板。
+- 脚本未在当前 Windows 环境远程执行；需要用户在 `192.168.0.162` 服务器本地运行并回传非敏感检查结果。
+- 新增带确认门槛的 SQLite → PostgreSQL 测试迁移脚本；尚未执行真实迁移，避免在未知实例或未确认维护窗口下写入。
+## 2026-08-04 本地到服务器部署手册
+
+- 已核对旧单机部署文档、Plans、PostgreSQL 初始化/迁移/自检脚本、package scripts、API 环境变量和支付回调路由。
+- 已确认下一份文档需要覆盖：本地发布、Windows 上传、服务器初始化、PostgreSQL 实例、迁移对账、systemd、Nginx、无域名限制、真实支付配置、P10-P13 顺序、回滚和用户回传清单。
+- 已写入 `Docs/Summary/2026-08-04_本地到服务器部署及PostgreSQL与真实支付配置实施手册.md`，并完成 UTF-8、敏感信息、旧 `rsync`/图片说明和 `git diff --check` 检查。
+- 根据用户服务器截图补充了 `/opt/training-management` 直接目录部署、缺少 `Docs/runtime` 时的补传步骤，以及 JWT_SECRET 暴露后的轮换提醒。
+- 发现的部署错误：手册中的 `/opt/training-management/current` 是推荐版本软链接路径，不是用户当前服务器已经存在的目录；已记录并修正文档。
+- 初步评估 Docker：当前项目尚无 Docker 配置且未使用 Redis；建议采用 Compose 容器化 API/PostgreSQL/Nginx，Redis 暂不加入，数据库和上传文件必须使用持久化卷。
+- 已按用户确认落地 Docker Compose：PostgreSQL 16、API migration、NestJS API、管理端和 H5；新增 `Dockerfile.api`、`Dockerfile.web`、`docker-compose.yml`、Nginx 配置、`.dockerignore`、`.env.docker.example` 和 Docker 部署方案。
+- 已更新 README Docker 快速入口；Compose 静态配置和 `pnpm.cmd run verify` 通过。本地 Docker daemon 未运行，未伪造镜像构建通过结论，需在服务器执行真实 build。
+- 当前阻塞仍在服务器侧：等待用户执行 PostgreSQL 初始化并回传非敏感自检结果。

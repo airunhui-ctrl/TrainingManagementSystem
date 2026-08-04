@@ -34,7 +34,9 @@ describe('Prisma 业务仓储', () => {
     const participant = { name: '测试学员', phone: '13900000001', company: '测试企业' }
     const order = await mvp.createOrder('u-demo', 'course-1', [participant], 'online')
     await expect(mvp.createOrder('u-demo', 'course-1', [participant], 'online')).rejects.toThrow('已报名本课程')
-    expect((await mvp.payOrder('u-demo', order.id, 'online', undefined, 'alipay')).status).toBe('已支付')
+    await mvp.createPaymentIntent('u-demo', order.id, 'alipay')
+    await expect(mvp.payOrder('u-demo', order.id, 'online', undefined, 'alipay')).rejects.toThrow('不能由客户端直接确认')
+    expect((await mvp.confirmExternalPayment({ channel: 'alipay', outTradeNo: order.id, providerTradeNo: 'ali-test-1', amount: order.amount, payload: { trade_status: 'TRADE_SUCCESS' } })).status).toBe('已支付')
     const invoice = await mvp.createInvoice('u-demo', { title: '测试企业', taxNo: '91350200TEST', email: 'test@example.com', orderIds: [order.id] })
     expect(invoice.status).toBe('待处理')
     expect((await mvp.processInvoice(invoice.id, '已开票', 'TEST-001')).status).toBe('已开票')
@@ -64,5 +66,15 @@ describe('Prisma 业务仓储', () => {
     expect(result.total).toBe(1)
     expect(result.items).toHaveLength(1)
     expect(result.items[0].id).toBe('course-1')
+  })
+
+  test('个人微信/支付宝收款码可配置并由公开支付设置返回', async () => {
+    const uploaded = await mvp.uploadPaymentQr('wechat', { originalname: 'wechat.png', mimetype: 'image/png', size: 4, buffer: Buffer.from('test') }, 'admin')
+    expect(uploaded.url).toMatch(/^\/api\/media\/payment-settings\/payment-wechat-/)
+    const settings = await mvp.getPublicPaymentSettings()
+    expect(settings.wechatQrImage).toBe(uploaded.url)
+    const file = await mvp.readPaymentSettingImage(uploaded.name)
+    expect(file.mimeType).toBe('image/png')
+    await expect(mvp.uploadPaymentQr('alipay', { originalname: 'alipay.exe', mimetype: 'application/octet-stream', size: 4, buffer: Buffer.from('test') }, 'admin')).rejects.toThrow('仅支持')
   })
 })

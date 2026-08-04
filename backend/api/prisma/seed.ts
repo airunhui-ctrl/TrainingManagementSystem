@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (path: string) => any }
+if (/^(postgres(ql)?|mysql):\/\//i.test(String(process.env.DATABASE_URL || '').trim())) throw new Error('SQLite seed 不能处理 PostgreSQL/MySQL；请使用 PostgreSQL 专用迁移和导入流程')
 const dbPath = resolve(process.env.DATABASE_FILE || 'data/training.db')
 mkdirSync(resolve(dbPath, '..'), { recursive: true })
 const db = new DatabaseSync(dbPath)

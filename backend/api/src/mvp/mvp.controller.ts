@@ -5,6 +5,8 @@ import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Min, ValidateNest
 import { AdminGuard } from '../auth/admin.guard'
 import { JwtGuard } from '../auth/jwt.guard'
 import { MvpService } from './mvp.service'
+import { getIntegrationReadiness, verifyAlipayNotification, verifyWechatNotification } from '../channel-adapters'
+import { getPasswordResetReadiness } from '../auth/password-reset-delivery'
 
 class QuoteDto { @IsString() courseId!: string; @IsInt() @Min(1) participantCount!: number }
 class ParticipantDto { @IsObject() data!: Record<string, string>; @IsOptional() @IsString() studentId?: string }
@@ -24,6 +26,7 @@ export class MvpController {
   @Get('banners') async banners() { return { items: (await this.mvp.listBanners()).filter((item) => item.enabled) } }
   @Get('payment-settings/public') publicPaymentSettings() { return this.mvp.getPublicPaymentSettings() }
   @Get('media/course-images/:name') async courseImage(@Param('name') name: string) { const result = await this.mvp.readCourseImage(name); return new StreamableFile(result.buffer, { type: result.mimeType }) }
+  @Get('media/payment-settings/:name') async paymentSettingImage(@Param('name') name: string) { const result = await this.mvp.readPaymentSettingImage(name); return new StreamableFile(result.buffer, { type: result.mimeType }) }
 
   @UseGuards(JwtGuard)
   @Post('orders') createOrder(@Req() request: any, @Body() dto: CreateOrderDto) { return this.mvp.createOrder(request.user.sub, dto.courseId, dto.participants.map((item) => ({ ...item.data, ...(item.studentId ? { studentId: item.studentId } : {}) })), dto.paymentMethod) }
@@ -42,9 +45,21 @@ export class MvpController {
   @UseGuards(JwtGuard)
   @Delete('students/:id') removeStudent(@Req() request: any, @Param('id') id: string) { return this.mvp.revokeAccountStudent(request.user.sub, id) }
   @UseGuards(JwtGuard)
+  @Get('orders/:id/payment-status') paymentStatus(@Req() request: any, @Param('id') id: string) { return this.mvp.getPaymentStatus(request.user.sub, id) }
+  @UseGuards(JwtGuard)
   @Post('orders/:id/pay') pay(@Req() request: any, @Param('id') id: string, @Body() dto: PayDto) { return this.mvp.payOrder(request.user.sub, id, dto.method, dto.proof, dto.channel) }
   @UseGuards(JwtGuard)
-  @Post('orders/:id/payment-intent') paymentIntent(@Req() request: any, @Param('id') id: string, @Body() dto: PaymentIntentDto) { return this.mvp.createPaymentIntent(request.user.sub, id, dto.channel) }
+  @Post('orders/:id/payment-intent') paymentIntent(@Req() request: any, @Param('id') id: string, @Body() dto: PaymentIntentDto) { return this.mvp.createPaymentIntent(request.user.sub, id, dto.channel, request.ip) }
+
+  @Post('payments/wechat/notify') wechatPaymentNotify(@Req() request: any) {
+    const notification = verifyWechatNotification(request.headers || {}, request.rawBody || JSON.stringify(request.body || {}))
+    return this.mvp.confirmExternalPayment({ channel: 'wechat', ...notification }).then(() => ({ code: 'SUCCESS', message: '成功' }))
+  }
+  @Post('payments/alipay/notify') async alipayPaymentNotify(@Body() body: Record<string, any>) {
+    const notification = verifyAlipayNotification(body)
+    await this.mvp.confirmExternalPayment({ channel: 'alipay', ...notification })
+    return 'success'
+  }
   @UseGuards(JwtGuard)
   @Post('orders/:id/payment-proof')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
@@ -71,7 +86,13 @@ export class MvpController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
   courseImageUpload(@Req() request: any, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择课程图片'); return this.mvp.uploadCourseImage(file, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
+  @Post('admin/uploads/payment-qr/:channel')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
+  paymentQrUpload(@Req() request: any, @Param('channel') channel: string, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择收款码图片'); if (channel !== 'wechat' && channel !== 'alipay') throw new BadRequestException('收款码渠道不合法'); return this.mvp.uploadPaymentQr(channel, file, request.user.username) }
+  @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/dashboard') dashboard() { return this.mvp.dashboard() }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Get('admin/integration-readiness') integrationReadiness() { return { generatedAt: new Date().toISOString(), channels: getIntegrationReadiness(), passwordReset: getPasswordResetReadiness() } }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/orders') adminOrders(@Query('keyword') keyword?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listAdminOrdersPage(keyword, Number(page || 1), Number(pageSize || 20), status) }
   @UseGuards(JwtGuard, AdminGuard)

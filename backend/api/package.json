@@ -7,6 +7,10 @@
     "test": "jest --runInBand",
     "db:generate": "prisma generate",
     "db:migrate": "node prisma/migrate.js",
+    "db:prepare:postgres": "node prisma/prepare-postgresql.cjs",
+    "db:migrate:postgres": "prisma migrate deploy --schema prisma/postgresql/schema.prisma",
+    "db:export:postgres": "node prisma/export-postgresql.cjs",
+    "db:import:postgres": "node prisma/import-postgresql.cjs",
     "db:prisma-migrate": "prisma migrate dev --name init",
     "db:seed": "node prisma/seed.js",
     "db:init": "prisma generate && node prisma/migrate.js && node prisma/seed.js"

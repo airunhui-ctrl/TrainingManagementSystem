@@ -5,7 +5,12 @@ import { mkdirSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 
 const databaseUrl = () => {
-  const raw = process.env.DATABASE_FILE || process.env.DATABASE_URL || './data/training.db'
+  const configuredUrl = String(process.env.DATABASE_URL || '').trim()
+  // Prisma Client is generated for the selected provider at build/deploy time.
+  // Keep local SQLite compatibility, but do not reinterpret a PostgreSQL/MySQL
+  // connection string as a filesystem path.
+  if (/^(postgres(ql)?|mysql):\/\//i.test(configuredUrl)) return configuredUrl
+  const raw = process.env.DATABASE_FILE || configuredUrl || './data/training.db'
   const value = raw.replace(/^file:/, '')
   const filePath = isAbsolute(value) ? value : resolve(process.cwd(), value)
   mkdirSync(dirname(filePath), { recursive: true })

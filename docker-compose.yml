@@ -1,0 +1,79 @@
+name: training-management
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-training_management}
+      POSTGRES_USER: ${POSTGRES_USER:-training_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.docker}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api-migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    restart: "no"
+    env_file:
+      - .env.docker
+    command: ["pnpm", "--dir", "backend/api", "db:migrate:postgres"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    expose:
+      - "3100"
+    volumes:
+      - upload_data:/app/backend/api/storage
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/courses').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  admin:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      target: admin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  h5:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      target: h5
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    name: training-management-postgres
+  upload_data:
+    name: training-management-uploads

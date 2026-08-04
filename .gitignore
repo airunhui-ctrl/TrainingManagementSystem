@@ -8,6 +8,8 @@ Thumbs.db
 # 项目文档、功能清单、计划和本地输出仅供本地协作，不提交到 GitHub
 /Docs/
 .env
+*.env.docker
+/.env.docker
 backend/api/data/*.db
 backend/api/data/*.db-shm
 backend/api/data/*.db-wal

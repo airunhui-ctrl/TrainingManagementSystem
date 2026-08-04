@@ -42,7 +42,7 @@ test('旧 AppState/文本日期数据库可无损迁移到 Prisma 结构化表',
     const result = check.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name=?").get(table) as { count: number }
     expect(result.count).toBe(1)
   }
-  expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(6)
+  expect((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(8)
   expect((check.prepare('SELECT COUNT(*) AS count FROM "Order" WHERE participants IS NOT NULL').get() as { count: number }).count).toBeGreaterThan(0)
   check.close()
   rmSync(dir, { recursive: true, force: true })

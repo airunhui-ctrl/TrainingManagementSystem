@@ -10,7 +10,7 @@ type TemplateOption = { id: string; name: string }
 type TemplateField = { key: string; label: string; type: 'text' | 'phone' | 'select' | 'radio' | 'checkbox'; required: boolean; options?: string[] }
 type TemplateForm = { id?: string; name: string; fields: TemplateField[] }
 type BannerForm = { id?: string; title: string; courseId: string; sort: string; enabled: boolean; startsAt: string; endsAt: string }
-type PaymentForm = { accountName: string; bankName: string; accountNo: string; qrCodeText: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }
+type PaymentForm = { accountName: string; bankName: string; accountNo: string; qrCodeText: string; wechatQrImage: string; alipayQrImage: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }
 type RuleForm = { id?: string; minPeople: string; discountRate: string; courseIds: string; enabled: boolean }
 type MessageForm = { id?: string; title: string; content: string; channel: string; enabled: boolean }
 type ConfigForm = { key: string; value: string; description: string }
@@ -57,6 +57,7 @@ const modules: Module[] = [
   { key: 'invoices', label: '开票管理', endpoint: '/admin/invoices' },
   { key: 'students', label: '学员管理', endpoint: '/admin/student-profiles' },
   { key: 'users', label: '用户管理', endpoint: '/admin/users' },
+  { key: 'readiness', label: '渠道自检', endpoint: '/admin/integration-readiness' },
   { key: 'payment', label: '支付设置', endpoint: '/admin/payment-settings', editable: true },
   { key: 'rules', label: '运营优惠', endpoint: '/admin/discount-rules', editable: true },
   { key: 'feedbacks', label: '反馈管理', endpoint: '/admin/feedbacks' },
@@ -69,7 +70,7 @@ const navGroups: NavGroup[] = [
   { key: 'content', label: '内容与课程', icon: '课', moduleKeys: ['banners', 'courses', 'templates'] },
   { key: 'business', label: '报名与交易', icon: '业', moduleKeys: ['enrollments', 'enrollment-details', 'orders', 'invoices'] },
   { key: 'users', label: '用户与运营', icon: '人', moduleKeys: ['students', 'users', 'rules', 'feedbacks', 'messages', 'points'] },
-  { key: 'system', label: '系统管理', icon: '设', moduleKeys: ['payment', 'configs', 'audits'] },
+  { key: 'system', label: '系统管理', icon: '设', moduleKeys: ['readiness', 'payment', 'configs', 'audits'] },
 ]
 const serverPagedModules = new Set(['courses', 'orders', 'invoices', 'users', 'feedbacks', 'enrollment-details', 'students'])
 const PAGE_SIZE = 5
@@ -83,7 +84,7 @@ const defaultTemplateFields = [
 ]
 const emptyTemplateForm = (): TemplateForm => ({ name: '', fields: defaultTemplateFields.map(field => ({ ...field, options: field.options ? [...field.options] : undefined })) as TemplateField[] })
 const emptyBannerForm = (sort = '1'): BannerForm => ({ title: '', courseId: '', sort, enabled: true, startsAt: '', endsAt: '' })
-const emptyPaymentForm = (): PaymentForm => ({ accountName: '', bankName: '', accountNo: '', qrCodeText: '', onlineWechatEnabled: true, onlineAlipayEnabled: true })
+const emptyPaymentForm = (): PaymentForm => ({ accountName: '', bankName: '', accountNo: '', qrCodeText: '', wechatQrImage: '', alipayQrImage: '', onlineWechatEnabled: true, onlineAlipayEnabled: true })
 const emptyRuleForm = (): RuleForm => ({ minPeople: '2', discountRate: '0.9', courseIds: '', enabled: true })
 const emptyMessageForm = (): MessageForm => ({ title: '', content: '', channel: '站内消息', enabled: true })
 const emptyConfigForm = (): ConfigForm => ({ key: '', value: '', description: '' })
@@ -122,6 +123,7 @@ const moduleColumns: Record<string, string[]> = {
   rules: ['id', 'minPeople', 'discountRate', 'courseIds', 'enabled'],
   feedbacks: ['id', 'userId', 'category', 'content', 'status', 'reply', 'createdAt'],
   payment: ['accountName', 'bankName', 'accountNo', 'qrCodeText', 'onlineWechatEnabled', 'onlineAlipayEnabled'],
+  readiness: [],
   messages: ['id', 'title', 'channel', 'enabled', 'sentCount'],
   points: ['userId', 'userName', 'points'],
   configs: ['key', 'value', 'description'],
@@ -287,6 +289,15 @@ function App() {
     if (!file.type.startsWith('image/')) return flash('请选择图片文件')
     if (file.size > 5 * 1024 * 1024) return flash('课程图片不能超过 5MB')
     try { const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', file); updateCourseField('image', result.url); flash('课程图片已上传') } catch (error) { flash(error instanceof Error ? error.message : '课程图片上传失败') }
+  }
+  const uploadPaymentQr = async (channel: 'wechat' | 'alipay', file: File) => {
+    if (!file.type.startsWith('image/')) return flash('请选择图片文件')
+    if (file.size > 5 * 1024 * 1024) return flash('收款码图片不能超过 5MB')
+    try {
+      const result = await apiUpload<{ url: string }>(`/admin/uploads/payment-qr/${channel}`, file)
+      setPaymentForm(current => ({ ...current, [channel === 'wechat' ? 'wechatQrImage' : 'alipayQrImage']: result.url }))
+      flash(`${channel === 'wechat' ? '微信' : '支付宝'}收款码已上传`)
+    } catch (error) { flash(error instanceof Error ? error.message : '收款码上传失败') }
   }
 
   const openTemplateEditor = (item?: TableItem) => {
@@ -499,6 +510,7 @@ function App() {
       </header>
       {active === 'dashboard' ? <Dashboard data={data} onNavigate={navigate} /> : <section className="panel data-panel list-page">
         <nav className="module-breadcrumb" aria-label="页面导航"><span>六边形培训管理端</span><b>›</b><span>{activeNavGroup?.label || '管理导航'}</span><b>›</b><strong>{current.label}</strong></nav>
+        {active === 'readiness' ? <IntegrationReadinessPanel data={data} onRefresh={() => load()} /> : <>
         <section className="list-section search-section" aria-label="搜索条件">
           <div className="search-toolbar">
             <input value={tableKeyword} onChange={event => { setTableKeyword(event.target.value); setPage(1) }} onKeyDown={event => { if (event.key === 'Enter') { setPage(1); setQueryKeyword(tableKeyword.trim()); load(1, tableKeyword.trim(), statusFilter) } }} placeholder="搜索当前列表" />
@@ -516,11 +528,12 @@ function App() {
          </section>
          <div className="list-footer"><div className="pagination"><span>共 {totalItems} 条，第 {Math.min(page, totalPages)} / {totalPages} 页（每页 {PAGE_SIZE} 条）</span><div><button disabled={page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>上一页</button><button disabled={page >= totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>下一页</button></div></div></div>
          {active === 'enrollments' && <EnrollmentSummaryChart items={items} />}
+         </>}
        </section>}
       {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} submitting={courseSubmitting} onChange={updateCourseField} onUploadImage={uploadCourseImage} onClose={() => setCourseModalOpen(false)} onSave={saveCourse} onDelete={deleteCourse} />}
       {templateModalOpen && <TemplateModal form={templateForm} onChange={setTemplateForm} onFieldChange={updateTemplateField} onClose={() => setTemplateModalOpen(false)} onSave={saveTemplate} />}
       {bannerModalOpen && <BannerModal form={bannerForm} courses={courseOptions} onChange={setBannerForm} onClose={() => setBannerModalOpen(false)} onSave={saveBanner} onDelete={deleteBanner} />}
-      {paymentModalOpen && <PaymentModal form={paymentForm} onChange={setPaymentForm} onClose={() => setPaymentModalOpen(false)} onSave={savePayment} />}
+      {paymentModalOpen && <PaymentModal form={paymentForm} onChange={setPaymentForm} onUploadQr={uploadPaymentQr} onClose={() => setPaymentModalOpen(false)} onSave={savePayment} />}
       {ruleModalOpen && <RuleModal form={ruleForm} courses={courseOptions} onChange={setRuleForm} onClose={() => setRuleModalOpen(false)} onSave={saveRule} />}
       {messageModalOpen && <MessageModal form={messageForm} onChange={setMessageForm} onClose={() => setMessageModalOpen(false)} onSave={saveMessage} />}
       {configModalOpen && <ConfigModal form={configForm} onChange={setConfigForm} onClose={() => setConfigModalOpen(false)} onSave={saveConfig} />}
@@ -576,9 +589,26 @@ function BannerModal({ form, courses, onChange, onClose, onSave, onDelete }: { f
   </SimpleModal>
 }
 
-function PaymentModal({ form, onChange, onClose, onSave }: { form: PaymentForm; onChange: (form: PaymentForm) => void; onClose: () => void; onSave: () => void }) {
-  return <SimpleModal title="支付设置" description="维护线下收款信息和可用的模拟支付渠道" onClose={onClose}>
-    <div className="course-form-grid"><label>收款户名<input value={form.accountName} onChange={event => onChange({ ...form, accountName: event.target.value })} /></label><label>开户银行<input value={form.bankName} onChange={event => onChange({ ...form, bankName: event.target.value })} /></label><label>银行账号<input value={form.accountNo} onChange={event => onChange({ ...form, accountNo: event.target.value })} /></label><label>收款码文本<input value={form.qrCodeText} onChange={event => onChange({ ...form, qrCodeText: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.onlineWechatEnabled} onChange={event => onChange({ ...form, onlineWechatEnabled: event.target.checked })} /><span>启用微信模拟支付</span></label><label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.onlineAlipayEnabled} onChange={event => onChange({ ...form, onlineAlipayEnabled: event.target.checked })} /><span>启用支付宝模拟支付</span></label></div>
+function IntegrationReadinessPanel({ data, onRefresh }: { data: any; onRefresh: () => void }) {
+  const channels = data?.channels || {}
+  const entries = [
+    { key: 'wechatLogin', label: '微信登录', value: channels.wechatLogin },
+    { key: 'wechatPayment', label: `微信支付（${String(channels.wechatPayment?.product || 'h5').toUpperCase()}）`, value: channels.wechatPayment },
+    { key: 'alipayPayment', label: '支付宝支付（WAP）', value: channels.alipayPayment },
+    { key: 'passwordReset', label: '找回密码渠道', value: data?.passwordReset },
+  ]
+  const status = (value: any) => value?.productionSafe ? { label: '生产可用', className: 'readiness-ready' } : value?.configured ? { label: '内测可用', className: 'readiness-test' } : { label: '未配置', className: 'readiness-missing' }
+  return <section className="readiness-panel">
+    <div className="readiness-head"><div><h2>渠道与找回密码配置自检</h2><p>只展示配置状态和缺失项，不会显示任何密钥内容。</p></div><button type="button" className="query-button" onClick={onRefresh}>重新检查</button></div>
+    <div className="readiness-grid">{entries.map(entry => { const state = status(entry.value); return <article className="readiness-card" key={entry.key}><div className="readiness-card-head"><h3>{entry.label}</h3><span className={state.className}>{state.label}</span></div><div className="readiness-meta"><span>适配器：{String(entry.value?.adapter || entry.value?.mode || '-')}</span>{entry.value?.callbackHttps !== undefined && <span>回调 HTTPS：{entry.value.callbackHttps ? '是' : '否'}</span>}{entry.value?.returnUrlHttps !== undefined && <span>返回 HTTPS：{entry.value.returnUrlHttps ? '是' : '否'}</span>}</div>{Array.isArray(entry.value?.missing) && entry.value.missing.length ? <div className="readiness-missing-list"><b>缺少配置</b>{entry.value.missing.map((item: string) => <code key={item}>{item}</code>)}</div> : <p className="readiness-ok">当前没有发现缺失项。</p>}</article> })}</div>
+    <div className="readiness-foot"><span>检查时间：{data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : '尚未检查'}</span><span>生产在线支付必须使用商户配置和公网 HTTPS 回调；个人收款码仅用于线下凭证审核。</span></div>
+  </section>
+}
+
+function PaymentModal({ form, onChange, onUploadQr, onClose, onSave }: { form: PaymentForm; onChange: (form: PaymentForm) => void; onUploadQr: (channel: 'wechat' | 'alipay', file: File) => void; onClose: () => void; onSave: () => void }) {
+  const qrField = (channel: 'wechat' | 'alipay', label: string, value: string) => <label className="wide-field course-image-field">{label}收款码图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0]; if (file) void onUploadQr(channel, file); event.target.value = '' }} /><small className="field-hint">用于个人收款码线下转账；上传后 C 端会展示，支付仍需上传凭证并由管理端审核。</small>{value && <img className="course-image-preview payment-qr-preview" src={value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/api\/?$/, '')}${value}`} alt={`${label}收款码预览`} />}</label>
+  return <SimpleModal title="支付设置" description="维护对公转账和个人收款码的线下支付信息；在线支付需另行配置商户渠道" onClose={onClose}>
+    <div className="course-form-grid"><label>收款户名<input value={form.accountName} onChange={event => onChange({ ...form, accountName: event.target.value })} /></label><label>开户银行<input value={form.bankName} onChange={event => onChange({ ...form, bankName: event.target.value })} /></label><label>银行账号<input value={form.accountNo} onChange={event => onChange({ ...form, accountNo: event.target.value })} /></label><label>转账备注/收款码文本<input value={form.qrCodeText} onChange={event => onChange({ ...form, qrCodeText: event.target.value })} /></label>{qrField('wechat', '微信', form.wechatQrImage)}{qrField('alipay', '支付宝', form.alipayQrImage)}<label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.onlineWechatEnabled} onChange={event => onChange({ ...form, onlineWechatEnabled: event.target.checked })} /><span>启用微信在线支付（需商户配置）</span></label><label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.onlineAlipayEnabled} onChange={event => onChange({ ...form, onlineAlipayEnabled: event.target.checked })} /><span>启用支付宝在线支付（需商户配置）</span></label></div>
     <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button type="button" className="primary" onClick={onSave}>保存支付设置</button></div>
   </SimpleModal>
 }

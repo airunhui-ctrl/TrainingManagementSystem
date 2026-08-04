@@ -28,8 +28,8 @@
             <label v-if="order.status === '已支付'" class="invoice-check"><checkbox :checked="selectedInvoiceOrderIds.includes(order.id)" color="#2F80ED" @tap.stop="toggleInvoiceOrder(order.id, !selectedInvoiceOrderIds.includes(order.id))" /><text>选择开票</text></label>
             <button v-if="order.status === '已支付' && !invoicedOrderIds.has(order.id)" class="outline-button" @tap="openInvoiceDialog(order.id)">申请开票</button>
             <text v-if="order.status === '已支付' && invoicedOrderIds.has(order.id)" class="invoice-done">已提交开票</text>
-            <button v-if="order.status === '待支付'" class="primary-button" @tap="payOnline(order.id, 'wechat')">微信模拟支付</button>
-            <button v-if="order.status === '待支付'" class="outline-button" @tap="payOnline(order.id, 'alipay')">支付宝模拟支付</button>
+            <button v-if="order.status === '待支付'" class="primary-button" @tap="payOnline(order.id, 'wechat')">微信支付</button>
+            <button v-if="order.status === '待支付'" class="outline-button" @tap="payOnline(order.id, 'alipay')">支付宝支付</button>
             <button v-if="order.status === '待支付' || order.status === '待审核'" class="offline-button" @tap="openPaymentProofModal(order.id)">{{ order.status === '待审核' ? '查看/重新上传凭证' : '提交线下支付凭证' }}</button>
             <button v-if="order.status === '待支付' || order.status === '待审核'" class="text-button" @tap="cancelOrder(order.id)">取消报名</button>
           </view>
@@ -71,6 +71,14 @@
               <view class="transfer-row"><text class="transfer-label">银行账号</text><text class="transfer-value">{{ paymentInfo.accountNo || '待配置' }}</text></view>
               <view v-if="paymentInfo.qrCodeText" class="transfer-row"><text class="transfer-label">收款备注</text><text class="transfer-value">{{ paymentInfo.qrCodeText }}</text></view>
             </view>
+            <view v-if="paymentInfo.wechatQrImage || paymentInfo.alipayQrImage" class="personal-qr-section">
+              <text class="personal-qr-title">个人收款码（线下转账）</text>
+              <text class="personal-qr-caption">请完成转账后上传付款凭证，管理端审核通过后订单才会到账。</text>
+              <view class="personal-qr-grid">
+                <view v-if="paymentInfo.wechatQrImage" class="personal-qr-card"><text>微信收款码</text><image :src="apiAssetUrl(paymentInfo.wechatQrImage)" mode="aspectFit" /></view>
+                <view v-if="paymentInfo.alipayQrImage" class="personal-qr-card"><text>支付宝收款码</text><image :src="apiAssetUrl(paymentInfo.alipayQrImage)" mode="aspectFit" /></view>
+              </view>
+            </view>
           </view>
           <view class="proof-section">
             <view class="section-heading"><view><text class="section-title">上传支付凭证</text><text class="section-caption">请上传清晰的银行回单或付款截图</text></view></view>
@@ -99,13 +107,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { api, type ApiCourse, uploadPaymentProof } from '../../common/api'
+import { api, apiAssetUrl, type ApiCourse, uploadPaymentProof } from '../../common/api'
+import { requestNativePayment } from '../../common/payment'
 
 type TabKey = 'payments' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
 type Invoice = { id: string; status: string; title?: string; invoiceNo?: string; orderIds?: string[]; createdAt: string }
 type Preview = { id: string; courseId: string; courseTitle: string; viewedAt: string }
-type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string; qrCodeText?: string; onlineWechatEnabled?: boolean; onlineAlipayEnabled?: boolean }
+type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string; qrCodeText?: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled?: boolean; onlineAlipayEnabled?: boolean }
 
 const tabs: Array<{ key: TabKey; label: string }> = [{ key: 'payments', label: '支付记录' }, { key: 'orders', label: '浏览记录' }, { key: 'invoices', label: '开票记录' }]
 const tab = ref<TabKey>('payments')
@@ -149,9 +158,17 @@ const loadAll = async () => {
 }
 const payOnline = async (id: string, channel: 'wechat' | 'alipay') => {
   try {
-    await api.payOrder(id, 'online', '', channel)
-    uni.showToast({ title: (channel === 'alipay' ? '支付宝' : '微信') + '支付成功', icon: 'none' })
-    await loadAll()
+    const intent = await api.createPaymentIntent(id, channel)
+    if (!intent.ready) { uni.showToast({ title: intent.message || '支付渠道尚未配置', icon: 'none' }); return }
+    const result = await requestNativePayment(intent)
+    if (result === 'redirected') { uni.showToast({ title: '已跳转支付，请完成付款后返回刷新订单', icon: 'none' }); return }
+    if (result === 'unavailable') { uni.showToast({ title: '当前设备无法打开支付，请在支持的微信/支付宝环境操作', icon: 'none' }); return }
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const status = await api.paymentStatus(id)
+      if (status.paid) { uni.showToast({ title: (channel === 'alipay' ? '支付宝' : '微信') + '支付成功', icon: 'none' }); await loadAll(); return }
+      if (attempt < 9) await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+    uni.showToast({ title: '暂未收到支付平台回调，请稍后刷新订单', icon: 'none' })
   } catch (error: any) { uni.showToast({ title: error?.message || '支付失败', icon: 'none' }) }
 }
 
@@ -274,6 +291,14 @@ onShow(loadAll)
 .transfer-row:last-child { border-bottom: 0; padding-bottom: 0; }
 .transfer-label { flex: 0 0 130rpx; color: $muted; font-size: 21rpx; }
 .transfer-value { flex: 1; color: $navy; font-size: 22rpx; line-height: 1.45; word-break: break-all; }
+.personal-qr-section { margin-top: 22rpx; padding-top: 20rpx; border-top: 1rpx solid #edf0f4; }
+.personal-qr-title, .personal-qr-caption { display: block; }
+.personal-qr-title { color: $navy; font-size: 22rpx; font-weight: 800; }
+.personal-qr-caption { margin-top: 7rpx; color: $muted; font-size: 19rpx; line-height: 1.45; }
+.personal-qr-grid { display: flex; flex-wrap: wrap; gap: 16rpx; margin-top: 16rpx; }
+.personal-qr-card { flex: 1 1 220rpx; min-width: 220rpx; padding: 14rpx; border-radius: 14rpx; background: #f8fafc; text-align: center; }
+.personal-qr-card text { display: block; color: $navy; font-size: 20rpx; font-weight: 700; }
+.personal-qr-card image { display: block; width: 220rpx; height: 220rpx; margin: 12rpx auto 0; background: #fff; }
 .upload-area { display: flex; align-items: center; justify-content: center; min-height: 280rpx; margin-top: 20rpx; border: 2rpx dashed #b9d7ff; border-radius: 16rpx; background: #f4f9ff; }
 .upload-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30rpx; }
 .upload-icon { width: 72rpx; height: 72rpx; border-radius: 50%; color: #fff; background: $blue; font-size: 54rpx; line-height: 68rpx; text-align: center; }

@@ -250,18 +250,52 @@ export class MvpService {
     if (!order) throw new NotFoundException('订单不存在')
     if (order.status === '已取消') throw new BadRequestException('已取消订单不能支付')
     if (method === 'offline') throw new BadRequestException('请在订单中上传线下支付凭证')
-    const updated = await this.db.order.update({ where: { id: orderId }, data: { paymentMethod: 'online', paymentChannel: channel || 'wechat', status: '已支付' }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
-    if (proof) await this.audit(userId, '提交支付标识', `${orderId} ${proof}`)
-    return this.orderView(updated)
+    // 在线支付不能由客户端回传“成功”直接改订单状态；必须等待微信/支付宝异步通知并完成验签。
+    throw new BadRequestException(`在线支付必须通过${channel === 'alipay' ? '支付宝' : '微信'}渠道回调确认，不能由客户端直接确认成功`)
   }
 
-  async createPaymentIntent(userId: string, orderId: string, channel: 'wechat' | 'alipay') {
+  async createPaymentIntent(userId: string, orderId: string, channel: 'wechat' | 'alipay', clientIp?: string) {
     const order = await this.db.order.findFirst({ where: { id: orderId, userId } })
     if (!order) throw new NotFoundException('订单不存在')
     if (order.status !== '待支付') throw new BadRequestException('当前订单状态不能发起支付')
     const provider = channel === 'wechat' ? 'wxpay' : 'alipay'
-    const intent = await createPaymentIntentAdapter(channel, order.amount, orderId)
+    const transaction = await this.db.paymentTransaction.upsert({
+      where: { outTradeNo: orderId },
+      create: { id: id('PAY'), orderId, channel, provider, outTradeNo: orderId, amount: order.amount, status: 'pending' },
+      update: { channel, provider, amount: order.amount, status: 'pending', updatedAt: new Date() },
+    })
+    const payer = channel === 'wechat' && String(process.env.WECHAT_PAY_PRODUCT || '').toLowerCase() === 'jsapi'
+      ? await this.db.user.findUnique({ where: { id: userId }, select: { wechatOpenId: true } })
+      : null
+    const intent = await createPaymentIntentAdapter(channel, order.amount, transaction.outTradeNo, { clientIp, openId: payer?.wechatOpenId || undefined })
+    await this.db.order.update({ where: { id: orderId }, data: { paymentMethod: 'online', paymentChannel: channel } })
+    await this.db.paymentTransaction.update({ where: { id: transaction.id }, data: { payload: JSON.stringify(intent.payload || {}) } })
     return { orderId, channel, provider, amount: order.amount, currency: 'CNY', ...intent }
+  }
+
+  async getPaymentStatus(userId: string, orderId: string) {
+    const order = await this.db.order.findFirst({ where: { id: orderId, userId }, include: { paymentTransactions: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+    if (!order) throw new NotFoundException('订单不存在')
+    const transaction = order.paymentTransactions[0]
+    return { orderId, orderStatus: order.status, paid: order.status === '已支付', channel: transaction?.channel || order.paymentChannel || null, providerTradeNo: transaction?.providerTradeNo || null, transactionStatus: transaction?.status || null }
+  }
+
+  async confirmExternalPayment(input: { channel: 'wechat' | 'alipay'; outTradeNo: string; providerTradeNo?: string; amount: number; payload?: Record<string, any> }) {
+    const transaction = await this.db.paymentTransaction.findUnique({ where: { outTradeNo: input.outTradeNo } })
+    if (!transaction) throw new NotFoundException('支付交易不存在')
+    if (transaction.channel !== input.channel) throw new BadRequestException('支付渠道与订单不一致')
+    if (Math.round(Number(input.amount) * 100) !== Math.round(transaction.amount * 100)) throw new BadRequestException('支付金额与订单金额不一致')
+    const order = await this.db.order.findUnique({ where: { id: transaction.orderId } })
+    if (!order) throw new NotFoundException('订单不存在')
+    if (order.status === '已取消') throw new BadRequestException('已取消订单不能确认支付')
+    if (order.status === '已支付' && transaction.status === 'paid') return this.orderView(await this.db.order.findUniqueOrThrow({ where: { id: order.id }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } }))
+    const updated = await this.db.$transaction(async (tx) => {
+      const item = await tx.paymentTransaction.update({ where: { id: transaction.id }, data: { status: 'paid', providerTradeNo: input.providerTradeNo || transaction.providerTradeNo, payload: JSON.stringify(input.payload || {}), paidAt: new Date() } })
+      const paidOrder = await tx.order.update({ where: { id: order.id }, data: { status: '已支付', paymentMethod: 'online', paymentChannel: input.channel }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      return { item, paidOrder }
+    })
+    await this.audit(`payment:${input.channel}`, '支付回调确认', `${order.id} ${updated.item.providerTradeNo || ''}`)
+    return this.orderView(updated.paidOrder)
   }
 
   async uploadPaymentProof(userId: string, orderId: string, file: { originalname: string; mimetype: string; size: number; buffer: Buffer }) {
@@ -875,8 +909,34 @@ export class MvpService {
     const item = await this.db.paymentSetting.findUnique({ where: { id: 'default' } })
     return json<Record<string, any>>(item?.payload, {})
   }
-  async getPublicPaymentSettings() { const item = await this.getPaymentSettings(); const { accountName, bankName, accountNo, qrCodeText, onlineWechatEnabled, onlineAlipayEnabled } = item; return { accountName, bankName, accountNo, qrCodeText, onlineWechatEnabled, onlineAlipayEnabled } }
+  async getPublicPaymentSettings() { const item = await this.getPaymentSettings(); const { accountName, bankName, accountNo, qrCodeText, wechatQrImage, alipayQrImage, onlineWechatEnabled, onlineAlipayEnabled } = item; return { accountName, bankName, accountNo, qrCodeText, wechatQrImage, alipayQrImage, onlineWechatEnabled, onlineAlipayEnabled } }
   async savePaymentSettings(payload: Record<string, any>, actor = 'admin') { const merged = { ...(await this.getPaymentSettings()), ...payload }; await this.db.paymentSetting.upsert({ where: { id: 'default' }, create: { id: 'default', payload: JSON.stringify(merged) }, update: { payload: JSON.stringify(merged) } }); await this.audit(actor, '支付设置更新', String(merged.accountName || 'default')); return merged }
+
+  async uploadPaymentQr(channel: 'wechat' | 'alipay', file: { originalname: string; mimetype: string; size: number; buffer: Buffer }, actor = 'admin') {
+    const allowed = new Set(['image/jpeg', 'image/png', 'image/webp'])
+    const max = Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024)
+    if (!file?.size || file.size > max) throw new BadRequestException(`收款码图片大小必须在 1 字节到 ${Math.floor(max / 1024 / 1024)}MB 之间`)
+    if (!allowed.has(String(file.mimetype || '').toLowerCase())) throw new BadRequestException('收款码图片仅支持 JPG、PNG 或 WEBP 格式')
+    const extension = extname(file.originalname).toLowerCase()
+    const safeExtension = extension === '.jpeg' ? '.jpg' : ['.jpg', '.png', '.webp'].includes(extension) ? extension : '.png'
+    const dir = resolve(process.env.UPLOAD_DIR || 'storage/payment-proofs', '..', 'payment-settings')
+    mkdirSync(dir, { recursive: true })
+    const storedName = `payment-${channel}-${Date.now()}-${randomBytes(4).toString('hex')}${safeExtension}`
+    writeFileSync(join(dir, storedName), file.buffer)
+    const url = `/api/media/payment-settings/${encodeURIComponent(storedName)}`
+    const key = channel === 'wechat' ? 'wechatQrImage' : 'alipayQrImage'
+    await this.savePaymentSettings({ [key]: url }, actor)
+    return { url, name: storedName, channel, originalName: basename(file.originalname), size: file.size, mimeType: file.mimetype }
+  }
+
+  async readPaymentSettingImage(name: string) {
+    const fileName = basename(String(name || ''))
+    if (!fileName || fileName !== String(name || '') || !/^payment-(wechat|alipay)-[A-Za-z0-9-]+\.(jpg|png|webp)$/.test(fileName)) throw new NotFoundException('收款码图片不存在')
+    const path = join(resolve(process.env.UPLOAD_DIR || 'storage/payment-proofs', '..', 'payment-settings'), fileName)
+    if (!existsSync(path)) throw new NotFoundException('收款码图片不存在')
+    const mimeType: Record<string, string> = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' }
+    return { buffer: readFileSync(path), mimeType: mimeType[extname(fileName).toLowerCase()] || 'application/octet-stream' }
+  }
 
   async listDiscountRules() { const items = await this.db.discountRule.findMany({ orderBy: { minPeople: 'asc' } }); return items.map((item) => ({ ...item, courseIds: json<string[]>(item.scopeCourseIds, []) })) }
   async saveDiscountRule(payload: Record<string, any>, actor = 'admin') { const ruleId = String(payload.id || id('rule')); const courseIds = Array.isArray(payload.courseIds) ? [...new Set(payload.courseIds.map(String).filter(Boolean))] : []; const data = { minPeople: Math.max(1, Number(payload.minPeople || 1)), discountRate: Math.max(0, Math.min(1, Number(payload.discountRate ?? 1))), scopeCourseIds: JSON.stringify(courseIds), enabled: payload.enabled !== false }; const item = await this.db.discountRule.upsert({ where: { id: ruleId }, create: { id: ruleId, ...data }, update: data }); await this.audit(actor, '优惠规则维护', JSON.stringify({ ...data, courseIds })); return { ...item, courseIds } }

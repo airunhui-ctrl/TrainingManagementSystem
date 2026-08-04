@@ -34,6 +34,7 @@ model User {
   accountStudents      AccountStudent[]
   enrollmentsAsAccount Enrollment[]     @relation("EnrollmentAccountUser")
   handledMigrationIssues StudentMigrationIssue[] @relation("MigrationIssueHandler")
+  passwordResetChallenges PasswordResetChallenge[]
 }
 
 model RefreshToken {
@@ -44,6 +45,23 @@ model RefreshToken {
   revokedAt DateTime?
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetChallenge {
+  id          String    @id
+  userId      String
+  targetType  String
+  targetValue String
+  codeHash    String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  usedAt      DateTime?
+  requestIp   String?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt, usedAt])
 }
 
 model Course {
@@ -102,10 +120,30 @@ model Order {
   user             User           @relation(fields: [userId], references: [id])
   course           Course         @relation(fields: [courseId], references: [id])
   paymentProofs    PaymentProof[]
+  paymentTransactions PaymentTransaction[]
   enrollments      Enrollment[]
 
   @@index([userId, createdAt])
   @@index([courseId, status])
+}
+
+model PaymentTransaction {
+  id               String   @id
+  orderId          String
+  channel          String
+  provider         String
+  outTradeNo       String   @unique
+  providerTradeNo  String?
+  amount           Float
+  status           String   @default("pending")
+  payload          String   @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  paidAt           DateTime?
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([channel, status, createdAt])
 }
 
 model PaymentProof {

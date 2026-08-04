@@ -1,18 +1,25 @@
 <template>
   <view class="page">
-    <view class="logo">六</view>
-    <text class="title">欢迎来到六边形培训</text>
-    <text class="desc">登录后即可报名、支付、开票和管理个人学习记录</text>
-    <view class="card form">
-      <text class="field-label">演示账号</text>
-      <input v-model="username" placeholder="demo / admin / operator" />
-      <text class="field-label">密码</text>
-      <input v-model="password" password placeholder="请输入密码" />
-      <button class="primary-btn" :loading="loading" @tap="login">登录</button>
-      <button class="wechat-btn" :loading="wechatLoading" @tap="wechatLogin">微信一键登录 / 注册</button>
-      <view class="quick"><text @tap="fill('demo')">C端用户</text><text @tap="fill('operator')">运营人员</text><text @tap="fill('admin')">管理员</text></view>
+    <view class="brand">
+      <view class="brand-mark">六</view>
+      <text class="brand-name">六边形培训管理</text>
     </view>
-    <text class="hint">MVP 演示密码统一为 123456</text>
+
+    <view class="card form-card">
+      <text class="title">登录</text>
+      <text class="desc">登录后即可报名、支付、开票和管理个人学习记录</text>
+
+      <view class="field">
+        <input v-model="username" class="field-input" placeholder="请输入账号" />
+      </view>
+      <view class="field password-field">
+        <input v-model="password" class="field-input" :password="!showPassword" placeholder="请输入密码" />
+        <text class="password-toggle" @tap="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</text>
+      </view>
+
+      <button class="primary-btn" :loading="loading" @tap="login">登录</button>
+      <view class="form-links"><text @tap="goRegister">立即注册</text><text @tap="goForgotPassword">忘记密码</text></view>
+    </view>
   </view>
 </template>
 
@@ -21,48 +28,46 @@ import { ref } from 'vue'
 import { api } from '../../common/api'
 import { useAuthStore } from '../../stores/auth'
 
-const username = ref('demo')
-const password = ref('123456')
+const username = ref('')
+const password = ref('')
+const showPassword = ref(false)
 const loading = ref(false)
-const wechatLoading = ref(false)
-const fill = (value: string) => { username.value = value; password.value = '123456' }
+
 const login = async () => {
-  if (!username.value || !password.value) return uni.showToast({ title: '请输入账号和密码', icon: 'none' })
+  if (!username.value.trim() || !password.value) {
+    uni.showToast({ title: '请输入账号和密码', icon: 'none' })
+    return
+  }
   loading.value = true
   try {
-    const result = await api.login(username.value, password.value)
+    const result = await api.login(username.value.trim(), password.value)
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
     uni.switchTab({ url: '/pages/index/index' })
-  } catch { uni.showToast({ title: '账号或密码错误', icon: 'none' }) } finally { loading.value = false }
+  } catch {
+    uni.showToast({ title: '账号或密码错误', icon: 'none' })
+  } finally {
+    loading.value = false
+  }
 }
-const getDeviceId = () => {
-  const key = 'wechat-device-id'
-  let value = String(uni.getStorageSync(key) || '')
-  if (!value) { value = `device-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; uni.setStorageSync(key, value) }
-  return value
-}
-const finishWechatLogin = async (code: string) => {
-  const profile: Record<string, any> = { deviceId: getDeviceId() }
-  const userProfile = (uni as any).getUserProfile
-  if (typeof userProfile === 'function') await new Promise<void>(resolve => userProfile({ desc: '用于完善培训报名资料', success: (response: any) => { Object.assign(profile, response?.userInfo || {}); resolve() }, fail: () => resolve() }))
-  const tokens = await api.wechatLogin(code, profile)
-  useAuthStore().setTokens(tokens.accessToken, tokens.refreshToken, tokens.user.username)
-  uni.showToast({ title: '微信登录成功', icon: 'none' })
-  setTimeout(() => uni.switchTab({ url: '/pages/index/index' }), 350)
-}
-const wechatLogin = () => {
-  if (wechatLoading.value) return
-  wechatLoading.value = true
-  uni.login({ provider: 'weixin', success: async result => {
-    try { await finishWechatLogin(String(result.code || '')) } catch (error: any) { uni.showToast({ title: error?.message || '微信登录失败，请稍后重试', icon: 'none' }) } finally { wechatLoading.value = false }
-  }, fail: async () => {
-    // H5 本地开发没有微信容器时，使用稳定设备标识联调后端 mock 适配接口；生产构建不走此分支。
-    if (!import.meta.env.DEV) { wechatLoading.value = false; uni.showToast({ title: '当前环境暂不支持微信登录，请使用微信客户端', icon: 'none' }); return }
-    try { await finishWechatLogin('') } catch (error: any) { uni.showToast({ title: error?.message || '微信登录失败，请稍后重试', icon: 'none' }) } finally { wechatLoading.value = false }
-  }})
-}
+const goRegister = () => uni.navigateTo({ url: '/pages/register-account/register-account' })
+const goForgotPassword = () => uni.navigateTo({ url: '/pages/forgot-password/forgot-password' })
 </script>
 
 <style scoped lang="scss">
-.page{min-height:100vh;padding:150rpx 50rpx 0;text-align:center}.logo{display:grid;place-items:center;width:128rpx;height:128rpx;margin:0 auto 28rpx;border-radius:40rpx;color:$navy;background:$yellow;font-size:52rpx;font-weight:900}.title{display:block;font-size:42rpx;font-weight:900}.desc{display:block;margin:12rpx 20rpx;color:$muted;font-size:23rpx;line-height:1.6}.form{padding:34rpx;margin-top:50rpx;text-align:left}.field-label{display:block;margin:12rpx 0;color:$muted;font-size:22rpx}.form input{height:82rpx;padding:0 24rpx;margin-bottom:12rpx;border:1rpx solid #DCE4EE;border-radius:14rpx;text-align:left}.primary-btn{width:100%;height:84rpx;line-height:84rpx;margin-top:20rpx}.wechat-btn{width:100%;height:78rpx;line-height:78rpx;margin-top:16rpx;border:1rpx solid #b7dfc8;border-radius:999rpx;color:#178a4f;background:#f1fff6;font-size:24rpx;font-weight:800}.wechat-btn::after{border:0}.quick{display:flex;justify-content:space-between;margin-top:26rpx;color:$blue;font-size:22rpx}.hint{display:block;margin-top:24rpx;color:$muted;font-size:20rpx}
+.page { box-sizing: border-box; min-height: 100vh; padding: 120rpx 40rpx 80rpx; background: #f7f8fa; }
+.brand { display: flex; align-items: center; justify-content: center; gap: 14rpx; margin-bottom: 48rpx; }
+.brand-mark { display: grid; place-items: center; width: 68rpx; height: 68rpx; border-radius: 20rpx; color: $navy; background: $yellow; font-size: 34rpx; font-weight: 900; }
+.brand-name { color: $navy; font-size: 32rpx; font-weight: 900; }
+.form-card { box-sizing: border-box; width: 100%; max-width: 720rpx; margin: 0 auto; padding: 54rpx 42rpx 48rpx; border-radius: 28rpx; background: #fff; box-shadow: 0 14rpx 48rpx rgba(27, 45, 75, .08); }
+.title { display: block; color: #111827; font-size: 42rpx; font-weight: 900; text-align: center; }
+.desc { display: block; margin: 14rpx 0 42rpx; color: $muted; font-size: 21rpx; line-height: 1.6; text-align: center; }
+.field { position: relative; margin-top: 20rpx; }
+.field-input { box-sizing: border-box; width: 100%; height: 82rpx; padding: 0 26rpx; border: 1rpx solid #dfe3e8; border-radius: 999rpx; color: #1f2937; background: #fafbfc; font-size: 24rpx; }
+.field-input:focus { border-color: #1f2937; background: #fff; }
+.password-field .field-input { padding-right: 100rpx; }
+.password-toggle { position: absolute; top: 0; right: 26rpx; height: 82rpx; color: #697386; font-size: 20rpx; line-height: 82rpx; }
+.primary-btn { width: 100%; height: 82rpx; margin-top: 34rpx; border: 0; border-radius: 999rpx; color: #fff; background: #111318; font-size: 26rpx; line-height: 82rpx; font-weight: 800; }
+.primary-btn::after { border: 0; }
+.form-links { display: flex; justify-content: space-between; margin-top: 28rpx; padding: 0 8rpx; color: #52627a; font-size: 22rpx; }
+.form-links text:last-child { color: #2c67c7; }
 </style>

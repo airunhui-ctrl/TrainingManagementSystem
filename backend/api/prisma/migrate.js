@@ -2,12 +2,16 @@ const { mkdirSync, readFileSync } = require('node:fs')
 const { dirname, isAbsolute, resolve } = require('node:path')
 const { DatabaseSync } = require('node:sqlite')
 
+const configuredUrl = String(process.env.DATABASE_URL || '').trim()
+if (/^(postgres(ql)?|mysql):\/\//i.test(configuredUrl)) {
+  throw new Error('SQLite 兼容迁移器不能处理 PostgreSQL/MySQL；请先运行 db:prepare:postgres，再使用 prisma migrate deploy')
+}
 const raw = process.env.DATABASE_FILE || process.env.DATABASE_URL || './data/training.db'
 const value = raw.replace(/^file:/, '')
 const dbPath = isAbsolute(value) ? value : resolve(process.cwd(), value)
 mkdirSync(dirname(dbPath), { recursive: true })
 const db = new DatabaseSync(dbPath)
-const migration = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql']
+const migration = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql', '0004_password_reset/migration.sql', '0005_payment_transactions/migration.sql']
   .map((file) => readFileSync(resolve(__dirname, 'migrations', file), 'utf8'))
   .join('\n')
 
@@ -49,7 +53,7 @@ if (normalized) {
     : ''
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${rebuildTemplateTable} ${migration}`)
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=6; COMMIT; PRAGMA foreign_keys=ON;')
+    db.exec('PRAGMA user_version=8; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite schema already current: ${dbPath}`)
   db.close()
   process.exit(0)
@@ -134,7 +138,7 @@ try {
 
   for (const name of [...tables].reverse()) { const backup = `__backup_${name}`; if (exists(backup)) db.exec(`DROP TABLE "${backup}"`) }
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=6; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=8; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite legacy data migrated: ${dbPath}`)
 } catch (error) {
   db.exec('ROLLBACK')

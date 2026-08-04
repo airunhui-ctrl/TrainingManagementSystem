@@ -15,7 +15,7 @@
 
     <view class="card menu">
       <view class="menu-row" @tap="openProfile"><view><text class="menu-title">个人资料</text><text class="menu-hint">姓名、联系方式、性别、企业信息</text></view><text class="arrow">›</text></view>
-      <view class="menu-row" @tap="openSecurity"><view><text class="menu-title">账号与安全</text><text class="menu-hint">登录账号、密码和微信绑定</text></view><text class="arrow">›</text></view>
+      <view class="menu-row" @tap="openSecurity"><view><text class="menu-title">账号与安全</text><text class="menu-hint">登录账号和密码</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="openStudents"><view><text class="menu-title">我的学员</text><text class="menu-hint">维护本人或代报名学员档案</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="showPoints"><view><text class="menu-title">我的积分</text><text class="menu-hint">查看当前积分和运营奖励说明</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="showFeedback"><view><text class="menu-title">问题反馈</text><text class="menu-hint">告诉我们你的使用建议</text></view><text class="arrow">›</text></view>
@@ -38,7 +38,7 @@
     <view v-if="securityModalOpen" class="modal-mask" @tap.self="closeSecurity">
       <view class="modal-card">
         <view class="modal-head"><view><text class="modal-title">账号与安全</text><text class="modal-subtitle">账号：{{ profile.username }}</text></view><text class="close" @tap="closeSecurity">×</text></view>
-        <view class="security-tip"><text>微信绑定</text><text class="bound">{{ profile.username.startsWith('wx_') ? '已绑定' : '可通过微信一键登录绑定' }}</text></view>
+        <view class="security-tip"><text>登录方式</text><text class="bound">账号密码登录</text></view>
         <view class="security-tip"><text>最近登录</text><text>{{ profile.lastLoginAt ? formatDate(profile.lastLoginAt) : '暂无记录' }}</text></view>
         <view class="form-row"><text>新密码</text><input v-model="passwordForm.password" password maxlength="32" placeholder="至少 6 位" /></view>
         <view class="form-row"><text>确认密码</text><input v-model="passwordForm.confirm" password maxlength="32" placeholder="再次输入新密码" /></view>

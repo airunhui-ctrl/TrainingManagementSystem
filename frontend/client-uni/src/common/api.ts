@@ -88,7 +88,10 @@ function performUpload(orderId: string, filePath: string, retried: boolean): Pro
 
 export const api = {
   login: (username: string, password: string) => request<{ accessToken: string; refreshToken: string; user: { username: string } }>({ url: '/auth/login', method: 'POST', data: { username, password } }),
-  wechatLogin: (code: string, profile: Record<string, any>) => request<{ accessToken: string; refreshToken: string; user: { username: string; role: string } }>({ url: '/auth/wechat-login', method: 'POST', data: { code, profile } }),
+  register: (data: { username: string; password: string; confirmPassword: string; name?: string; phone?: string; email?: string }) => request<{ accessToken: string; refreshToken: string; user: { username: string; role: string } }>({ url: '/auth/register', method: 'POST', data }),
+  requestPasswordReset: (identifier: string) => request<{ accepted: boolean; challengeId: string; message: string; devCode?: string }>({ url: '/auth/password-reset/request', method: 'POST', data: { identifier } }),
+  confirmPasswordReset: (data: { challengeId: string; code: string; newPassword: string; confirmPassword: string }) => request<{ success: boolean; message: string }>({ url: '/auth/password-reset/confirm', method: 'POST', data }),
+  wechatLogin: (code: string, profile: Record<string, any>, scene?: 'mini_program' | 'h5' | 'official_account') => request<{ accessToken: string; refreshToken: string; user: { username: string; role: string } }>({ url: '/auth/wechat-login', method: 'POST', data: { code, profile, ...(scene ? { scene } : {}) } }),
   listCourses: (params?: { keyword?: string; category?: string }) => request<{ items: ApiCourse[] }>({ url: '/courses', data: params }),
   listBanners: () => request<{ items: ApiBanner[] }>({ url: '/banners' }),
   getCourse: (id: string) => request<ApiCourse>({ url: `/courses/${id}` }),
@@ -104,6 +107,7 @@ export const api = {
   removeStudent: (id: string) => request<Record<string, any>>({ url: `/students/${id}`, method: 'DELETE' }),
   payOrder: (id: string, method: 'online' | 'offline', proof?: string, channel?: 'wechat' | 'alipay') => request<{ status: string }>({ url: `/orders/${id}/pay`, method: 'POST', data: { method, proof, channel } }),
   createPaymentIntent: (id: string, channel: 'wechat' | 'alipay') => request<PaymentIntent>({ url: `/orders/${id}/payment-intent`, method: 'POST', data: { channel } }),
+  paymentStatus: (id: string) => request<{ orderId: string; orderStatus: string; paid: boolean; channel?: string | null; providerTradeNo?: string | null; transactionStatus?: string | null }>({ url: `/orders/${id}/payment-status` }),
   uploadPaymentProof,
   cancelOrder: (id: string) => request<{ status: string }>({ url: `/orders/${id}/cancel`, method: 'POST' }),
   profile: () => request<{ id: string; username: string; name: string; company: string; phone: string; gender: string; email: string; avatarText: string; points: number; registeredAt: string; lastLoginAt?: string | null }>({ url: '/profile' }),
@@ -112,6 +116,6 @@ export const api = {
   submitFeedback: (content: string) => request<{ id: string }>({ url: '/feedback', method: 'POST', data: { content, category: '建议反馈' } }),
   listInvoices: () => request<{ items: Array<{ id: string; status: string; title: string; taxNo?: string; email?: string; invoiceNo?: string; orderIds?: string[]; createdAt: string }> }>({ url: '/invoices' }),
   createInvoice: (title: string, taxNo: string, email: string, orderIds: string[] = []) => request<{ id: string }>({ url: '/invoices', method: 'POST', data: { title, taxNo, email, orderIds } }),
-  paymentInfo: () => request<{ accountName: string; bankName: string; accountNo: string; qrCodeText: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }>({ url: '/payment-settings/public' }),
+  paymentInfo: () => request<{ accountName: string; bankName: string; accountNo: string; qrCodeText: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }>({ url: '/payment-settings/public' }),
   recordPreview: (courseId: string) => request<{ id: string }>({ url: `/courses/${courseId}/preview`, method: 'POST' }),
 }
