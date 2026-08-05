@@ -23,7 +23,8 @@ services:
     restart: "no"
     env_file:
       - .env.docker
-    command: ["pnpm", "--dir", "backend/api", "db:migrate:postgres"]
+    # Dockerfile.api sets WORKDIR to /app/backend/api in the runtime image.
+    command: ["pnpm", "db:migrate:postgres"]
     depends_on:
       postgres:
         condition: service_healthy
