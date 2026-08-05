@@ -17,7 +17,16 @@ if (sha256 && sha256 !== expectedHash) throw new Error(`导出文件 SHA-256 校
 const dateFields = { User: ['lastLoginAt', 'registeredAt', 'createdAt', 'updatedAt'], RefreshToken: ['expiresAt', 'revokedAt', 'createdAt'], Course: ['createdAt', 'updatedAt'], RegistrationTemplate: ['updatedAt'], RegistrationTemplateVersion: ['publishedAt', 'createdAt'], Order: ['createdAt', 'updatedAt'], PaymentTransaction: ['createdAt', 'updatedAt', 'paidAt'], PaymentProof: ['createdAt', 'reviewedAt'], Invoice: ['createdAt', 'processedAt'], Preview: ['viewedAt'], Feedback: ['createdAt', 'repliedAt'], PointLedger: ['createdAt'], Message: ['createdAt'], AuditLog: ['createdAt'], Banner: ['createdAt', 'updatedAt'], PaymentSetting: ['updatedAt'], DiscountRule: ['updatedAt'], SystemConfig: ['updatedAt'], Student: ['createdAt', 'updatedAt'], StudentMigrationBatch: ['startedAt', 'completedAt', 'createdAt', 'updatedAt'], StudentMigrationIssue: ['handledAt', 'createdAt'], AccountStudent: ['revokedAt', 'createdAt', 'updatedAt'], Enrollment: ['registeredAt', 'cancelledAt', 'completedAt', 'createdAt', 'updatedAt'], PasswordResetChallenge: ['expiresAt', 'usedAt', 'createdAt'] }
 const booleanFields = { User: ['enabled'], Message: ['enabled'], Banner: ['enabled'], DiscountRule: ['enabled'], Course: ['allowMultiParticipant'], AccountStudent: ['isDefault'] }
 const asDate = (value) => { if (value === null || value === undefined || value === '') return null; const numeric = typeof value === 'number' || /^\d+$/.test(String(value)) ? Number(value) : NaN; const date = Number.isFinite(numeric) && numeric > 10_000_000_000 ? new Date(numeric) : new Date(value); if (Number.isNaN(date.getTime())) throw new Error(`无法转换日期：${value}`); return date }
-const normalizeRow = (table, row) => { const result = { ...row }; for (const field of dateFields[table] || []) if (field in result) result[field] = asDate(result[field]); for (const field of booleanFields[table] || []) if (field in result && result[field] !== null) result[field] = Boolean(Number(result[field])); return result }
+const normalizeRow = (table, row) => {
+  const result = { ...row }
+  // SQLite keeps a legacy RegistrationTemplate.courseId column, while the
+  // PostgreSQL schema models the relation from Course.registrationTemplateId.
+  // Drop the legacy field before passing data to Prisma.
+  if (table === 'RegistrationTemplate') delete result.courseId
+  for (const field of dateFields[table] || []) if (field in result) result[field] = asDate(result[field])
+  for (const field of booleanFields[table] || []) if (field in result && result[field] !== null) result[field] = Boolean(Number(result[field]))
+  return result
+}
 const importOrder = ['User', 'Course', 'RegistrationTemplate', 'RegistrationTemplateVersion', 'SystemConfig', 'DiscountRule', 'Message', 'Banner', 'AuditLog', 'Student', 'StudentMigrationBatch', 'StudentMigrationIssue', 'AccountStudent', 'Order', 'PaymentTransaction', 'PaymentProof', 'Invoice', 'Preview', 'Feedback', 'PointLedger', 'Enrollment']
 const skippedTables = ['RefreshToken', 'PasswordResetChallenge']
 const modelName = (table) => table[0].toLowerCase() + table.slice(1)
