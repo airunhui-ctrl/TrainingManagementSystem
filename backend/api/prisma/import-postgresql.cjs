@@ -26,7 +26,26 @@ async function main() {
   const imported = {}
   try {
     await db.$connect()
-    await db.$transaction(async (tx) => { for (const table of importOrder) { const rows = (snapshot.tables[table] || []).map((row) => normalizeRow(table, row)); if (!rows.length) { imported[table] = 0; continue }; imported[table] = (await tx[modelName(table)].createMany({ data: rows, skipDuplicates: true })).count } }, { timeout: 120000 })
+    await db.$transaction(async (tx) => {
+      // Course.registrationTemplateId and RegistrationTemplate.courseId form a
+      // cycle. Insert courses without the optional template FK first, import
+      // templates (which require the course), then restore the FK values.
+      const deferredCourseTemplateIds = new Map()
+      for (const table of importOrder) {
+        let rows = (snapshot.tables[table] || []).map((row) => normalizeRow(table, row))
+        if (table === 'Course') {
+          rows = rows.map((row) => {
+            if (row.registrationTemplateId) deferredCourseTemplateIds.set(row.id, row.registrationTemplateId)
+            return { ...row, registrationTemplateId: null }
+          })
+        }
+        if (!rows.length) { imported[table] = 0; continue }
+        imported[table] = (await tx[modelName(table)].createMany({ data: rows, skipDuplicates: true })).count
+      }
+      for (const [courseId, registrationTemplateId] of deferredCourseTemplateIds) {
+        await tx.course.update({ where: { id: courseId }, data: { registrationTemplateId } })
+      }
+    }, { timeout: 120000 })
     const counts = {}; for (const table of importOrder) counts[table] = await db[modelName(table)].count()
     console.log(JSON.stringify({ input, imported, counts, skippedTables, sourceCounts: snapshot.counts, sha256 }, null, 2))
   } finally { await db.$disconnect() }
