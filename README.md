@@ -45,7 +45,9 @@ docker compose --env-file .env.docker build
 docker compose --env-file .env.docker up -d
 ```
 
-内网地址：管理端 `http://服务器IP:8080`，C 端 H5 `http://服务器IP:8081`。SQLite 到 PostgreSQL 的迁移、备份和回滚步骤见 `Docs/Summary/2026-08-04_DockerCompose单机部署实施方案.md`。
+内网地址：管理端 `http://服务器IP:18080`，C 端 H5 `http://服务器IP:18081`。这两个端口用于避开服务器常见的 8080/8081 占用；如需更换端口，请同步修改 `docker-compose.yml` 和防火墙规则。SQLite 到 PostgreSQL 的迁移、备份和回滚步骤见 `Docs/Summary/2026-08-04_DockerCompose单机部署实施方案.md`。
+
+部署辅助脚本位于 `Docs/runtime/`，已在 `.gitignore` 中单独放行 `.sh/.ps1/.cmd` 脚本；提交代码前请确认这些脚本已被 Git 跟踪。服务器通过 GitHub 拉取后可直接执行 `Docs/runtime/verify-compose-release.sh`、`backup-postgres-docker.sh` 和 `restore-postgres-docker.sh`，无需再手工从本地复制脚本。
 
 默认 API 地址为 `http://localhost:3100/api`，可通过 `VITE_API_BASE_URL` 覆盖。演示账号：`admin/123456`、`operator/123456`、`demo/123456`。
 

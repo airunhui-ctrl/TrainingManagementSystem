@@ -2,13 +2,18 @@
   <view class="page">
     <view class="page-header">
       <view><text class="eyebrow">ORDER CENTER</text><text class="page-title">订单</text></view>
-      <text class="invoice-link" @tap="tab = 'invoices'">开票记录</text>
+      <view class="page-header-actions"><text class="invoice-link" @tap="tab = 'invoices'">开票记录</text><text class="refresh-link" :class="{ disabled: loadInFlight }" @tap="loadAll">刷新</text></view>
     </view>
     <view class="tabs">
       <text v-for="item in tabs" :key="item.key" :class="['tab', { active: tab === item.key }]" @tap="tab = item.key">{{ item.label }}</text>
     </view>
 
-    <view v-if="loading" class="card empty-state"><text>正在加载订单记录...</text></view>
+    <view v-if="loadError" class="card error-state">
+      <text class="error-title">业务数据加载失败</text>
+      <text class="error-hint">{{ loadError }}</text>
+      <button class="retry-button" @tap="loadAll">重新加载</button>
+    </view>
+    <view v-if="loading && !orders.length && !invoices.length && !previews.length" class="card empty-state"><text>正在加载订单记录...</text></view>
     <template v-else-if="tab === 'payments'">
       <view class="toolbar card">
         <view class="filter-group">
@@ -28,16 +33,18 @@
             <label v-if="order.status === '已支付'" class="invoice-check"><checkbox :checked="selectedInvoiceOrderIds.includes(order.id)" color="#2F80ED" @tap.stop="toggleInvoiceOrder(order.id, !selectedInvoiceOrderIds.includes(order.id))" /><text>选择开票</text></label>
             <button v-if="order.status === '已支付' && !invoicedOrderIds.has(order.id)" class="outline-button" @tap="openInvoiceDialog(order.id)">申请开票</button>
             <text v-if="order.status === '已支付' && invoicedOrderIds.has(order.id)" class="invoice-done">已提交开票</text>
-            <button v-if="order.status === '待支付'" class="primary-button" @tap="payOnline(order.id, 'wechat')">微信支付</button>
-            <button v-if="order.status === '待支付'" class="outline-button" @tap="payOnline(order.id, 'alipay')">支付宝支付</button>
-            <button v-if="order.status === '待支付' || order.status === '待审核'" class="offline-button" @tap="openPaymentProofModal(order.id)">{{ order.status === '待审核' ? '查看/重新上传凭证' : '提交线下支付凭证' }}</button>
-            <button v-if="order.status === '待支付' || order.status === '待审核'" class="text-button" @tap="cancelOrder(order.id)">取消报名</button>
+            <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineWechatEnabled" class="primary-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'wechat')">{{ payingOrderKey ? '支付处理中...' : '微信支付' }}</button>
+            <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineAlipayEnabled" class="outline-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'alipay')">{{ payingOrderKey ? '支付处理中...' : '支付宝支付' }}</button>
+            <text v-if="order.status === '待支付' && paymentInfoLoaded && !paymentInfo.onlineWechatEnabled && !paymentInfo.onlineAlipayEnabled" class="status-hint">在线支付暂未启用，请使用线下对公转账并上传凭证。</text>
+            <button v-if="order.status === '待支付'" class="offline-button" @tap="openPaymentProofModal(order.id)">提交线下支付凭证</button>
+            <text v-if="order.status === '待审核'" class="status-hint">支付凭证审核中，暂不能重复提交。</text>
+            <button v-if="order.status === '待支付' || order.status === '待审核'" class="text-button" :disabled="Boolean(cancellingOrderId || cancelConfirming)" @tap="cancelOrder(order.id)">{{ cancellingOrderId === order.id || cancelConfirming ? '取消中...' : '取消报名' }}</button>
           </view>
           <text v-if="order.status === '待审核'" class="status-hint">凭证已提交，等待管理端审核到账。</text>
           <text v-if="order.paymentProofStatus === 'rejected'" class="status-hint rejected">上次凭证未通过：{{ order.paymentProofRemark || '请重新上传清晰的付款凭证' }}</text>
         </view>
       </template>
-      <view v-else class="card empty-state"><text>暂无支付记录</text></view>
+      <view v-else-if="!loadError" class="card empty-state"><text>暂无支付记录</text></view>
     </template>
 
     <template v-else-if="tab === 'orders'">
@@ -47,15 +54,16 @@
           <view><text class="preview-title">{{ item.courseTitle }}</text><text class="preview-time">{{ formatDate(item.viewedAt) }}</text></view><text class="preview-arrow">›</text>
         </view>
       </view>
-      <view v-else class="card empty-state"><text>暂无浏览记录</text></view>
+      <view v-else-if="!loadError" class="card empty-state"><text>暂无浏览记录</text></view>
     </template>
 
     <template v-else>
       <view v-if="invoices.length"><view v-for="invoice in invoices" :key="invoice.id" class="card invoice-card">
         <view class="order-heading"><text class="order-title">{{ invoice.title || '企业发票' }}</text><text :class="['status', statusClass(invoice.status)]">{{ invoice.status }}</text></view>
-        <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text class="invoice-meta">申请时间：{{ formatDate(invoice.createdAt) }}</text>
+        <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text v-if="invoice.status === '已驳回' && invoice.rejectReason" class="invoice-meta rejected">驳回理由：{{ invoice.rejectReason }}</text><text v-if="invoice.invoiceFileStatus" class="invoice-meta">电子发票：{{ invoice.invoiceFileStatus }}<text v-if="invoice.invoiceFileName">（{{ invoice.invoiceFileName }}）</text></text><text class="invoice-meta">申请时间：{{ formatDate(invoice.createdAt) }}</text>
+        <button v-if="invoice.invoiceFileStatus === '已上传'" class="outline-button invoice-file-button" @tap="openInvoiceFile(invoice)">查看电子发票</button>
       </view></view>
-      <view v-else class="card empty-state"><text>暂无开票记录</text></view>
+      <view v-else-if="!loadError" class="card empty-state"><text>暂无开票记录</text></view>
     </template>
 
     <!-- 上半部分为对公账户信息，下半部分为凭证图片上传 -->
@@ -82,14 +90,14 @@
           </view>
           <view class="proof-section">
             <view class="section-heading"><view><text class="section-title">上传支付凭证</text><text class="section-caption">请上传清晰的银行回单或付款截图</text></view></view>
-            <view class="upload-area" @tap="chooseProofImage">
+            <view class="upload-area" :class="{ disabled: uploading || proofConfirming }" @tap="chooseProofImage">
               <image v-if="selectedProofImage" class="proof-preview" :src="selectedProofImage" mode="aspectFit" />
               <view v-else class="upload-placeholder"><text class="upload-icon">+</text><text class="upload-title">选择凭证图片</text><text class="upload-caption">支持 JPG、PNG，单张不超过 5MB</text></view>
             </view>
             <text v-if="selectedProofImage" class="replace-hint">点击图片可重新选择</text>
           </view>
         </scroll-view>
-        <view class="modal-footer"><button class="cancel-button" @tap="closePaymentProofModal">取消</button><button class="submit-button" :disabled="!selectedProofImage || uploading" @tap="submitPaymentProof">{{ uploading ? '上传中...' : '上传并提交审核' }}</button></view>
+        <view class="modal-footer"><button class="cancel-button" :disabled="uploading || proofConfirming" @tap="closePaymentProofModal">取消</button><button class="submit-button" :disabled="!selectedProofImage || uploading || proofConfirming" @tap="submitPaymentProof">{{ uploading ? '上传中...' : proofConfirming ? '确认中...' : '上传并提交审核' }}</button></view>
       </view>
     </view>
 
@@ -98,7 +106,7 @@
         <view class="modal-header"><text class="modal-title">提交开票信息</text><text class="close-button" @tap="closeInvoiceDialog">×</text></view>
         <text class="dialog-hint">已选择 {{ selectedInvoiceOrderIds.length }} 笔订单</text>
         <input v-model="invoiceForm.title" class="invoice-field" placeholder="请输入发票抬头" /><input v-model="invoiceForm.taxNo" class="invoice-field" placeholder="请输入纳税人识别号" /><input v-model="invoiceForm.email" class="invoice-field" placeholder="请输入接收发票的邮箱" />
-        <view class="dialog-actions"><button class="cancel-button" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length" @tap="submitInvoice">提交申请</button></view>
+        <view class="dialog-actions"><button class="cancel-button" :disabled="invoiceSubmitting || invoiceConfirming" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length || invoiceSubmitting || invoiceConfirming" @tap="submitInvoice">{{ invoiceSubmitting ? '提交中...' : invoiceConfirming ? '确认中...' : '提交申请' }}</button></view>
       </view>
     </view>
   </view>
@@ -107,12 +115,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { api, apiAssetUrl, type ApiCourse, uploadPaymentProof } from '../../common/api'
+import { api, apiAssetUrl, downloadInvoiceFile, type ApiCourse, uploadPaymentProof } from '../../common/api'
+import { showClientConfirm } from '../../common/confirm'
 import { requestNativePayment } from '../../common/payment'
 
 type TabKey = 'payments' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
-type Invoice = { id: string; status: string; title?: string; invoiceNo?: string; orderIds?: string[]; createdAt: string }
+type Invoice = { id: string; status: string; title?: string; invoiceNo?: string; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; createdAt: string }
 type Preview = { id: string; courseId: string; courseTitle: string; viewedAt: string }
 type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string; qrCodeText?: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled?: boolean; onlineAlipayEnabled?: boolean }
 
@@ -120,6 +129,7 @@ const tabs: Array<{ key: TabKey; label: string }> = [{ key: 'payments', label: '
 const tab = ref<TabKey>('payments')
 const paymentFilter = ref<'all' | 'paid'>('all')
 const loading = ref(false)
+const loadInFlight = ref(false)
 const orders = ref<Order[]>([])
 const invoices = ref<Invoice[]>([])
 const previews = ref<Preview[]>([])
@@ -127,36 +137,63 @@ const courses = ref<Record<string, ApiCourse>>({})
 const selectedInvoiceOrderIds = ref<string[]>([])
 const invoiceDialogOpen = ref(false)
 const invoiceForm = reactive({ title: '', taxNo: '', email: '' })
+const invoiceSubmitting = ref(false)
+const invoiceConfirming = ref(false)
 const showAllPreviews = ref(false)
 const paymentProofModalOpen = ref(false)
 const selectedOrderId = ref('')
 const selectedProofImage = ref('')
 const uploading = ref(false)
+const proofConfirming = ref(false)
+const cancellingOrderId = ref('')
+const cancelConfirming = ref(false)
+const payingOrderKey = ref('')
 const paymentInfo = reactive<PaymentInfo>({})
+const paymentInfoLoaded = ref(false)
+const loadError = ref('')
 
 const paidOrders = computed(() => orders.value.filter((order) => order.status === '已支付'))
 const paymentOrders = computed(() => paymentFilter.value === 'paid' ? paidOrders.value : orders.value)
-const invoicedOrderIds = computed(() => new Set(invoices.value.flatMap((invoice) => invoice.orderIds || [])))
+const invoicedOrderIds = computed(() => new Set(invoices.value.filter((invoice) => invoice.status !== '已驳回').flatMap((invoice) => invoice.orderIds || [])))
 const displayedPreviews = computed(() => showAllPreviews.value ? previews.value : previews.value.slice(0, 3))
 const invoiceSelectionLabel = computed(() => selectedInvoiceOrderIds.value.length ? '（' + selectedInvoiceOrderIds.value.length + '）' : '')
 const courseName = (id: string) => courses.value[id]?.title || '培训课程'
-const paymentMethodLabel = (order: Order) => order.paymentMethod === 'offline' ? '对公转账' : order.paymentChannel === 'alipay' ? '支付宝支付' : '微信支付'
+const paymentMethodLabel = (order: Order) => {
+  if (order.paymentMethod === 'offline') return '对公转账'
+  if (order.paymentChannel === 'alipay') return '支付宝支付'
+  if (order.paymentChannel === 'wechat') return '微信支付'
+  // A newly-created order does not have a payment channel until the user
+  // chooses one in the bill dialog. Do not present the historical default
+  // (微信支付) as if the user had already selected or completed it.
+  if (order.status === '待支付') return '待选择支付方式'
+  return order.paymentMethod === 'online' ? '在线支付' : '未选择支付方式'
+}
 const statusClass = (status: string) => status === '已支付' ? 'success' : status === '待审核' ? 'warning' : status === '已取消' ? 'muted' : ''
 const formatDate = (value: string) => value ? value.replace('T', ' ').replace(/\.\d+Z$/, '') : '-'
 
 const loadAll = async () => {
+  if (loadInFlight.value) return
+  loadInFlight.value = true
   loading.value = true
+  loadError.value = ''
   try {
-    const [orderResult, invoiceResult, courseResult, previewResult] = await Promise.all([api.listOrders(), api.listInvoices(), api.listCourses(), api.listPreviews()])
+    const [orderResult, invoiceResult, courseResult, previewResult, paymentResult] = await Promise.all([api.listOrders(), api.listInvoices(), api.listCourses(), api.listPreviews(), api.paymentInfo()])
     orders.value = orderResult.items as Order[]
     invoices.value = invoiceResult.items
     courses.value = Object.fromEntries(courseResult.items.map((course) => [course.id, course]))
     previews.value = previewResult.items
-  } catch {
-    orders.value = []; invoices.value = []; previews.value = []
-  } finally { loading.value = false }
+    Object.assign(paymentInfo, paymentResult)
+    paymentInfoLoaded.value = true
+  } catch (error: any) {
+    loadError.value = error?.message || '网络异常，请检查网络后重试'
+    paymentInfoLoaded.value = false
+    uni.showToast({ title: '业务数据加载失败，请点击重试', icon: 'none' })
+  } finally { loading.value = false; loadInFlight.value = false }
 }
 const payOnline = async (id: string, channel: 'wechat' | 'alipay') => {
+  const operationKey = `${id}:${channel}`
+  if (payingOrderKey.value) return
+  payingOrderKey.value = operationKey
   try {
     const intent = await api.createPaymentIntent(id, channel)
     if (!intent.ready) { uni.showToast({ title: intent.message || '支付渠道尚未配置', icon: 'none' }); return }
@@ -169,7 +206,7 @@ const payOnline = async (id: string, channel: 'wechat' | 'alipay') => {
       if (attempt < 9) await new Promise((resolve) => setTimeout(resolve, 2000))
     }
     uni.showToast({ title: '暂未收到支付平台回调，请稍后刷新订单', icon: 'none' })
-  } catch (error: any) { uni.showToast({ title: error?.message || '支付失败', icon: 'none' }) }
+  } catch (error: any) { uni.showToast({ title: error?.message || '支付失败', icon: 'none' }) } finally { payingOrderKey.value = '' }
 }
 
 const openPaymentProofModal = async (orderId: string) => {
@@ -180,7 +217,7 @@ const openPaymentProofModal = async (orderId: string) => {
   }
 }
 const closePaymentProofModal = () => {
-  if (uploading.value) return
+  if (uploading.value || proofConfirming.value) return
   paymentProofModalOpen.value = false; selectedOrderId.value = ''; selectedProofImage.value = ''
 }
 const copyTransferInfo = () => {
@@ -188,22 +225,35 @@ const copyTransferInfo = () => {
   uni.setClipboardData({ data: text, success: () => uni.showToast({ title: '转账信息已复制', icon: 'none' }) })
 }
 const chooseProofImage = () => {
+  if (uploading.value || proofConfirming.value) return
   uni.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: (result) => { selectedProofImage.value = result.tempFilePaths?.[0] || '' } })
 }
 const submitPaymentProof = async () => {
-  if (!selectedOrderId.value || !selectedProofImage.value || uploading.value) return
-  uploading.value = true
+  if (!selectedOrderId.value || !selectedProofImage.value || uploading.value || proofConfirming.value) return
+  proofConfirming.value = true
   try {
-    await uploadPaymentProof(selectedOrderId.value, selectedProofImage.value)
-    paymentProofModalOpen.value = false
-    selectedOrderId.value = ''
-    selectedProofImage.value = ''
-    uni.showToast({ title: '凭证已上传，等待审核', icon: 'none' }); await loadAll()
-  } catch (error: any) { uni.showToast({ title: error?.message || '凭证上传失败，请重试', icon: 'none' }) } finally { uploading.value = false }
+    const confirmation = await showClientConfirm({ title: '确认提交支付凭证', content: '提交后将进入管理端审核，确定继续吗？' })
+    if (!confirmation) return
+    uploading.value = true
+    try {
+      await uploadPaymentProof(selectedOrderId.value, selectedProofImage.value)
+      paymentProofModalOpen.value = false
+      selectedOrderId.value = ''
+      selectedProofImage.value = ''
+      uni.showToast({ title: '凭证已上传，等待审核', icon: 'none' }); await loadAll()
+    } catch (error: any) { uni.showToast({ title: error?.message || '凭证上传失败，请重试', icon: 'none' }) } finally { uploading.value = false }
+  } finally { proofConfirming.value = false }
 }
 
 const cancelOrder = async (id: string) => {
-  try { await api.cancelOrder(id); uni.showToast({ title: '报名已取消', icon: 'none' }); await loadAll() } catch (error: any) { uni.showToast({ title: error?.message || '取消失败', icon: 'none' }) }
+  if (cancellingOrderId.value || cancelConfirming.value) return
+  cancelConfirming.value = true
+  try {
+    const confirmation = await showClientConfirm({ title: '确认取消报名', content: '取消后本次报名将不再保留待支付状态，确定继续吗？' })
+    if (!confirmation) return
+    cancellingOrderId.value = id
+    try { await api.cancelOrder(id); uni.showToast({ title: '报名已取消', icon: 'none' }); await loadAll() } catch (error: any) { uni.showToast({ title: error?.message || '取消失败', icon: 'none' }) } finally { cancellingOrderId.value = '' }
+  } finally { cancelConfirming.value = false }
 }
 const toggleInvoiceOrder = (id: string, checked: boolean) => {
   if (invoicedOrderIds.value.has(id)) return
@@ -214,31 +264,53 @@ const openInvoiceDialog = (id?: string) => {
   if (!selectedInvoiceOrderIds.value.length) return uni.showToast({ title: '请先选择已支付订单', icon: 'none' })
   invoiceDialogOpen.value = true
 }
-const closeInvoiceDialog = () => { invoiceDialogOpen.value = false }
+const closeInvoiceDialog = () => { if (invoiceSubmitting.value || invoiceConfirming.value) return; invoiceDialogOpen.value = false }
 const submitInvoice = async () => {
+  if (invoiceSubmitting.value || invoiceConfirming.value) return
   if (!invoiceForm.title.trim() || !invoiceForm.taxNo.trim() || !invoiceForm.email.trim()) return uni.showToast({ title: '请填写完整开票信息', icon: 'none' })
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(invoiceForm.email.trim())) return uni.showToast({ title: '请输入正确的邮箱地址', icon: 'none' })
+  invoiceConfirming.value = true
   try {
-    await api.createInvoice(invoiceForm.title.trim(), invoiceForm.taxNo.trim(), invoiceForm.email.trim(), selectedInvoiceOrderIds.value)
-    selectedInvoiceOrderIds.value = []; invoiceForm.title = ''; invoiceForm.taxNo = ''; invoiceForm.email = ''; closeInvoiceDialog()
-    uni.showToast({ title: '开票申请已提交', icon: 'none' }); await loadAll()
-  } catch (error: any) { uni.showToast({ title: error?.message || '开票申请失败', icon: 'none' }) }
+    const confirmation = await showClientConfirm({ title: '确认提交开票申请', content: `将为 ${selectedInvoiceOrderIds.value.length} 笔订单提交开票申请，确定继续吗？` })
+    if (!confirmation) return
+    invoiceSubmitting.value = true
+    try {
+      await api.createInvoice(invoiceForm.title.trim(), invoiceForm.taxNo.trim(), invoiceForm.email.trim(), selectedInvoiceOrderIds.value)
+      selectedInvoiceOrderIds.value = []
+      invoiceForm.title = ''
+      invoiceForm.taxNo = ''
+      invoiceForm.email = ''
+      // The normal close handler intentionally blocks while submitting. Close
+      // explicitly after a successful request so the completed form cannot
+      // remain visible with zero selected orders.
+      invoiceDialogOpen.value = false
+      uni.showToast({ title: '开票申请已提交', icon: 'none' }); await loadAll()
+    } catch (error: any) { uni.showToast({ title: error?.message || '开票申请失败', icon: 'none' }) } finally { invoiceSubmitting.value = false }
+  } finally { invoiceConfirming.value = false }
+}
+const openInvoiceFile = async (invoice: Invoice) => {
+  if (invoice.invoiceFileStatus !== '已上传') return uni.showToast({ title: '电子发票文件尚未上传', icon: 'none' })
+  try {
+    const filePath = await downloadInvoiceFile(invoice.id)
+    uni.openDocument({ filePath, showMenu: true, fail: () => uni.showToast({ title: '当前设备无法打开该发票文件', icon: 'none' }) })
+  } catch (error: any) { uni.showToast({ title: error?.message || '电子发票下载失败', icon: 'none' }) }
 }
 const openCourseDetail = (courseId: string) => { uni.navigateTo({ url: '/pages/detail/detail?id=' + courseId }) }
 onShow(loadAll)
 </script>
 
 <style scoped lang="scss">
-.page { min-height: 100vh; padding: 40rpx 32rpx 64rpx; background: #f6f8fb; }
-.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20rpx; }
+.page { min-height: 100vh; padding: 40rpx 32rpx calc(140rpx + env(safe-area-inset-bottom)); background: #f6f8fb; }
+.page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20rpx; }.page-header-actions { display: flex; align-items: center; gap: 20rpx; }.refresh-link { color: $blue; font-size: 23rpx; }.refresh-link.disabled { opacity: .55; }
 .eyebrow { display: block; color: #8b98aa; font-size: 18rpx; letter-spacing: 2rpx; }
 .page-title { display: block; margin-top: 8rpx; color: $navy; font-size: 40rpx; font-weight: 900; }
 .invoice-link { color: $blue; font-size: 23rpx; }
+.invoice-file-button { margin-top: 14rpx; align-self: flex-start; }
 .tabs { display: flex; gap: 12rpx; margin: 28rpx 0 20rpx; overflow-x: auto; white-space: nowrap; }
 .tab { padding: 16rpx 24rpx; border-radius: $radius-pill; color: $muted; background: #edf0f4; font-size: 22rpx; }
 .tab.active { color: $navy; background: $yellow; font-weight: 800; }
 .card { border-radius: $radius-lg; background: #fff; box-shadow: 0 8rpx 28rpx rgba(32, 62, 113, .07); }
-.empty-state { padding: 68rpx 30rpx; color: $muted; text-align: center; font-size: 24rpx; }
+.empty-state { padding: 68rpx 30rpx; color: $muted; text-align: center; font-size: 24rpx; }.error-state { display: flex; flex-direction: column; align-items: center; margin-bottom: 18rpx; padding: 28rpx 24rpx; color: $muted; text-align: center; }.error-title { color: $navy; font-size: 25rpx; font-weight: 800; }.error-hint { margin-top: 8rpx; line-height: 1.5; }.retry-button { width: 210rpx; height: 60rpx; margin-top: 16rpx; border: 0; border-radius: $radius-pill; color: $navy; background: $yellow; font-size: 21rpx; line-height: 60rpx; font-weight: 800; }.retry-button::after { border: 0; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; margin-bottom: 18rpx; padding: 14rpx 18rpx; }
 .filter-group { display: flex; gap: 8rpx; }
 .filter { padding: 10rpx 16rpx; border-radius: $radius-pill; color: $muted; background: #f0f3f7; font-size: 20rpx; }
@@ -257,10 +329,14 @@ onShow(loadAll)
 .order-meta { display: flex; flex-wrap: wrap; gap: 12rpx 20rpx; margin-top: 18rpx; color: $muted; font-size: 21rpx; }
 .amount { color: #d56d1c; font-weight: 800; }
 .order-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12rpx; margin-top: 22rpx; }
-.order-actions button { box-sizing: border-box; height: 62rpx; margin: 0; padding: 0 18rpx; border: 1rpx solid #dfe5ed; border-radius: $radius-pill; color: $navy; background: #fff; font-size: 20rpx; line-height: 62rpx; }
-.primary-button { border-color: $yellow !important; background: $yellow !important; font-weight: 800; }
-.offline-button { border-color: #b9d7ff !important; color: $blue !important; background: #f4f9ff !important; font-weight: 800; }
-.text-button { padding: 0 8rpx !important; border: 0 !important; color: $muted !important; background: transparent !important; }
+.order-actions button { box-sizing: border-box; min-width: 142rpx; height: 62rpx; margin: 0; padding: 0 20rpx; border: 1rpx solid #d7e0eb; border-radius: $radius-pill; color: $navy; background: #fff; font-size: 20rpx; line-height: 60rpx; font-weight: 700; box-shadow: none; }
+.order-actions button::after { border: 0; }
+.order-actions button[disabled] { opacity: .55; }
+.outline-button { border-color: #c9d9ec !important; color: $blue !important; background: #fff !important; }
+.primary-button { border-color: $yellow !important; color: $navy !important; background: $yellow !important; font-weight: 800; }
+.offline-button { border-color: #a9ccf5 !important; color: #2368c7 !important; background: #f2f8ff !important; font-weight: 800; }
+.text-button { min-width: auto !important; height: auto !important; padding: 0 6rpx !important; border: 0 !important; color: $muted !important; background: transparent !important; font-weight: 500 !important; line-height: 62rpx !important; }
+.text-button:active { color: $danger !important; background: transparent !important; }
 .invoice-check { display: flex; align-items: center; gap: 5rpx; color: $muted; font-size: 20rpx; }
 .invoice-done { color: $success; font-size: 20rpx; }
 .status-hint { display: block; margin-top: 16rpx; color: #a87318; font-size: 20rpx; line-height: 1.5; }
@@ -276,13 +352,14 @@ onShow(loadAll)
 .preview-time, .invoice-meta { display: block; margin-top: 8rpx; color: $muted; font-size: 20rpx; }
 .preview-arrow { color: #aab4c1; font-size: 36rpx; }
 
-.modal-mask { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 32rpx; background: rgba(20, 43, 74, .48); }
-.payment-proof-modal { box-sizing: border-box; width: 100%; max-width: 680rpx; max-height: 88vh; overflow: hidden; border-radius: 28rpx; background: #fff; }
+.modal-mask { position: fixed; inset: 0; z-index: 90; z-index: var(--client-business-modal-layer, 90); display: flex; align-items: center; justify-content: center; padding: 32rpx; background: rgba(20, 43, 74, .48); }
+.modal-mask { z-index: var(--client-business-modal-layer, 90) !important; }
+.payment-proof-modal { box-sizing: border-box; width: 100%; max-width: 680rpx; max-height: calc(100vh - 64rpx); overflow: hidden; border-radius: 28rpx; background: #fff; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; padding: 30rpx 30rpx 22rpx; border-bottom: 1rpx solid #edf0f4; }
 .modal-title { display: block; color: $navy; font-size: 30rpx; font-weight: 900; }
 .modal-subtitle { display: block; margin-top: 8rpx; color: $muted; font-size: 19rpx; }
 .close-button { width: 46rpx; height: 46rpx; color: #8996a8; font-size: 44rpx; line-height: 38rpx; text-align: center; }
-.modal-scroll { max-height: calc(88vh - 180rpx); }
+.modal-scroll { max-height: calc(100vh - 260rpx); }
 .transfer-section, .proof-section { margin: 22rpx 28rpx 0; padding: 24rpx; border: 1rpx solid #e4eaf2; border-radius: 18rpx; }
 .proof-section { margin-bottom: 24rpx; background: #fbfcfe; }
 .copy-button { height: 52rpx; margin: 0; padding: 0 16rpx; border: 1rpx solid #b9d7ff; border-radius: $radius-pill; color: $blue; background: #f4f9ff; font-size: 20rpx; line-height: 50rpx; }
@@ -299,7 +376,7 @@ onShow(loadAll)
 .personal-qr-card { flex: 1 1 220rpx; min-width: 220rpx; padding: 14rpx; border-radius: 14rpx; background: #f8fafc; text-align: center; }
 .personal-qr-card text { display: block; color: $navy; font-size: 20rpx; font-weight: 700; }
 .personal-qr-card image { display: block; width: 220rpx; height: 220rpx; margin: 12rpx auto 0; background: #fff; }
-.upload-area { display: flex; align-items: center; justify-content: center; min-height: 280rpx; margin-top: 20rpx; border: 2rpx dashed #b9d7ff; border-radius: 16rpx; background: #f4f9ff; }
+.upload-area { display: flex; align-items: center; justify-content: center; min-height: 280rpx; margin-top: 20rpx; border: 2rpx dashed #b9d7ff; border-radius: 16rpx; background: #f4f9ff; }.upload-area.disabled { opacity: .55; pointer-events: none; }
 .upload-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30rpx; }
 .upload-icon { width: 72rpx; height: 72rpx; border-radius: 50%; color: #fff; background: $blue; font-size: 54rpx; line-height: 68rpx; text-align: center; }
 .upload-title { margin-top: 16rpx; color: $navy; font-size: 24rpx; font-weight: 800; }

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, Res, ServiceUnavailableException, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { Type } from 'class-transformer'
 import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
@@ -7,6 +7,7 @@ import { JwtGuard } from '../auth/jwt.guard'
 import { MvpService } from './mvp.service'
 import { getIntegrationReadiness, verifyAlipayNotification, verifyWechatNotification } from '../channel-adapters'
 import { getPasswordResetReadiness } from '../auth/password-reset-delivery'
+import { getPhoneRegistrationReadiness } from '../auth/phone-registration-delivery'
 
 class QuoteDto { @IsString() courseId!: string; @IsInt() @Min(1) participantCount!: number }
 class ParticipantDto { @IsObject() data!: Record<string, string>; @IsOptional() @IsString() studentId?: string }
@@ -18,6 +19,10 @@ class InvoiceDto { @IsString() title!: string; @IsString() taxNo!: string; @IsSt
 @Controller()
 export class MvpController {
   constructor(private readonly mvp: MvpService) {}
+
+  @Get('health') async health() {
+    try { return await this.mvp.health() } catch { throw new ServiceUnavailableException({ status: 'degraded', database: 'unavailable' }) }
+  }
 
   @Get('courses') courses(@Query('keyword') keyword?: string, @Query('category') category?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listCoursesPage(keyword, category, Number(page || 1), Number(pageSize || 20), status) }
   @Get('courses/:id') course(@Param('id') id: string) { return this.mvp.getCourse(id) }
@@ -73,14 +78,22 @@ export class MvpController {
   @UseGuards(JwtGuard)
   @Patch('profile') updateProfile(@Req() request: any, @Body() payload: Record<string, any>) { return this.mvp.updateProfile(request.user.sub, payload) }
   @UseGuards(JwtGuard)
-  @Post('profile/password') changePassword(@Req() request: any, @Body('password') password?: string) { return this.mvp.changePassword(request.user.sub, password || '123456') }
+  @Post('profile/password') changePassword(@Req() request: any, @Body('password') password?: string) { return this.mvp.changePassword(request.user.sub, password) }
   @UseGuards(JwtGuard)
   @Post('orders/:id/cancel') cancel(@Req() request: any, @Param('id') id: string) { return this.mvp.cancelOrder(request.user.sub, id) }
   @UseGuards(JwtGuard)
   @Get('invoices') async invoices(@Req() request: any) { return { items: await this.mvp.listInvoices(request.user.role === 'user' ? request.user.sub : undefined) } }
   @UseGuards(JwtGuard)
+  @Get('invoices/:id/file') async invoiceFile(@Req() request: any, @Param('id') id: string) { const result = await this.mvp.readInvoiceFile(id, request.user.role === 'user' ? request.user.sub : undefined); return new StreamableFile(result.buffer, { type: result.mimeType, disposition: `inline; filename="${encodeURIComponent(result.originalName)}"` }) }
+  @UseGuards(JwtGuard)
+  @Get('messages') messages(@Req() request: any) { return this.mvp.listUserMessages(request.user.sub) }
+  @UseGuards(JwtGuard)
+  @Post('messages/:id/read') readMessage(@Req() request: any, @Param('id') id: string) { return this.mvp.markMessageRead(request.user.sub, id) }
+  @UseGuards(JwtGuard)
   @Post('feedback') feedback(@Req() request: any, @Body() payload: Record<string, any>) { return this.mvp.submitFeedback(request.user.sub, payload) }
 
+  @UseGuards(JwtGuard, AdminGuard)
+  @Get('admin/courses') adminCourses(@Query('keyword') keyword?: string, @Query('category') category?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listAdminCoursesPage(keyword, category, Number(page || 1), Number(pageSize || 20), status) }
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/uploads/course-image')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
@@ -92,7 +105,7 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/dashboard') dashboard() { return this.mvp.dashboard() }
   @UseGuards(JwtGuard, AdminGuard)
-  @Get('admin/integration-readiness') integrationReadiness() { return { generatedAt: new Date().toISOString(), channels: getIntegrationReadiness(), passwordReset: getPasswordResetReadiness() } }
+  @Get('admin/integration-readiness') integrationReadiness() { return { generatedAt: new Date().toISOString(), channels: getIntegrationReadiness(), passwordReset: getPasswordResetReadiness(), phoneRegistration: getPhoneRegistrationReadiness() } }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/orders') adminOrders(@Query('keyword') keyword?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listAdminOrdersPage(keyword, Number(page || 1), Number(pageSize || 20), status) }
   @UseGuards(JwtGuard, AdminGuard)
@@ -104,7 +117,7 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/courses') saveCourse(@Req() request: any, @Body() payload: Record<string, any>) { return this.mvp.saveCourse(payload, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Patch('admin/courses/:id') patchCourse(@Req() request: any, @Param('id') id: string, @Body() payload: Record<string, any>) { return this.mvp.saveCourse({ ...payload, id }, request.user.username) }
+  @Patch('admin/courses/:id') patchCourse(@Req() request: any, @Param('id') id: string, @Body() payload: Record<string, any>) { return this.mvp.saveCourse({ ...payload, id }, request.user.username, true) }
   @UseGuards(JwtGuard, AdminGuard)
   @Delete('admin/courses/:id') deleteCourse(@Req() request: any, @Param('id') id: string) { return this.mvp.removeCourse(id, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
@@ -112,11 +125,15 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/templates') saveTemplate(@Req() request: any, @Body() payload: { id?: string; name?: string; fields?: any[] }) { return this.mvp.saveTemplate(payload.id, payload, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Patch('admin/templates/:id') updateTemplate(@Req() request: any, @Param('id') id: string, @Body() payload: { name?: string; fields?: any[] }) { return this.mvp.saveTemplate(id, payload, request.user.username) }
+  @Patch('admin/templates/:id') updateTemplate(@Req() request: any, @Param('id') id: string, @Body() payload: { name?: string; fields?: any[] }) { return this.mvp.saveTemplate(id, payload, request.user.username, true) }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Delete('admin/templates/:id') deleteTemplate(@Req() request: any, @Param('id') id: string) { return this.mvp.removeTemplate(id, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/enrollments') async enrollments() { return { items: await this.mvp.listCompatEnrollments() } }
   @UseGuards(JwtGuard, AdminGuard)
-  @Get('admin/enrollment-records') enrollmentRecords(@Query('keyword') keyword?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listEnrollmentRecords(keyword, status, Number(page || 1), Number(pageSize || 20)) }
+  @Get('admin/enrollment-records') enrollmentRecords(@Query('keyword') keyword?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string, @Query('courseId') courseId?: string) { return this.mvp.listEnrollmentRecords(keyword, status, Number(page || 1), Number(pageSize || 20), courseId) }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Get('admin/enrollment-records/:id') enrollmentRecord(@Req() request: any, @Param('id') id: string) { return this.mvp.getEnrollmentRecord(id, request.user.role === 'admin', request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/enrollment-summary') async enrollmentSummary() { return { items: await this.mvp.listEnrollmentSummary() } }
   @UseGuards(JwtGuard, AdminGuard)
@@ -130,9 +147,13 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/student-profiles') studentProfiles(@Query('keyword') keyword?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listStudentProfilesPage(keyword, status, Number(page || 1), Number(pageSize || 20), false) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Get('admin/student-profiles/export') studentProfilesExport(@Req() request: any, @Query('keyword') keyword?: string, @Query('status') status?: string, @Query('reveal') reveal?: string) { return this.mvp.exportStudentProfiles(keyword, status, reveal === 'true' && request.user.role === 'admin', request.user.username) }
+  @Get('admin/student-profiles/export') async studentProfilesExport(@Req() request: any, @Res({ passthrough: true }) response: any, @Query('keyword') keyword?: string, @Query('status') status?: string, @Query('reveal') reveal?: string, @Query('limit') limit?: string) {
+    const canReveal = reveal === 'true' && request.user.role === 'admin'
+    response.setHeader('Content-Disposition', `attachment; filename="${canReveal ? 'student-profiles.json' : 'student-profiles-masked.json'}"`)
+    return this.mvp.exportStudentProfiles(keyword, status, canReveal, request.user.username, Number(limit || 1000))
+  }
   @UseGuards(JwtGuard, AdminGuard)
-  @Get('admin/student-profiles/:id') studentProfile(@Param('id') id: string) { return this.mvp.getStudentProfile(id, true) }
+  @Get('admin/student-profiles/:id') studentProfile(@Req() request: any, @Param('id') id: string) { return this.mvp.getStudentProfile(id, request.user.role === 'admin', request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Patch('admin/student-profiles/:id') updateStudentProfile(@Req() request: any, @Param('id') id: string, @Body() payload: Record<string, any>) { return this.mvp.updateStudentProfile(id, payload, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
@@ -150,7 +171,7 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/student-profiles/:id/merge') mergeStudents(@Req() request: any, @Param('id') id: string, @Body('targetId') targetId?: string) { if (!targetId) throw new BadRequestException('targetId 不能为空'); return this.mvp.mergeStudents(id, targetId, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Post('admin/orders/:id/review') review(@Req() request: any, @Param('id') id: string, @Body() body: { approved?: boolean; remark?: string }) { return this.mvp.reviewOffline(id, Boolean(body.approved), body.remark, request.user.username) }
+  @Post('admin/orders/:id/review') review(@Req() request: any, @Param('id') id: string, @Body() body: { approved?: boolean; remark?: string }) { if (typeof body.approved !== 'boolean') throw new BadRequestException('审核结果必须明确选择通过或驳回'); return this.mvp.reviewOffline(id, body.approved, body.remark, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/orders/:id/payment-proof') adminPaymentProof(@Param('id') id: string) { return this.mvp.getPaymentProof(id) }
   @UseGuards(JwtGuard, AdminGuard)
@@ -158,15 +179,23 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/orders/:id/refund') refund(@Req() request: any, @Param('id') id: string) { return this.mvp.refundOrder(id, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
+  @Post('admin/orders/:id/close') closeUnpaidOrder(@Req() request: any, @Param('id') id: string) { return this.mvp.closeUnpaidOrder(id, request.user.username) }
+  @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/invoices') adminInvoices(@Query('keyword') keyword?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listInvoicesPage(undefined, keyword, Number(page || 1), Number(pageSize || 20), status) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Post('admin/invoices/:id/process') processInvoice(@Req() request: any, @Param('id') id: string, @Body() body: { approved?: boolean; invoiceNo?: string }) { return this.mvp.processInvoice(id, body.approved ? '已开票' : '已驳回', body.invoiceNo, request.user.username) }
+  @Post('admin/invoices/:id/process') processInvoice(@Req() request: any, @Param('id') id: string, @Body() body: { approved?: boolean; invoiceNo?: string; rejectReason?: string }) { if (typeof body.approved !== 'boolean') throw new BadRequestException('开票处理结果必须明确选择通过或驳回'); return this.mvp.processInvoice(id, body.approved ? '已开票' : '已驳回', body.invoiceNo, request.user.username, body.rejectReason) }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Post('admin/invoices/:id/file')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.INVOICE_UPLOAD_MAX_BYTES || 10 * 1024 * 1024) } }))
+  uploadInvoiceFile(@Req() request: any, @Param('id') id: string, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择电子发票文件'); return this.mvp.uploadInvoiceFile(id, file, request.user.username) }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Get('admin/invoices/:id/file') async adminInvoiceFile(@Param('id') id: string) { const result = await this.mvp.readInvoiceFile(id); return new StreamableFile(result.buffer, { type: result.mimeType, disposition: `inline; filename="${encodeURIComponent(result.originalName)}"` }) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/students') async adminStudents() { return { items: await this.mvp.listCompatStudents() } }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/users') users(@Query('keyword') keyword?: string, @Query('role') role?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listUsersPage(keyword, Number(page || 1), Number(pageSize || 20), role) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Post('admin/users/:id/enabled') enabled(@Req() request: any, @Param('id') id: string, @Body('enabled') enabled: boolean) { return this.mvp.setUserEnabled(id, enabled, request.user.username) }
+  @Post('admin/users/:id/enabled') enabled(@Req() request: any, @Param('id') id: string, @Body('enabled') enabled: boolean) { if (typeof enabled !== 'boolean') throw new BadRequestException('用户启用状态必须是布尔值'); return this.mvp.setUserEnabled(id, enabled, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/users/:id/reset-password') resetPassword(@Req() request: any, @Param('id') id: string) { return this.mvp.resetUserPassword(id, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
@@ -178,17 +207,25 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/discount-rules') saveDiscountRule(@Req() request: any, @Body() payload: Record<string, any>) { return this.mvp.saveDiscountRule(payload, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
+  @Delete('admin/discount-rules/:id') deleteDiscountRule(@Req() request: any, @Param('id') id: string) { return this.mvp.removeDiscountRule(id, request.user.username) }
+  @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/feedbacks') feedbacks(@Query('keyword') keyword?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listFeedbacksPage(keyword, Number(page || 1), Number(pageSize || 20), status) }
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/feedbacks/:id/resolve') resolveFeedback(@Req() request: any, @Param('id') id: string, @Body('reply') reply = '已收到，感谢反馈') { return this.mvp.resolveFeedback(id, reply, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/messages') createMessage(@Req() request: any, @Body() payload: Record<string, any>) { return this.mvp.saveMessage(payload, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Patch('admin/messages/:id') updateMessage(@Req() request: any, @Param('id') id: string, @Body() payload: Record<string, any>) { return this.mvp.saveMessage({ ...payload, id }, request.user.username) }
+  @Patch('admin/messages/:id') updateMessage(@Req() request: any, @Param('id') id: string, @Body() payload: Record<string, any>) { return this.mvp.saveMessage({ ...payload, id }, request.user.username, true) }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Post('admin/messages/:id/enabled') setMessageEnabled(@Req() request: any, @Param('id') id: string, @Body('enabled') enabled: boolean) { if (typeof enabled !== 'boolean') throw new BadRequestException('消息启用状态必须是布尔值'); return this.mvp.setMessageEnabled(id, enabled, request.user.username) }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Delete('admin/messages/:id') deleteMessage(@Req() request: any, @Param('id') id: string) { return this.mvp.removeMessage(id, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/points/:userId/adjust') adjustPoints(@Req() request: any, @Param('userId') userId: string, @Body() payload: { points?: number; reason?: string }) { return this.mvp.adjustPoints(userId, Number(payload.points || 0), String(payload.reason || ''), request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
+  @Get('admin/points/:userId/ledger') pointLedger(@Param('userId') userId: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listPointLedger(userId, Number(page || 1), Number(pageSize || 20)) }
+  @UseGuards(JwtGuard, AdminGuard)
   @Put('admin/configs/:key') saveConfig(@Req() request: any, @Param('key') key: string, @Body() payload: Record<string, any>) { return this.mvp.saveSystemConfig(decodeURIComponent(key), payload, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Get('admin/:resource(messages|points|configs|audits)') async adminResource(@Param('resource') resource: string, @Query('action') action?: string) { return { items: await this.mvp.getAdminResource(resource, action), ...(resource === 'audits' ? { actions: await this.mvp.listAuditActions() } : {}) } }
+  @Get('admin/:resource(messages|points|configs|audits)') async adminResource(@Param('resource') resource: string, @Query('action') action?: string, @Query('actor') actor?: string, @Query('keyword') keyword?: string, @Query('from') from?: string, @Query('to') to?: string) { return { items: await this.mvp.getAdminResource(resource, { action, actor, keyword, from, to }), ...(resource === 'audits' ? { actions: await this.mvp.listAuditActions() } : {}) } }
 }

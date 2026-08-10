@@ -5,8 +5,14 @@ coverage/
 # 操作系统和编辑器生成文件
 .DS_Store
 Thumbs.db
-# 项目文档、功能清单、计划和本地输出仅供本地协作，不提交到 GitHub
-/Docs/
+# 项目文档、功能清单、计划和本地输出仅供本地协作，不提交到 GitHub。
+# 但服务器部署/备份/验收脚本必须随代码发布，避免 GitHub 部署后 Docs/runtime 缺文件。
+/Docs/*
+!/Docs/runtime/
+/Docs/runtime/*
+!/Docs/runtime/*.sh
+!/Docs/runtime/*.ps1
+!/Docs/runtime/*.cmd
 .env
 *.env.docker
 /.env.docker

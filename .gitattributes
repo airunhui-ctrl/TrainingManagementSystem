@@ -1,0 +1,4 @@
+* text=auto
+Docs/runtime/*.sh text eol=lf
+Docs/runtime/*.ps1 text eol=crlf
+Docs/runtime/*.cmd text eol=crlf

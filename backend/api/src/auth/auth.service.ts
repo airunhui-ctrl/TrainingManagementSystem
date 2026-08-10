@@ -4,9 +4,10 @@ import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { hashPassword, passwordMatches, PrismaService } from '../prisma.service'
 import { resolveWechatIdentity } from '../channel-adapters'
 import { deliverPasswordResetCode } from './password-reset-delivery'
+import { deliverPhoneRegistrationCode } from './phone-registration-delivery'
+import { normalizeUserRole, UserRole } from './roles'
 
-export type UserRole = 'admin' | 'user'
-export interface DemoUser { id: string; username: string; role: UserRole }
+export interface DemoUser { id: string; username: string; role: UserRole; sessionVersion: number }
 
 @Injectable()
 export class AuthService {
@@ -16,7 +17,7 @@ export class AuthService {
     const row = await this.db.user.findUnique({ where: { username: username.trim().toLowerCase() } })
     if (!row || !row.enabled || !passwordMatches(password, row.passwordHash)) throw new UnauthorizedException('账号或密码错误')
     await this.db.user.update({ where: { id: row.id }, data: { lastLoginAt: new Date() } })
-    const user: DemoUser = { id: row.id, username: row.username, role: row.role === 'admin' ? 'admin' : 'user' }
+    const user: DemoUser = { id: row.id, username: row.username, role: normalizeUserRole(row.role), sessionVersion: row.sessionVersion }
     await this.db.revokeRefreshTokens(user.id)
     return this.issueTokens(user)
   }
@@ -47,7 +48,68 @@ export class AuthService {
       await tx.auditLog.create({ data: { id: `LOG-${Date.now()}-${randomBytes(4).toString('hex')}`, actor: username, action: '用户注册', detail: '账号密码注册' } })
       return created
     })
-    return this.issueTokens({ id: row.id, username: row.username, role: 'user' })
+    return this.issueTokens({ id: row.id, username: row.username, role: 'user', sessionVersion: row.sessionVersion })
+  }
+
+  async requestPhoneRegistration(phoneInput: string, requestIp?: string) {
+    const phone = String(phoneInput || '').trim()
+    if (!/^1\d{10}$/.test(phone)) throw new BadRequestException('请输入有效的手机号')
+    const existing = await this.db.user.findFirst({ where: { phone } })
+    const challengeId = `PRG-${Date.now()}-${randomBytes(6).toString('hex')}`
+    if (existing) return { accepted: true, challengeId, message: '如果手机号尚未注册，验证码会发送到该手机号' }
+    const recentCount = await this.db.phoneRegistrationChallenge.count({ where: { phone, createdAt: { gte: new Date(Date.now() - 10 * 60 * 1000) } } })
+    if (recentCount >= 5) return { accepted: true, challengeId, message: '请求过于频繁，请稍后再试' }
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+    await this.db.phoneRegistrationChallenge.updateMany({ where: { phone, usedAt: null }, data: { usedAt: new Date() } })
+    await this.db.phoneRegistrationChallenge.create({ data: {
+      id: challengeId,
+      phone,
+      codeHash: this.registrationCodeHash(challengeId, code),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      requestIp: requestIp || null,
+    } })
+    try {
+      const delivery = await deliverPhoneRegistrationCode({ challengeId, phone, code })
+      return { accepted: true, challengeId, message: '验证码已发送，请查收短信', ...(delivery.devCode ? { devCode: delivery.devCode } : {}) }
+    } catch (error) {
+      await this.db.phoneRegistrationChallenge.delete({ where: { id: challengeId } }).catch(() => undefined)
+      throw error
+    }
+  }
+
+  async confirmPhoneRegistration(input: { challengeId: string; phone: string; code: string; password: string; confirmPassword: string; name?: string }) {
+    const phone = String(input.phone || '').trim()
+    if (!/^1\d{10}$/.test(phone)) throw new BadRequestException('请输入有效的手机号')
+    if (input.password !== input.confirmPassword) throw new BadRequestException('两次输入的密码不一致')
+    if (input.password.length < 8) throw new BadRequestException('密码至少 8 位')
+    const challenge = await this.db.phoneRegistrationChallenge.findFirst({ where: { id: input.challengeId, phone } })
+    if (!challenge) throw new BadRequestException('验证码无效，请重新获取')
+    if (challenge.usedAt || challenge.expiresAt <= new Date()) throw new BadRequestException('验证码无效或已过期')
+    if (challenge.attempts >= 5) throw new BadRequestException('验证码错误次数过多，请重新获取')
+    if (challenge.codeHash !== this.registrationCodeHash(challenge.id, input.code)) {
+      await this.db.phoneRegistrationChallenge.update({ where: { id: challenge.id }, data: { attempts: { increment: 1 } } })
+      throw new BadRequestException('验证码错误')
+    }
+    const existing = await this.db.user.findFirst({ where: { phone } })
+    if (existing) throw new ConflictException('手机号已注册，请直接登录')
+    const name = String(input.name || '').trim()
+    const row = await this.db.$transaction(async (tx) => {
+      const consumed = await tx.phoneRegistrationChallenge.updateMany({ where: { id: challenge.id, usedAt: null }, data: { usedAt: new Date() } })
+      if (consumed.count !== 1) throw new BadRequestException('验证码无效或已被使用')
+      const created = await tx.user.create({ data: {
+        id: `u-${Date.now()}-${randomBytes(6).toString('hex')}`,
+        username: phone,
+        passwordHash: hashPassword(input.password),
+        role: 'user',
+        name: name || null,
+        phone,
+        avatarText: (name || phone).slice(0, 2),
+        enabled: true,
+      } })
+      await tx.auditLog.create({ data: { id: `LOG-${Date.now()}-${randomBytes(4).toString('hex')}`, actor: phone, action: '用户注册', detail: '手机号短信注册' } })
+      return created
+    })
+    return this.issueTokens({ id: row.id, username: row.username, role: 'user', sessionVersion: row.sessionVersion })
   }
 
   async requestPasswordReset(identifierInput: string, requestIp?: string) {
@@ -94,7 +156,7 @@ export class AuthService {
     await this.db.$transaction(async (tx) => {
       const consumed = await tx.passwordResetChallenge.updateMany({ where: { id: challenge.id, usedAt: null }, data: { usedAt: new Date() } })
       if (consumed.count !== 1) throw new BadRequestException('验证码无效或已被使用')
-      await tx.user.update({ where: { id: challenge.userId }, data: { passwordHash: hashPassword(input.newPassword) } })
+      await tx.user.update({ where: { id: challenge.userId }, data: { passwordHash: hashPassword(input.newPassword), sessionVersion: { increment: 1 } } })
       await tx.refreshToken.updateMany({ where: { userId: challenge.userId, revokedAt: null }, data: { revokedAt: new Date() } })
       await tx.auditLog.create({ data: { id: `LOG-${Date.now()}-${randomBytes(4).toString('hex')}`, actor: challenge.userId, action: '找回密码', detail: '验证码校验通过并重置密码' } })
     })
@@ -103,6 +165,11 @@ export class AuthService {
 
   private resetCodeHash(challengeId: string, code: string) {
     const pepper = process.env.PASSWORD_RESET_SECRET || process.env.JWT_SECRET || 'development-reset-secret'
+    return createHash('sha256').update(`${challengeId}:${code}:${pepper}`).digest('hex')
+  }
+
+  private registrationCodeHash(challengeId: string, code: string) {
+    const pepper = process.env.PHONE_REGISTRATION_SECRET || process.env.PASSWORD_RESET_SECRET || process.env.JWT_SECRET || 'development-registration-secret'
     return createHash('sha256').update(`${challengeId}:${code}:${pepper}`).digest('hex')
   }
 
@@ -139,11 +206,11 @@ export class AuthService {
     }
     if (!row.enabled) throw new UnauthorizedException('账号已被禁用')
     await this.db.revokeRefreshTokens(row.id)
-    return this.issueTokens({ id: row.id, username: row.username, role: 'user' })
+    return this.issueTokens({ id: row.id, username: row.username, role: 'user', sessionVersion: row.sessionVersion })
   }
 
   private async issueTokens(user: DemoUser) {
-    const payload = { sub: user.id, username: user.username, role: user.role }
+    const payload = { sub: user.id, username: user.username, role: user.role, sessionVersion: user.sessionVersion }
     const accessToken = this.jwt.sign({ ...payload, type: 'access' })
     const refreshToken = this.jwt.sign({ ...payload, type: 'refresh', jti: randomBytes(12).toString('hex') }, { expiresIn: process.env.JWT_REFRESH_TTL || '14d' })
     const decoded = this.jwt.decode(refreshToken) as { exp?: number }
@@ -157,7 +224,7 @@ export class AuthService {
       if (payload.type !== 'refresh' || !(await this.db.consumeRefreshToken(this.db.tokenHash(refreshToken)))) throw new UnauthorizedException('刷新令牌已吊销或无效')
       const user = await this.db.user.findUnique({ where: { id: payload.sub } })
       if (!user || !user.enabled) throw new UnauthorizedException('用户不可用')
-      return this.issueTokens({ id: user.id, username: user.username, role: user.role === 'admin' ? 'admin' : 'user' })
+      return this.issueTokens({ id: user.id, username: user.username, role: normalizeUserRole(user.role), sessionVersion: user.sessionVersion })
     } catch { throw new UnauthorizedException('刷新令牌无效或已过期') }
   }
 }

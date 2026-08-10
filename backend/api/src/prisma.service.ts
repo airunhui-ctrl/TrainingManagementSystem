@@ -40,7 +40,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleDestroy() { await this.$disconnect() }
 
   async setPassword(userId: string, password: string) {
-    return this.user.update({ where: { id: userId }, data: { passwordHash: hashPassword(password) } })
+    return this.user.update({ where: { id: userId }, data: { passwordHash: hashPassword(password), sessionVersion: { increment: 1 } } })
   }
 
   async revokeRefreshTokens(userId: string) {

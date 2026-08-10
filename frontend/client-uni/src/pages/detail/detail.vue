@@ -1,8 +1,17 @@
 <template>
   <view class="detail-page">
-    <view class="detail-topbar"><text class="back" @tap="back">‹</text><text class="detail-topbar-title">{{ topbarTitle }}</text><text class="menu">▦</text></view>
-    <view v-if="loading" class="page-state">正在加载课程…</view>
-    <view v-else-if="course" class="detail-content">
+    <view class="detail-topbar"><text class="back" @tap="back">‹</text><text class="detail-topbar-title">{{ topbarTitle }}</text><text class="detail-refresh" :class="{ disabled: loading }" @tap="retryLoad">刷新</text></view>
+    <view v-if="loading && !course" class="page-state">正在加载课程…</view>
+    <view v-else-if="loadError && !course" class="page-state error-state">
+      <text class="state-title">课程加载失败</text>
+      <text class="state-hint">{{ loadError }}</text>
+      <button class="state-retry" @tap="retryLoad">重新加载</button>
+    </view>
+    <view v-if="loadError && course" class="page-state error-state inline-error">
+      <text class="state-hint">刷新失败：{{ loadError }}</text>
+      <button class="state-retry" @tap="retryLoad">重新加载</button>
+    </view>
+    <view v-if="course" class="detail-content">
       <view class="hero-wrap"><image class="hero-image" :src="course.image" mode="aspectFill" /><view class="hero-gradient" /><view class="hero-category">{{ course.category }}</view></view>
       <view class="summary">
         <text class="course-title">{{ course.title }}</text>
@@ -15,7 +24,7 @@
         </view>
       </view>
       <view class="intro-card">
-        <view class="intro-heading-row"><text class="intro-title">课程简介</text><text class="intro-badge">富文本内容</text></view>
+        <view class="intro-heading-row"><text class="intro-title">课程简介</text></view>
         <view :class="['intro-rich-wrap', { collapsed: shouldCollapseIntro && !introExpanded }]">
           <view class="intro-rich">
             <template v-for="(block, index) in introBlocks" :key="`${block.type}-${index}`">
@@ -36,7 +45,7 @@
       <view v-if="course.seatsLeft" class="bottom-cta"><view><text class="cta-label">课程费用</text><text class="cta-price">¥{{ course.price.toLocaleString() }}<text> / 人</text></text></view><button class="register-btn" @tap="register">我要报名</button></view>
       <view v-else class="bottom-cta ended"><text>本期课程已结束，关注后续活动</text></view>
     </view>
-    <view v-else class="page-state">课程不存在或已下架</view>
+    <view v-if="!loading && !course && !loadError" class="page-state">课程不存在或已下架</view>
   </view>
 </template>
 
@@ -58,6 +67,8 @@ type IntroBlock =
   | { type: 'rich'; html: string }
 const course = ref<DisplayCourse | null>(null)
 const loading = ref(true)
+const loadError = ref('')
+const currentCourseId = ref('course-1')
 const introExpanded = ref(false)
 const imageByCourseId: Record<string, string> = { 'course-1': talentImage, 'course-2': managementImage, 'course-3': leanImage }
 const introBlocksByCourseId: Record<string, IntroBlock[]> = {
@@ -102,27 +113,29 @@ const shouldCollapseIntro = computed(() => introBlocks.value.length > 3 || Boole
 
 const loadCourse = async (id: string) => {
   loading.value = true
+  loadError.value = ''
   try {
     const result = await api.getCourse(id)
     introExpanded.value = false
     course.value = { ...result, image: apiAssetUrl(result.image) || imageByCourseId[result.id] || bannerImage }
     if (tokenStorage.getAccessToken()) void api.recordPreview(result.id).catch(() => undefined)
-  } catch {
-    course.value = null
-    uni.showToast({ title: '课程加载失败，请返回重试', icon: 'none' })
+  } catch (error: any) {
+    loadError.value = error?.message || '网络异常，请检查网络后重试'
+    uni.showToast({ title: '课程加载失败，请点击重试', icon: 'none' })
   } finally {
     loading.value = false
   }
 }
 
-onLoad((query) => { loadCourse(String(query?.id || 'course-1')) })
+onLoad((query) => { currentCourseId.value = String(query?.id || 'course-1'); loadCourse(currentCourseId.value) })
+const retryLoad = () => { if (!loading.value) void loadCourse(currentCourseId.value) }
 const back = () => uni.navigateBack()
 const toggleIntro = () => { if (shouldCollapseIntro.value) introExpanded.value = !introExpanded.value }
 const register = () => { if (course.value) uni.navigateTo({ url: `/pages/register/register?id=${course.value.id}` }) }
 </script>
 
 <style scoped lang="scss">
-.detail-page { min-height: 100vh; padding-bottom: 190rpx; background: #f5f7fa; }.detail-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; height: 92rpx; padding: 0 30rpx; color: #fff; background: linear-gradient(108deg, #55cfe9 0%, #2f80ed 52%, #234dbb 100%); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .2); }.back { width: 120rpx; font-size: 64rpx; line-height: 1; font-weight: 200; }.menu { width: 120rpx; text-align: right; font-size: 34rpx; }.detail-topbar-title { flex: 1; min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 30rpx; font-weight: 800; letter-spacing: 0; }.page-state { padding: 180rpx 40rpx; color: #8492a7; text-align: center; font-size: 26rpx; }
+.detail-page { min-height: 100vh; padding-bottom: 190rpx; background: #f5f7fa; }.detail-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; height: 92rpx; padding: 0 30rpx; color: #fff; background: linear-gradient(108deg, #55cfe9 0%, #2f80ed 52%, #234dbb 100%); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .2); }.back { width: 120rpx; font-size: 64rpx; line-height: 1; font-weight: 200; }.detail-refresh { width: 120rpx; color: #fff; text-align: right; font-size: 23rpx; font-weight: 800; }.detail-refresh.disabled { opacity: .55; }.detail-topbar-title { flex: 1; min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 30rpx; font-weight: 800; letter-spacing: 0; }.page-state { display: flex; flex-direction: column; align-items: center; box-sizing: border-box; min-height: calc(100vh - 92rpx); padding: 180rpx 40rpx; color: #8492a7; text-align: center; font-size: 26rpx; }.state-title { display: block; color: #243956; font-size: 30rpx; font-weight: 800; }.state-hint { display: block; margin-top: 12rpx; line-height: 1.5; }.state-retry { width: 220rpx; height: 64rpx; margin-top: 24rpx; border: 0; border-radius: 999rpx; color: #17366d; background: #ffd21f; font-size: 22rpx; line-height: 64rpx; font-weight: 800; }.state-retry::after { border: 0; }
 .hero-wrap { position: relative; width: 100%; height: 430rpx; overflow: hidden; }.hero-image { display: block; width: 100%; height: 100%; }.hero-gradient { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(12, 31, 92, .62), rgba(12, 31, 92, 0) 58%); }.hero-category { position: absolute; left: 32rpx; bottom: 28rpx; padding: 8rpx 18rpx; border: 1rpx solid rgba(255,255,255,.6); border-radius: 999rpx; color: #fff; background: rgba(16, 54, 145, .35); font-size: 21rpx; }
 .summary { padding: 28rpx 32rpx 30rpx; background: #fff; }.course-title { display: block; color: #172e51; font-size: 37rpx; line-height: 1.35; font-weight: 900; }.course-subtitle { display: block; margin-top: 9rpx; color: #76879c; font-size: 23rpx; }.summary-time { display: flex; align-items: center; gap: 10rpx; margin-top: 24rpx; padding-bottom: 22rpx; border-bottom: 1rpx solid #edf0f4; color: #2e3e52; font-size: 23rpx; }.time-dot { color: #2f80ed; font-size: 22rpx; }.summary-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16rpx; padding-top: 22rpx; }.summary-item { display: flex; gap: 10rpx; min-width: 0; }.item-icon { flex: 0 0 auto; width: 40rpx; height: 40rpx; line-height: 40rpx; border-radius: 12rpx; color: #2f80ed; background: #eaf3ff; text-align: center; font-size: 23rpx; }.item-label, .item-value { display: block; }.item-label { color: #8996a8; font-size: 18rpx; }.item-value { margin-top: 8rpx; overflow: hidden; color: #3d4d61; font-size: 21rpx; line-height: 1.35; text-overflow: ellipsis; }.price-value { color: #ed781d; }
 .bottom-cta { position: fixed; right: 0; bottom: 0; left: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 24rpx; min-height: 112rpx; padding: 16rpx 28rpx calc(16rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #e6ebf2; background: rgba(255, 255, 255, .97); box-shadow: 0 -8rpx 28rpx rgba(20, 43, 74, .12); backdrop-filter: blur(12px); }
@@ -136,7 +149,6 @@ const register = () => { if (course.value) uni.navigateTo({ url: `/pages/registe
 .intro-card { box-sizing: border-box; width: 100%; margin: 22rpx 0 0; padding: 28rpx 26rpx 24rpx; border: 1rpx solid #edf1f6; border-radius: 24rpx; background: #fff; box-shadow: 0 10rpx 28rpx rgba(41, 74, 120, .06); }
 .intro-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; margin-bottom: 22rpx; }
 .intro-title { color: #172e51; font-size: 31rpx; line-height: 1.3; font-weight: 900; }
-.intro-badge { flex: 0 0 auto; padding: 6rpx 14rpx; border-radius: 999rpx; color: #2f80ed; background: #edf5ff; font-size: 19rpx; line-height: 1.3; }
 .intro-rich-wrap { position: relative; overflow: hidden; transition: max-height .25s ease; }
 .intro-rich-wrap.collapsed { max-height: 620rpx; }
 .intro-rich { color: #52647a; font-size: 25rpx; line-height: 1.8; }

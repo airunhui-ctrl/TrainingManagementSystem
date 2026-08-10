@@ -27,6 +27,19 @@ class RegisterDto {
   @ValidateIf((_, value) => value !== undefined && value !== null && value !== '') @IsEmail() email?: string
 }
 
+class PhoneRegistrationRequestDto {
+  @IsString() @Matches(/^1\d{10}$/) phone!: string
+}
+
+class PhoneRegistrationConfirmDto {
+  @IsString() @Matches(/^PRG-[A-Za-z0-9-]+$/) challengeId!: string
+  @IsString() @Matches(/^1\d{10}$/) phone!: string
+  @IsString() @Length(6, 6) @Matches(/^\d{6}$/) code!: string
+  @IsString() @MinLength(8) @MaxLength(64) password!: string
+  @IsString() @MinLength(8) @MaxLength(64) confirmPassword!: string
+  @IsOptional() @IsString() @MaxLength(80) name?: string
+}
+
 class PasswordResetRequestDto {
   @IsString() @MinLength(3) @MaxLength(120) identifier!: string
 }
@@ -44,6 +57,8 @@ export class AuthController {
 
   @Post('login') login(@Body() dto: LoginDto) { return this.auth.login(dto.username, dto.password) }
   @Post('register') register(@Body() dto: RegisterDto) { return this.auth.register(dto) }
+  @Post('register/sms/request') requestPhoneRegistration(@Body() dto: PhoneRegistrationRequestDto, @Req() request: { ip?: string }) { return this.auth.requestPhoneRegistration(dto.phone, request.ip) }
+  @Post('register/sms/confirm') confirmPhoneRegistration(@Body() dto: PhoneRegistrationConfirmDto) { return this.auth.confirmPhoneRegistration(dto) }
   @Post('password-reset/request') requestPasswordReset(@Body() dto: PasswordResetRequestDto, @Req() request: { ip?: string }) { return this.auth.requestPasswordReset(dto.identifier, request.ip) }
   @Post('password-reset/confirm') confirmPasswordReset(@Body() dto: PasswordResetConfirmDto) { return this.auth.confirmPasswordReset(dto) }
   @Post('wechat-login') wechatLogin(@Body() dto: WechatLoginDto) { return this.auth.wechatLogin(String(dto.code || ''), dto.profile || {}, dto.scene) }

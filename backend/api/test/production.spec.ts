@@ -47,10 +47,17 @@ describe('生产化 API 闭环', () => {
 
   afterAll(async () => { if (app) await app.close(); fixture.cleanup() })
 
-  test('普通用户被管理接口拒绝，管理员和 operator 均归入管理员角色', async () => {
+  test('健康检查能区分 API 可达与数据库可用', async () => {
+    const health = await request('/health')
+    expect(health.response.status).toBe(200)
+    expect(health.data).toMatchObject({ status: 'ok', database: 'ok' })
+    expect(typeof health.data.timestamp).toBe('string')
+  })
+
+  test('普通用户被管理接口拒绝，operator 可进入管理端但保持独立角色', async () => {
     expect((await request('/admin/dashboard', {}, demoToken)).response.status).toBe(403)
     expect((await request('/admin/dashboard', {}, adminToken)).response.status).toBe(200)
-    expect((await login('operator')).user.role).toBe('admin')
+    expect((await login('operator')).user.role).toBe('operator')
     const reconciliation = await request('/admin/student-domain/reconciliation', {}, adminToken)
     expect(reconciliation.response.status).toBe(200)
     expect(reconciliation.data.canSwitch).toBe(true)
@@ -59,6 +66,33 @@ describe('生产化 API 闭环', () => {
     expect(readiness.response.status).toBe(200)
     expect(readiness.data.channels.wechatPayment).toHaveProperty('missing')
     expect(JSON.stringify(readiness.data)).not.toContain(process.env.JWT_SECRET || '')
+  })
+
+  test('管理端导航模块只读入口全部可达且不返回服务端错误', async () => {
+    const routes = [
+      '/admin/dashboard',
+      '/courses?page=1&pageSize=5',
+      '/admin/banners',
+      '/admin/templates',
+      '/admin/enrollment-summary',
+      '/admin/enrollment-records?page=1&pageSize=5',
+      '/admin/orders?page=1&pageSize=5',
+      '/admin/invoices?page=1&pageSize=5',
+      '/admin/student-profiles?page=1&pageSize=5',
+      '/admin/users?page=1&pageSize=5',
+      '/admin/integration-readiness',
+      '/admin/payment-settings',
+      '/admin/discount-rules',
+      '/admin/feedbacks?page=1&pageSize=5',
+      '/admin/messages',
+      '/admin/points',
+      '/admin/configs',
+      '/admin/audits',
+    ]
+    const results = await Promise.all(routes.map(path => request(path, {}, adminToken)))
+    results.forEach(({ response, data }, index) => {
+      if (response.status !== 200) throw new Error(`${routes[index]} returned HTTP ${response.status}: ${JSON.stringify(data).slice(0, 180)}`)
+    })
   })
 
   test('刷新令牌轮换、旧令牌吊销且 refresh token 不能冒充 access token', async () => {
@@ -79,18 +113,56 @@ describe('生产化 API 闭环', () => {
     const pending = await request(`/admin/orders?keyword=${created.data.id}&status=待支付&page=1&pageSize=10`, {}, adminToken)
     expect(pending.response.status).toBe(200)
     expect(pending.data.items.every((item: any) => item.status === '待支付')).toBe(true)
+    const closeCandidate = await request('/orders', { method: 'POST', body: JSON.stringify({ courseId: 'course-5', participants: [{ data: { name: '接口关闭订单学员', phone: '13900000013', company: '接口关闭企业', department: '人力资源' } }], paymentMethod: 'online' }) }, demoToken)
+    expect(closeCandidate.response.status).toBe(201)
+    const closed = await request(`/admin/orders/${closeCandidate.data.id}/close`, { method: 'POST' }, adminToken)
+    expect(closed.response.status).toBe(201)
+    expect(closed.data.status).toBe('已取消')
+    expect((await request(`/admin/orders/${closeCandidate.data.id}/close`, { method: 'POST' }, adminToken)).response.status).toBe(400)
     expect((await request(`/orders/${created.data.id}/pay`, { method: 'POST', body: JSON.stringify({ method: 'online', channel: 'wechat' }) }, demoToken)).response.status).toBe(400)
     const intent = await request(`/orders/${created.data.id}/payment-intent`, { method: 'POST', body: JSON.stringify({ channel: 'wechat' }) }, demoToken)
     expect(intent.response.status).toBe(201)
     expect(intent.data.ready).toBe(false)
     const offline = await request('/orders', { method: 'POST', body: JSON.stringify({ courseId: 'course-1', participants: [{ data: { name: '开票学员', phone: '13900000012', company: '接口企业' } }], paymentMethod: 'offline' }) }, demoToken)
+    const enrollmentPage = await request('/admin/enrollment-records?keyword=开票学员&page=1&pageSize=10', {}, adminToken)
+    expect(enrollmentPage.response.status).toBe(200)
+    const enrollmentRow = enrollmentPage.data.items.find((item: any) => item.orderId === offline.data.id)
+    const courseFilteredEnrollments = await request('/admin/enrollment-records?courseId=course-1&page=1&pageSize=100', {}, adminToken)
+    expect(courseFilteredEnrollments.response.status).toBe(200)
+    expect(courseFilteredEnrollments.data.items.length).toBeGreaterThan(0)
+    expect(courseFilteredEnrollments.data.items.every((item: any) => item.courseId === 'course-1')).toBe(true)
+    expect(enrollmentRow?.phone).toBe('139****0012')
+    expect(enrollmentRow).not.toHaveProperty('formPayload')
+    const enrollmentDetail = await request(`/admin/enrollment-records/${enrollmentRow.id}`, {}, adminToken)
+    expect(enrollmentDetail.response.status).toBe(200)
+    expect(enrollmentDetail.data.phone).toBe('13900000012')
+    expect(enrollmentDetail.data.formPayload).toMatchObject({ name: '开票学员', phone: '13900000012' })
+    expect((await request(`/admin/enrollment-records/${enrollmentRow.id}`, {}, demoToken)).response.status).toBe(403)
     const invoiceProof = new FormData(); invoiceProof.append('file', new Blob([new Uint8Array([137,80,78,71,13,10,26,10])], { type: 'image/png' }), 'invoice-proof.png')
     expect((await request(`/orders/${offline.data.id}/payment-proof`, { method: 'POST', body: invoiceProof }, demoToken)).response.status).toBe(201)
     expect((await request(`/admin/orders/${offline.data.id}/review`, { method: 'POST', body: JSON.stringify({ approved: true, remark: '到账' }) }, adminToken)).response.status).toBe(201)
     const invoice = await request('/invoices', { method: 'POST', body: JSON.stringify({ title: '接口企业', taxNo: '91350200API', email: 'api@example.com', orderIds: [offline.data.id] }) }, demoToken)
     expect(invoice.response.status).toBe(201)
+    expect(invoice.data.invoiceFileStatus).toBe('未生成')
     expect((await request(`/admin/invoices/${invoice.data.id}/process`, { method: 'POST', body: JSON.stringify({ approved: true, invoiceNo: 'API-001' }) }, adminToken)).data.status).toBe('已开票')
+    const processedInvoice = await request(`/admin/invoices?keyword=${invoice.data.id}&page=1&pageSize=10`, {}, adminToken)
+    expect(processedInvoice.data.items.find((item: any) => item.id === invoice.data.id)?.invoiceFileStatus).toBe('待上传')
+    const invoiceFile = new FormData(); invoiceFile.append('file', new Blob(['%PDF-1.7'], { type: 'application/pdf' }), 'invoice.pdf')
+    const uploadedInvoiceFile = await request(`/admin/invoices/${invoice.data.id}/file`, { method: 'POST', body: invoiceFile }, adminToken)
+    expect(uploadedInvoiceFile.response.status).toBe(201)
+    expect(uploadedInvoiceFile.data.invoiceFileUrl).toBe(`/api/invoices/${invoice.data.id}/file`)
+    expect((await request(`/invoices/${invoice.data.id}/file`, {}, demoToken)).response.status).toBe(200)
+    expect((await request(`/admin/invoices/${invoice.data.id}/process`, { method: 'POST', body: JSON.stringify({ approved: true, invoiceNo: 'API-002' }) }, adminToken)).response.status).toBe(400)
     expect((await request(`/admin/orders/${offline.data.id}/refund`, { method: 'POST' }, adminToken)).data.status).toBe('已取消')
+    const message = await request('/admin/messages', { method: 'POST', body: JSON.stringify({ title: '接口消息', content: '只给当前用户', channel: '站内消息', targetUserIds: ['u-demo'], startsAt: new Date(Date.now() - 1000).toISOString(), endsAt: new Date(Date.now() + 60_000).toISOString() }) }, adminToken)
+    expect(message.response.status).toBe(201)
+    const messages = await request('/messages', {}, demoToken)
+    expect(messages.data.items.find((item: any) => item.id === message.data.id)?.readAt).toBeNull()
+    expect((await request(`/messages/${message.data.id}/read`, { method: 'POST' }, demoToken)).response.status).toBe(201)
+    expect((await request('/messages', {}, demoToken)).data.items.find((item: any) => item.id === message.data.id)?.readAt).toEqual(expect.any(String))
+    const exportResult = await request('/admin/student-profiles/export?keyword=接口&page=1&limit=1000', {}, adminToken)
+    expect(exportResult.response.status).toBe(200)
+    expect(exportResult.data.sensitiveFieldsMasked).toBe(true)
     const filtered = await request('/admin/orders?keyword=course-1&page=1&pageSize=1', {}, adminToken)
     expect(filtered.data.pageSize).toBe(1)
     expect(filtered.data.total).toBeGreaterThanOrEqual(1)

@@ -37,7 +37,7 @@ async function main() {
   const users = [
     { id:'u-demo',username:'demo',role:'user',name:'培训用户',company:'厦门六边形人才科技有限公司',avatarText:'六',points:128 },
     { id:'u-admin',username:'admin',role:'admin',name:'系统管理员',company:'六边形培训',avatarText:'管',points:0 },
-    { id:'u-operator',username:'operator',role:'admin',name:'运营管理员',company:'六边形培训',avatarText:'运',points:0 },
+    { id:'u-operator',username:'operator',role:'operator',name:'运营管理员',company:'六边形培训',avatarText:'运',points:0 },
     ...(isTest ? [] : [
       { id:'u-demo-01',username:'demo01',role:'user',name:'陈晓雯',company:'厦门智汇科技有限公司',avatarText:'陈',points:36 },
       { id:'u-demo-02',username:'demo02',role:'user',name:'林志远',company:'福建远见管理咨询有限公司',avatarText:'林',points:52 },

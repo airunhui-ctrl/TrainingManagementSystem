@@ -11,9 +11,9 @@ const value = raw.replace(/^file:/, '')
 const dbPath = isAbsolute(value) ? value : resolve(process.cwd(), value)
 mkdirSync(dirname(dbPath), { recursive: true })
 const db = new DatabaseSync(dbPath)
-const migration = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql', '0004_password_reset/migration.sql', '0005_payment_transactions/migration.sql']
-  .map((file) => readFileSync(resolve(__dirname, 'migrations', file), 'utf8'))
-  .join('\n')
+const migrationFiles = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql', '0004_password_reset/migration.sql', '0005_payment_transactions/migration.sql', '0006_message_reads/migration.sql', '0007_phone_registration/migration.sql', '0008_auth_session_version/migration.sql']
+const readMigrations = (files) => files.map((file) => readFileSync(resolve(__dirname, 'migrations', file), 'utf8')).join('\n')
+const migration = readMigrations(migrationFiles)
 
 const exists = (name) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name))
 const info = (name) => exists(name) ? db.prepare(`PRAGMA table_info("${name}")`).all() : []
@@ -38,6 +38,7 @@ if (normalized) {
   if (exists('User') && !has('User', 'email')) db.exec(`ALTER TABLE "User" ADD COLUMN "email" TEXT`)
   if (exists('User') && !has('User', 'wechatOpenId')) db.exec(`ALTER TABLE "User" ADD COLUMN "wechatOpenId" TEXT`)
   if (exists('User') && !has('User', 'lastLoginAt')) db.exec(`ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME`)
+  if (exists('User') && !has('User', 'sessionVersion')) db.exec(`ALTER TABLE "User" ADD COLUMN "sessionVersion" INTEGER NOT NULL DEFAULT 0`)
   if (exists('Course') && !has('Course', 'image')) db.exec(`ALTER TABLE "Course" ADD COLUMN "image" TEXT`)
   if (exists('DiscountRule') && !has('DiscountRule', 'scopeCourseIds')) db.exec(`ALTER TABLE "DiscountRule" ADD COLUMN "scopeCourseIds" TEXT NOT NULL DEFAULT '[]'`)
   if (exists('Course') && !has('Course', 'registrationTemplateId')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationTemplateId" TEXT`)
@@ -51,9 +52,12 @@ if (normalized) {
        INSERT INTO "RegistrationTemplate"(id,courseId,name,version,payload,updatedAt) SELECT id,courseId,name,version,payload,updatedAt FROM "__legacy_RegistrationTemplate";
        DROP TABLE "__legacy_RegistrationTemplate";`
     : ''
-  db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${rebuildTemplateTable} ${migration}`)
+  // The auth session column is added conditionally above for existing databases;
+  // omit its non-idempotent ALTER statement from the repeatable migration batch.
+  const repeatableMigration = readMigrations(migrationFiles.filter((file) => file !== '0008_auth_session_version/migration.sql'))
+  db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${rebuildTemplateTable} ${repeatableMigration}`)
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-    db.exec('PRAGMA user_version=8; COMMIT; PRAGMA foreign_keys=ON;')
+    db.exec('PRAGMA user_version=11; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite schema already current: ${dbPath}`)
   db.close()
   process.exit(0)
@@ -86,7 +90,7 @@ try {
   db.exec(migration)
 
   const insertUser = db.prepare('INSERT INTO "User"(id,username,passwordHash,role,name,company,avatarText,phone,gender,email,wechatOpenId,lastLoginAt,registeredAt,enabled,points,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(username) DO NOTHING')
-  for (const user of legacyUsers) insertUser.run(user.id,user.username,user.passwordHash,user.role === 'admin' ? 'admin' : 'user',user.name || '',user.company || '',user.avatarText || null,user.phone || null,user.gender || null,user.email || null,user.wechatOpenId || null,sqlDate(user.lastLoginAt),sqlDate(user.registeredAt || user.createdAt) || BigInt(now),user.enabled === 0 ? 0 : 1,Number(user.points || 0),sqlDate(user.createdAt) || BigInt(now),sqlDate(user.updatedAt) || BigInt(now))
+  for (const user of legacyUsers) insertUser.run(user.id,user.username,user.passwordHash,user.role === 'admin' ? 'admin' : user.role === 'operator' ? 'operator' : 'user',user.name || '',user.company || '',user.avatarText || null,user.phone || null,user.gender || null,user.email || null,user.wechatOpenId || null,sqlDate(user.lastLoginAt),sqlDate(user.registeredAt || user.createdAt) || BigInt(now),user.enabled === 0 ? 0 : 1,Number(user.points || 0),sqlDate(user.createdAt) || BigInt(now),sqlDate(user.updatedAt) || BigInt(now))
 
   const courses = Array.isArray(state.courses) && state.courses.length ? state.courses : currentCourses
   const insertCourse = db.prepare('INSERT INTO "Course"(id,title,subtitle,category,date,location,instructor,image,price,originalPrice,specialPrice,allowMultiParticipant,registrationDeadline,capacity,enrolled,status,description,registrationTemplateId,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
@@ -138,7 +142,7 @@ try {
 
   for (const name of [...tables].reverse()) { const backup = `__backup_${name}`; if (exists(backup)) db.exec(`DROP TABLE "${backup}"`) }
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=8; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=11; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite legacy data migrated: ${dbPath}`)
 } catch (error) {
   db.exec('ROLLBACK')

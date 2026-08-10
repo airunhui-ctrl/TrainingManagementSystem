@@ -66,6 +66,21 @@ export function uploadPaymentProof(orderId: string, filePath: string): Promise<{
   return performUpload(orderId, filePath, false)
 }
 
+export function downloadInvoiceFile(invoiceId: string): Promise<string> {
+  const accessToken = tokenStorage.getAccessToken()
+  return new Promise((resolve, reject) => {
+    uni.downloadFile({
+      url: `${BASE_URL}/invoices/${encodeURIComponent(invoiceId)}/file`,
+      header: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      success: (response) => {
+        if (response.statusCode >= 400) { reject(new Error(`发票文件下载失败：${response.statusCode}`)); return }
+        resolve(response.tempFilePath)
+      },
+      fail: reject,
+    })
+  })
+}
+
 function performUpload(orderId: string, filePath: string, retried: boolean): Promise<{ order: { status: string }; file: { path: string; status: string } }> {
   const accessToken = tokenStorage.getAccessToken()
   return new Promise((resolve, reject) => {
@@ -88,7 +103,8 @@ function performUpload(orderId: string, filePath: string, retried: boolean): Pro
 
 export const api = {
   login: (username: string, password: string) => request<{ accessToken: string; refreshToken: string; user: { username: string } }>({ url: '/auth/login', method: 'POST', data: { username, password } }),
-  register: (data: { username: string; password: string; confirmPassword: string; name?: string; phone?: string; email?: string }) => request<{ accessToken: string; refreshToken: string; user: { username: string; role: string } }>({ url: '/auth/register', method: 'POST', data }),
+  requestPhoneRegistrationCode: (phone: string) => request<{ accepted: boolean; challengeId: string; message: string; devCode?: string }>({ url: '/auth/register/sms/request', method: 'POST', data: { phone } }),
+  registerByPhoneSms: (data: { challengeId: string; phone: string; code: string; password: string; confirmPassword: string; name?: string }) => request<{ accessToken: string; refreshToken: string; user: { username: string; role: string } }>({ url: '/auth/register/sms/confirm', method: 'POST', data }),
   requestPasswordReset: (identifier: string) => request<{ accepted: boolean; challengeId: string; message: string; devCode?: string }>({ url: '/auth/password-reset/request', method: 'POST', data: { identifier } }),
   confirmPasswordReset: (data: { challengeId: string; code: string; newPassword: string; confirmPassword: string }) => request<{ success: boolean; message: string }>({ url: '/auth/password-reset/confirm', method: 'POST', data }),
   wechatLogin: (code: string, profile: Record<string, any>, scene?: 'mini_program' | 'h5' | 'official_account') => request<{ accessToken: string; refreshToken: string; user: { username: string; role: string } }>({ url: '/auth/wechat-login', method: 'POST', data: { code, profile, ...(scene ? { scene } : {}) } }),
@@ -112,9 +128,11 @@ export const api = {
   cancelOrder: (id: string) => request<{ status: string }>({ url: `/orders/${id}/cancel`, method: 'POST' }),
   profile: () => request<{ id: string; username: string; name: string; company: string; phone: string; gender: string; email: string; avatarText: string; points: number; registeredAt: string; lastLoginAt?: string | null }>({ url: '/profile' }),
   updateProfile: (data: Record<string, string>) => request<{ name: string }>({ url: '/profile', method: 'PATCH', data }),
-  changePassword: (password = '123456') => request<{ success: boolean }>({ url: '/profile/password', method: 'POST', data: { password } }),
+  changePassword: (password: string) => request<{ success: boolean }>({ url: '/profile/password', method: 'POST', data: { password } }),
   submitFeedback: (content: string) => request<{ id: string }>({ url: '/feedback', method: 'POST', data: { content, category: '建议反馈' } }),
-  listInvoices: () => request<{ items: Array<{ id: string; status: string; title: string; taxNo?: string; email?: string; invoiceNo?: string; orderIds?: string[]; createdAt: string }> }>({ url: '/invoices' }),
+  listMessages: () => request<{ items: Array<{ id: string; title: string; content: string; channel: string; createdAt: string; readAt?: string | null; startsAt?: string; endsAt?: string }>; unreadCount: number }>({ url: '/messages' }),
+  markMessageRead: (id: string) => request<{ messageId: string; readAt: string }>({ url: `/messages/${id}/read`, method: 'POST' }),
+  listInvoices: () => request<{ items: Array<{ id: string; status: string; title: string; taxNo?: string; email?: string; invoiceNo?: string; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; invoiceFileUrl?: string | null; invoiceFileUploadedAt?: string | null; createdAt: string }> }>({ url: '/invoices' }),
   createInvoice: (title: string, taxNo: string, email: string, orderIds: string[] = []) => request<{ id: string }>({ url: '/invoices', method: 'POST', data: { title, taxNo, email, orderIds } }),
   paymentInfo: () => request<{ accountName: string; bankName: string; accountNo: string; qrCodeText: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }>({ url: '/payment-settings/public' }),
   recordPreview: (courseId: string) => request<{ id: string }>({ url: `/courses/${courseId}/preview`, method: 'POST' }),

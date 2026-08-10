@@ -21,6 +21,7 @@ describe('账号注册与找回密码', () => {
     fixture = createTestDatabase()
     process.env.NODE_ENV = 'development'
     process.env.PASSWORD_RESET_ADAPTER = 'fake'
+    process.env.PHONE_REGISTRATION_ADAPTER = 'fake'
     const { AppModule } = await import('../src/app.module')
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
     app = moduleRef.createNestApplication()
@@ -63,5 +64,20 @@ describe('账号注册与找回密码', () => {
     expect(result.data.accepted).toBe(true)
     expect(result.data.message).toContain('如果账号存在')
     expect(result.data.devCode).toBeUndefined()
+  })
+
+  test('手机号短信注册：验证码一次性使用并自动以手机号作为账号', async () => {
+    const phone = '13800000010'
+    const requested = await request('/auth/register/sms/request', { method: 'POST', body: JSON.stringify({ phone }) })
+    expect(requested.response.status).toBe(201)
+    expect(requested.data.challengeId).toMatch(/^PRG-/)
+    expect(requested.data.devCode).toMatch(/^\d{6}$/)
+    const wrong = await request('/auth/register/sms/confirm', { method: 'POST', body: JSON.stringify({ challengeId: requested.data.challengeId, phone, code: '000000', password: 'sms-password', confirmPassword: 'sms-password' }) })
+    expect(wrong.response.status).toBe(400)
+    const confirmed = await request('/auth/register/sms/confirm', { method: 'POST', body: JSON.stringify({ challengeId: requested.data.challengeId, phone, code: requested.data.devCode, password: 'sms-password', confirmPassword: 'sms-password', name: '短信用户' }) })
+    expect(confirmed.response.status).toBe(201)
+    expect(confirmed.data.user.username).toBe(phone)
+    expect((await request('/auth/login', { method: 'POST', body: JSON.stringify({ username: phone, password: 'sms-password' }) })).response.status).toBe(201)
+    expect((await request('/auth/register/sms/confirm', { method: 'POST', body: JSON.stringify({ challengeId: requested.data.challengeId, phone, code: requested.data.devCode, password: 'sms-password', confirmPassword: 'sms-password' }) })).response.status).toBe(400)
   })
 })

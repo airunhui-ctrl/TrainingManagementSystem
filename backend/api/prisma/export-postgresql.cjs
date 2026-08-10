@@ -12,7 +12,7 @@ const rawDatabase = valueOf('database-file', process.env.DATABASE_FILE || './dat
 const databaseFile = isAbsolute(rawDatabase) ? rawDatabase : resolve(process.cwd(), rawDatabase)
 const output = resolve(process.cwd(), valueOf('output', `data/postgresql-export-${Date.now()}.json`))
 const db = new DatabaseSync(databaseFile, { readOnly: true })
-const tableNames = ['User', 'RefreshToken', 'Course', 'RegistrationTemplate', 'RegistrationTemplateVersion', 'Order', 'PaymentTransaction', 'PaymentProof', 'Invoice', 'Preview', 'Feedback', 'PointLedger', 'Message', 'AuditLog', 'Banner', 'PaymentSetting', 'DiscountRule', 'SystemConfig', 'Student', 'StudentMigrationBatch', 'StudentMigrationIssue', 'AccountStudent', 'Enrollment', 'PasswordResetChallenge']
+const tableNames = ['User', 'RefreshToken', 'Course', 'RegistrationTemplate', 'RegistrationTemplateVersion', 'Order', 'PaymentTransaction', 'PaymentProof', 'Invoice', 'Preview', 'Feedback', 'PointLedger', 'Message', 'MessageRead', 'AuditLog', 'Banner', 'PaymentSetting', 'DiscountRule', 'SystemConfig', 'Student', 'StudentMigrationBatch', 'StudentMigrationIssue', 'AccountStudent', 'Enrollment', 'PasswordResetChallenge']
 const exists = (name) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name))
 const data = Object.fromEntries(tableNames.map((name) => [name, exists(name) ? db.prepare(`SELECT * FROM "${name}"`).all() : []]))
 const replacer = (_key, value) => typeof value === 'bigint' ? `${value}` : value

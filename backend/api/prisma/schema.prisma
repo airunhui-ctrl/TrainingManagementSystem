@@ -22,6 +22,7 @@ model User {
   lastLoginAt          DateTime?
   registeredAt         DateTime         @default(now())
   enabled              Boolean          @default(true)
+  sessionVersion       Int              @default(0)
   points               Int              @default(0)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -31,6 +32,7 @@ model User {
   previews             Preview[]
   feedbacks            Feedback[]
   pointLedgers         PointLedger[]
+  messageReads         MessageRead[]
   accountStudents      AccountStudent[]
   enrollmentsAsAccount Enrollment[]     @relation("EnrollmentAccountUser")
   handledMigrationIssues StudentMigrationIssue[] @relation("MigrationIssueHandler")
@@ -61,6 +63,20 @@ model PasswordResetChallenge {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([expiresAt, usedAt])
+}
+
+model PhoneRegistrationChallenge {
+  id          String    @id
+  phone       String
+  codeHash    String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  usedAt      DateTime?
+  requestIp   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([phone, createdAt])
   @@index([expiresAt, usedAt])
 }
 
@@ -213,6 +229,19 @@ model Message {
   payload   String
   enabled   Boolean  @default(true)
   createdAt DateTime @default(now())
+  reads     MessageRead[]
+}
+
+model MessageRead {
+  id        String   @id
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId, readAt])
 }
 
 model AuditLog {

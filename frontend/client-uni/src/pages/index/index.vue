@@ -32,8 +32,16 @@
     </scroll-view>
 
     <view class="course-list">
-      <view v-if="loading" class="empty-state">正在加载课程…</view>
-      <view v-else-if="!visibleCourses.length" class="empty-state">暂无符合条件的课程</view>
+      <view v-if="loading && !courses.length" class="empty-state">正在加载课程…</view>
+      <view v-else-if="loadError && !courses.length" class="state-card error-state">
+        <text class="state-title">课程加载失败</text>
+        <text class="state-hint">{{ loadError }}</text>
+        <button class="state-retry" @tap="loadHome">重新加载</button>
+      </view>
+      <view v-else-if="!loadError && !visibleCourses.length" class="empty-state">暂无符合条件的课程</view>
+      <view v-if="loadError && courses.length" class="state-card error-state inline-error">
+        <text class="state-hint">{{ loadError }}</text><button class="state-retry" @tap="loadHome">重新加载</button>
+      </view>
       <view v-for="course in visibleCourses" :key="course.id" class="course-card" @tap="openDetail(course.id)">
         <image class="course-image" :src="course.image" mode="aspectFill" />
         <view class="course-info">
@@ -63,6 +71,7 @@ const keyword = ref('')
 const courses = ref<DisplayCourse[]>([])
 const bannerIds = ref<string[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const bannerTouchStartX = ref(0)
 const bannerTouchStartY = ref(0)
 const bannerSuppressTapUntil = ref(0)
@@ -117,13 +126,15 @@ const showMore = () => uni.showToast({ title: '已展示全部可报名课程', 
 
 const loadHome = async () => {
   loading.value = true
+  loadError.value = ''
   try {
     const [courseResult, bannerResult] = await Promise.all([api.listCourses(), api.listBanners()])
     courses.value = courseResult.items.map(toDisplayCourse)
     bannerIds.value = bannerResult.items.map((banner) => banner.courseId)
     if (!categories.value.includes(category.value)) category.value = '全部'
-  } catch {
-    uni.showToast({ title: '课程加载失败，请稍后重试', icon: 'none' })
+  } catch (error: any) {
+    loadError.value = error?.message || '网络异常，请检查网络后重试'
+    uni.showToast({ title: '课程加载失败，请点击重试', icon: 'none' })
   } finally {
     loading.value = false
   }
@@ -139,5 +150,5 @@ onShow(loadHome)
 .banner-swiper, .banner-slide { width: 100%; height: 390rpx; }.banner-slide { position: relative; overflow: hidden; }.banner-image { position: absolute; inset: 0; width: 100%; height: 100%; }.banner-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(14, 44, 142, .74) 0%, rgba(20, 80, 194, .24) 58%, rgba(20, 80, 194, 0) 100%); }.banner-copy { position: absolute; left: 42rpx; top: 62rpx; right: 38rpx; color: #fff; }.banner-kicker, .banner-title, .banner-subtitle { display: block; }.banner-kicker { font-size: 22rpx; opacity: .88; letter-spacing: 1rpx; }.banner-title { margin-top: 22rpx; font-size: 40rpx; line-height: 1.2; font-weight: 900; letter-spacing: 1rpx; }.banner-subtitle { margin-top: 8rpx; font-size: 27rpx; font-weight: 800; color: #ffdf3d; }.banner-btn { margin: 24rpx 0 0; padding: 0 28rpx; width: 224rpx; height: 66rpx; line-height: 66rpx; border: 0; border-radius: 999rpx; color: #1742a5; background: #fff; font-size: 24rpx; font-weight: 800; }.banner-btn::after { border: 0; }.banner-btn text { margin-left: 6rpx; color: #1550ca; font-size: 30rpx; }
 .search-box { display:flex; align-items:center; gap:14rpx; margin:44rpx 28rpx 0; padding:0 24rpx; height:76rpx; border-radius:18rpx; color:#92a0b2; background:#fff; box-shadow:0 6rpx 18rpx rgba(32,62,113,.06); font-size:28rpx; }.search-box input { flex:1; height:76rpx; color:#243956; font-size:24rpx; }.section-head { display: flex; align-items: center; justify-content: space-between; margin:42rpx 20rpx 0; padding: 34rpx 32rpx 20rpx; border-radius:24rpx 24rpx 0 0; background: #fff; }.section-title { display: block; font-size: 38rpx; font-weight: 900; letter-spacing: 1rpx; }.section-caption { display: block; margin-top: 8rpx; color: #8a98aa; font-size: 21rpx; }.section-more { color: #e58419; font-size: 25rpx; }
 .chips { box-sizing: border-box; width: calc(100% - 40rpx); margin:0 20rpx; padding: 0 32rpx 30rpx; white-space: nowrap; border-radius:0 0 24rpx 24rpx; background: #fff; }.chip { display: inline-block; margin-right: 16rpx; padding: 16rpx 28rpx; border-radius: 999rpx; color: #7d8da5; background: #f0f3f7; font-size: 23rpx; }.chip.active { color: #163a84; background: #ffd21f; font-weight: 800; }
-.course-list { padding: 46rpx 24rpx 0; }.empty-state { padding: 80rpx 32rpx; color: #8492a7; text-align: center; font-size: 25rpx; }.course-card { overflow: hidden; margin-bottom: 40rpx; border-radius: 20rpx; background: #fff; box-shadow: 0 8rpx 28rpx rgba(32, 62, 113, .1); }.course-image { display: block; width: 100%; height: 360rpx; background: #dcecff; }.course-info { padding: 26rpx 24rpx 24rpx; }.course-status { display: flex; align-items: center; color: #718096; font-size: 22rpx; }.status-dot { display: inline-block; width: 13rpx; height: 13rpx; margin-right: 10rpx; border-radius: 50%; background: #2ebd7f; }.status-dot.off { background: #a8b2c0; }.course-instructor { margin-left: auto; color: #8492a7; }.course-title { display: block; margin-top: 16rpx; color: #142b4a; font-size: 31rpx; line-height: 1.35; font-weight: 900; }.course-meta { display: flex; flex-wrap: wrap; gap: 10rpx 22rpx; margin-top: 18rpx; color: #7a899c; font-size: 21rpx; }.course-footer { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 26rpx; padding-top: 20rpx; border-top: 1rpx solid #edf0f4; }.nature { display: block; width: fit-content; margin-bottom: 6rpx; padding: 4rpx 13rpx; border-radius: 7rpx; color: #f0781b; background: #fff2e5; font-size: 19rpx; }.course-price { color: #f0781b; font-size: 37rpx; font-weight: 900; }.price-unit { color: #8795a7; font-size: 20rpx; font-weight: 400; }.detail-btn { margin: 0; padding: 0 25rpx; height: 66rpx; line-height: 66rpx; border: 1rpx solid #2f80ed; border-radius: 999rpx; color: #2f80ed; background: #fff; font-size: 23rpx; }.detail-btn::after { border: 0; }
+.course-list { padding: 46rpx 24rpx 0; }.empty-state { padding: 80rpx 32rpx; color: #8492a7; text-align: center; font-size: 25rpx; }.state-card { box-sizing: border-box; padding: 52rpx 32rpx; border-radius: 20rpx; color: #8492a7; background: #fff; text-align: center; font-size: 24rpx; }.state-title { display: block; color: #243956; font-size: 28rpx; font-weight: 800; }.state-hint { display: block; margin-top: 10rpx; line-height: 1.5; }.state-retry { width: 220rpx; height: 64rpx; margin: 22rpx auto 0; border: 0; border-radius: 999rpx; color: #17366d; background: #ffd21f; font-size: 22rpx; line-height: 64rpx; font-weight: 800; }.state-retry::after { border: 0; }.inline-error { margin-bottom: 24rpx; padding: 22rpx 28rpx; text-align: left; }.inline-error .state-retry { display: inline-block; width: auto; margin: 12rpx 0 0; padding: 0 24rpx; }.course-card { overflow: hidden; margin-bottom: 40rpx; border-radius: 20rpx; background: #fff; box-shadow: 0 8rpx 28rpx rgba(32, 62, 113, .1); }.course-image { display: block; width: 100%; height: 360rpx; background: #dcecff; }.course-info { padding: 26rpx 24rpx 24rpx; }.course-status { display: flex; align-items: center; color: #718096; font-size: 22rpx; }.status-dot { display: inline-block; width: 13rpx; height: 13rpx; margin-right: 10rpx; border-radius: 50%; background: #2ebd7f; }.status-dot.off { background: #a8b2c0; }.course-instructor { margin-left: auto; color: #8492a7; }.course-title { display: block; margin-top: 16rpx; color: #142b4a; font-size: 31rpx; line-height: 1.35; font-weight: 900; }.course-meta { display: flex; flex-wrap: wrap; gap: 10rpx 22rpx; margin-top: 18rpx; color: #7a899c; font-size: 21rpx; }.course-footer { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 26rpx; padding-top: 20rpx; border-top: 1rpx solid #edf0f4; }.nature { display: block; width: fit-content; margin-bottom: 6rpx; padding: 4rpx 13rpx; border-radius: 7rpx; color: #f0781b; background: #fff2e5; font-size: 19rpx; }.course-price { color: #f0781b; font-size: 37rpx; font-weight: 900; }.price-unit { color: #8795a7; font-size: 20rpx; font-weight: 400; }.detail-btn { margin: 0; padding: 0 25rpx; height: 66rpx; line-height: 66rpx; border: 1rpx solid #2f80ed; border-radius: 999rpx; color: #2f80ed; background: #fff; font-size: 23rpx; }.detail-btn::after { border: 0; }
 </style>

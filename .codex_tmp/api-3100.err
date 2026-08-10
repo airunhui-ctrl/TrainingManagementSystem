@@ -1,0 +1,12 @@
+(node:26516) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 8168  - [39m2026/08/09 21:30:42 [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use :::3100[39m[38;5;3m +2ms[39m
+Error: listen EADDRINUSE: address already in use :::3100
+    at Server.setupListenHandle [as _listen2] (node:net:2009:16)
+    at listenInCluster (node:net:2066:12)
+    at Server.listen (node:net:2171:7)
+    at ExpressAdapter.listen (D:\Projects\TrainingManagementSystem\node_modules\.pnpm\@nestjs+platform-express@10.4.22_@nestjs+common@10.4.22_class-transformer@0.5.1_class-validat_3e645l3ehqiqb6yhgcfsxu7f44\node_modules\@nestjs\platform-express\adapters\express-adapter.js:95:32)
+    at D:\Projects\TrainingManagementSystem\node_modules\.pnpm\@nestjs+core@10.4.22_@nestjs+common@10.4.22_class-transformer@0.5.1_class-validator@0.14.4_re_wv7sonobpk6cc2m3n6ev6bfqdu\node_modules\@nestjs\core\nest-application.js:183:30
+    at new Promise (<anonymous>)
+    at NestApplication.listen (D:\Projects\TrainingManagementSystem\node_modules\.pnpm\@nestjs+core@10.4.22_@nestjs+common@10.4.22_class-transformer@0.5.1_class-validator@0.14.4_re_wv7sonobpk6cc2m3n6ev6bfqdu\node_modules\@nestjs\core\nest-application.js:173:16)
+    at bootstrap (D:\Projects\TrainingManagementSystem\backend\api\src\main.ts:12:3)
