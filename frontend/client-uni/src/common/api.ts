@@ -132,8 +132,9 @@ export const api = {
   submitFeedback: (content: string) => request<{ id: string }>({ url: '/feedback', method: 'POST', data: { content, category: '建议反馈' } }),
   listMessages: () => request<{ items: Array<{ id: string; title: string; content: string; channel: string; createdAt: string; readAt?: string | null; startsAt?: string; endsAt?: string }>; unreadCount: number }>({ url: '/messages' }),
   markMessageRead: (id: string) => request<{ messageId: string; readAt: string }>({ url: `/messages/${id}/read`, method: 'POST' }),
-  listInvoices: () => request<{ items: Array<{ id: string; status: string; title: string; taxNo?: string; email?: string; invoiceNo?: string; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; invoiceFileUrl?: string | null; invoiceFileUploadedAt?: string | null; createdAt: string }> }>({ url: '/invoices' }),
+  listInvoices: () => request<{ items: Array<{ id: string; status: string; title: string; taxNo?: string; email?: string; rejectReason?: string | null; retryOfInvoiceId?: string | null; invoiceNo?: string; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; invoiceFileUrl?: string | null; invoiceFileUploadedAt?: string | null; createdAt: string }> }>({ url: '/invoices' }),
   createInvoice: (title: string, taxNo: string, email: string, orderIds: string[] = []) => request<{ id: string }>({ url: '/invoices', method: 'POST', data: { title, taxNo, email, orderIds } }),
+  reapplyInvoice: (invoiceId: string, title: string, taxNo: string, email: string) => request<{ id: string }>({ url: `/invoices/${encodeURIComponent(invoiceId)}/reapply`, method: 'POST', data: { title, taxNo, email, orderIds: [] } }),
   paymentInfo: () => request<{ accountName: string; bankName: string; accountNo: string; qrCodeText: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }>({ url: '/payment-settings/public' }),
   recordPreview: (courseId: string) => request<{ id: string }>({ url: `/courses/${courseId}/preview`, method: 'POST' }),
 }

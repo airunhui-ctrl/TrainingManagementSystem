@@ -184,7 +184,7 @@ export class MvpService {
       ...(status ? { status } : {}),
     }
     const [items, total] = await this.db.$transaction([
-      this.db.course.findMany({ where, include: { registrationTemplate: { select: { id: true, name: true } } }, orderBy: { createdAt: 'asc' }, skip: args.skip, take: args.take }),
+      this.db.course.findMany({ where, include: { registrationTemplate: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, skip: args.skip, take: args.take }),
       this.db.course.count({ where }),
     ])
     return { items: items.map((item) => this.courseView(item)), page: args.page, pageSize: args.pageSize, total }
@@ -419,6 +419,21 @@ export class MvpService {
     const item = await this.db.invoice.create({ data: { id: id('INV'), userId, orderIds: JSON.stringify(orderIds), payload: JSON.stringify({ ...payload, orderIds, invoiceFileStatus: '未生成', invoiceFileName: null, invoiceFileUrl: null, invoiceFileUploadedAt: null }), status: '待处理' } })
     await this.audit(userId, '提交开票申请', item.id)
     return this.invoiceView(item)
+  }
+
+  async reapplyInvoice(userId: string, invoiceId: string, payload: Record<string, any>) {
+    const previous = await this.db.invoice.findUnique({ where: { id: invoiceId } })
+    if (!previous) throw new NotFoundException('原开票申请不存在')
+    if (previous.userId !== userId) throw new ForbiddenException('无权重新提交该开票申请')
+    if (previous.status !== '已驳回') throw new BadRequestException('只有已驳回的开票申请可以重新提交')
+    const orderIds = json<string[]>(previous.orderIds, [])
+    if (!orderIds.length) throw new BadRequestException('原开票申请没有可重新提交的订单')
+    const item = await this.createInvoice(userId, { ...payload, orderIds })
+    const created = await this.db.invoice.findUniqueOrThrow({ where: { id: item.id } })
+    const createdPayload = { ...json<Record<string, any>>(created.payload, {}), retryOfInvoiceId: invoiceId }
+    const updated = await this.db.invoice.update({ where: { id: created.id }, data: { payload: JSON.stringify(createdPayload) } })
+    await this.audit(userId, '重新提交开票申请', `${invoiceId} -> ${created.id}`)
+    return this.invoiceView(updated)
   }
 
   async dashboard() {

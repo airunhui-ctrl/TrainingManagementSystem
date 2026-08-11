@@ -72,6 +72,8 @@ export class MvpController {
   @UseGuards(JwtGuard)
   @Post('invoices') invoice(@Req() request: any, @Body() dto: InvoiceDto) { return this.mvp.createInvoice(request.user.sub, { title: dto.title, taxNo: dto.taxNo, email: dto.email, remark: dto.remark, orderIds: dto.orderIds }) }
   @UseGuards(JwtGuard)
+  @Post('invoices/:id/reapply') reapplyInvoice(@Req() request: any, @Param('id') id: string, @Body() dto: InvoiceDto) { return this.mvp.reapplyInvoice(request.user.sub, id, { title: dto.title, taxNo: dto.taxNo, email: dto.email, remark: dto.remark }) }
+  @UseGuards(JwtGuard)
   @Post('courses/:id/preview') preview(@Req() request: any, @Param('id') id: string) { return this.mvp.recordPreview(request.user.sub, id) }
   @UseGuards(JwtGuard)
   @Get('profile') profile(@Req() request: any) { return this.mvp.getProfile(request.user.sub) }

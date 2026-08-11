@@ -367,7 +367,7 @@ onMounted(installSystemModalLayerGuard)
 // uni.showModal is mounted outside the page component, so these rules must be global.
 :root {
   --client-page-layer: 20;
-  --client-business-modal-layer: 90;
+  --client-business-modal-layer: 1000;
   --client-toast-layer: 2000;
   // Keep the native confirmation layer above every page-owned modal. The
   // values are intentionally explicit because uni-h5 mounts showModal in a
@@ -386,7 +386,7 @@ onMounted(installSystemModalLayerGuard)
 .modal-mask {
   position: fixed !important;
   inset: 0 !important;
-  z-index: 90 !important;
+  z-index: 1000 !important;
   z-index: var(--client-business-modal-layer) !important;
   isolation: isolate !important;
 }
@@ -685,7 +685,7 @@ html body [data-type='systemDialog'] [class*='modal'][class*='content'] {
 // uni-h5 3.x uses a system-dialog page rather than #u-a-m for showModal.
 // The page/component and its direct wrapper all need the same top-level
 // stacking context; otherwise the framework's inline z-index: 999 wins over
-// a page-owned modal at z-index: 90.
+// a page-owned modal at z-index: 1000.
 html body uni-page[data-type='systemDialog'] > uni-page-wrapper,
 html body uni-page[data-type='systemDialog'] > uni-page-wrapper > uni-page-body {
   position: fixed !important;
@@ -798,28 +798,48 @@ html > [data-client-confirm-layer='root'] [data-client-confirm-layer='content'] 
   top: 50% !important;
   left: 50% !important;
   box-sizing: border-box !important;
-  width: min(86vw, 420px) !important;
-  padding: 24px 22px 18px !important;
-  border-radius: 16px !important;
-  background: #fff !important;
-  box-shadow: 0 16px 50px rgba(12, 31, 65, .24) !important;
+  width: min(88vw, 440px) !important;
+  padding: 28px 26px 22px !important;
+  border: 1px solid rgba(47, 128, 237, .08) !important;
+  border-radius: 24px !important;
+  background: linear-gradient(180deg, #fff 0%, #fbfdff 100%) !important;
+  box-shadow: 0 24px 70px rgba(12, 31, 65, .28) !important;
   transform: translate(-50%, -50%) !important;
   z-index: 2147483647 !important;
   z-index: var(--client-confirm-content-layer) !important;
   pointer-events: auto !important;
 }
 
+html body .client-confirm-badge {
+  display: grid !important;
+  place-items: center !important;
+  width: 52px !important;
+  height: 52px !important;
+  margin: 0 auto 14px !important;
+  border-radius: 50% !important;
+  color: #17366d !important;
+  background: #fff4c2 !important;
+  font-size: 27px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+html body [data-client-confirm-layer='content'][data-variant='danger'] .client-confirm-badge {
+  color: #d95757 !important;
+  background: #fff0f0 !important;
+}
+
 html body .client-confirm-title {
   margin: 0 !important;
   color: #172e51 !important;
-  font-size: 18px !important;
+  font-size: 20px !important;
   line-height: 1.4 !important;
   font-weight: 800 !important;
   text-align: center !important;
 }
 
 html body .client-confirm-content {
-  margin: 14px 0 20px !important;
+  margin: 12px 0 24px !important;
   color: #64748b !important;
   font-size: 15px !important;
   line-height: 1.55 !important;
@@ -835,13 +855,15 @@ html body .client-confirm-actions {
 html body .client-confirm-button {
   box-sizing: border-box !important;
   flex: 1 1 0 !important;
-  height: 42px !important;
+  height: 46px !important;
   margin: 0 !important;
   padding: 0 12px !important;
   border: 0 !important;
   border-radius: 999px !important;
   font-size: 15px !important;
-  line-height: 42px !important;
+  line-height: 46px !important;
+  font-weight: 800 !important;
+  transition: transform .16s ease, filter .16s ease !important;
   text-align: center !important;
   cursor: pointer !important;
 }
@@ -849,4 +871,7 @@ html body .client-confirm-button {
 html body .client-confirm-button::after { display: none !important; }
 html body .client-confirm-button-cancel { color: #516173 !important; background: #eef3f8 !important; }
 html body .client-confirm-button-confirm { color: #17366d !important; background: #ffd21f !important; }
+html body [data-client-confirm-layer='content'][data-variant='danger'] .client-confirm-button-confirm { color: #fff !important; background: #d95757 !important; }
+html body .client-confirm-button:hover { filter: brightness(.97) !important; transform: translateY(-1px) !important; }
+html body .client-confirm-button:focus-visible { outline: 3px solid rgba(47, 128, 237, .32) !important; outline-offset: 2px !important; }
 </style>

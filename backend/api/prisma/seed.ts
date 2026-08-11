@@ -13,8 +13,10 @@ const passwordHash = hash('123456')
 const now = new Date().toISOString()
 for (const user of [
   ['u-demo', 'demo', 'user', '培训用户', '厦门六边形人才科技有限公司', 128],
+  ['u-demo-01', 'demo01', 'user', '陈晓雯', '厦门智汇科技有限公司', 36],
+  ['u-demo-02', 'demo02', 'user', '林志远', '福建远见管理咨询有限公司', 52],
   ['u-admin', 'admin', 'admin', '系统管理员', '六边形培训', 0],
-  ['u-operator', 'operator', 'admin', '运营管理员', '六边形培训', 0],
+  ['u-operator', 'operator', 'operator', '运营管理员', '六边形培训', 0],
 ]) db.prepare('INSERT INTO User(id,username,passwordHash,role,name,company,enabled,points,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(username) DO UPDATE SET passwordHash=excluded.passwordHash,role=excluded.role,name=excluded.name,company=excluded.company,enabled=1,points=excluded.points,updatedAt=excluded.updatedAt').run(...user.slice(0, 6), 1, user[5], now, now)
 db.prepare('INSERT INTO AppState(id,payload,updatedAt) VALUES(1,?,?) ON CONFLICT(id) DO NOTHING').run(JSON.stringify({}), now)
 console.log(`SQLite seed complete: ${dbPath}`)

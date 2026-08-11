@@ -17,6 +17,7 @@
 <script setup lang="ts">
 import { onUnmounted, reactive, ref } from 'vue'
 import { api } from '../../common/api'
+import { redirectAfterLogin } from '../../common/invoice-notice'
 import { useAuthStore } from '../../stores/auth'
 
 const form = reactive({ phone: '', code: '', password: '', confirmPassword: '', name: '' })
@@ -52,7 +53,7 @@ const submit = async () => {
     const result = await api.registerByPhoneSms({ challengeId: challengeId.value, phone, code: form.code.trim(), password: form.password, confirmPassword: form.confirmPassword, ...(form.name.trim() ? { name: form.name.trim() } : {}) })
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
     uni.showToast({ title: '注册成功', icon: 'none' })
-    setTimeout(() => uni.switchTab({ url: '/pages/index/index' }), 250)
+    setTimeout(() => void redirectAfterLogin(), 250)
   } catch (error: any) {
     uni.showToast({ title: error?.message || '注册失败', icon: 'none' })
   } finally { loading.value = false }

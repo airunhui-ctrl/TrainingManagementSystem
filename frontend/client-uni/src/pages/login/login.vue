@@ -26,6 +26,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { api } from '../../common/api'
+import { redirectAfterLogin } from '../../common/invoice-notice'
 import { useAuthStore } from '../../stores/auth'
 
 const username = ref('')
@@ -42,7 +43,7 @@ const login = async () => {
   try {
     const result = await api.login(username.value.trim(), password.value)
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
-    uni.switchTab({ url: '/pages/index/index' })
+    await redirectAfterLogin()
   } catch {
     uni.showToast({ title: '账号或密码错误', icon: 'none' })
   } finally {

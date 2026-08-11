@@ -11,6 +11,7 @@ export interface ClientConfirmOptions {
   content: string
   confirmText?: string
   cancelText?: string
+  variant?: 'default' | 'danger'
 }
 
 interface ActiveConfirm {
@@ -139,6 +140,7 @@ export const showClientConfirm = (options: ClientConfirmOptions) => {
     const dialog = document.createElement('div')
     dialog.className = 'client-confirm-dialog'
     dialog.setAttribute('data-client-confirm-layer', 'content')
+    dialog.dataset.variant = options.variant || 'default'
     dialog.setAttribute('role', 'dialog')
     dialog.setAttribute('aria-modal', 'true')
     dialog.setAttribute('aria-label', options.title)
@@ -149,37 +151,88 @@ export const showClientConfirm = (options: ClientConfirmOptions) => {
     dialog.style.setProperty('pointer-events', 'auto', 'important')
     dialog.style.setProperty('transform', 'translate(-50%, -50%)')
     dialog.style.setProperty('box-sizing', 'border-box', 'important')
-    dialog.style.setProperty('width', 'min(86vw, 420px)', 'important')
-    dialog.style.setProperty('padding', '24px 22px 18px', 'important')
-    dialog.style.setProperty('border-radius', '16px', 'important')
-    dialog.style.setProperty('background', '#fff', 'important')
-    dialog.style.setProperty('box-shadow', '0 16px 50px rgba(12, 31, 65, .24)', 'important')
+    dialog.style.setProperty('width', 'min(88vw, 440px)', 'important')
+    dialog.style.setProperty('padding', '28px 26px 22px', 'important')
+    dialog.style.setProperty('border', '1px solid rgba(47, 128, 237, .08)', 'important')
+    dialog.style.setProperty('border-radius', '24px', 'important')
+    dialog.style.setProperty('background', 'linear-gradient(180deg, #fff 0%, #fbfdff 100%)', 'important')
+    dialog.style.setProperty('box-shadow', '0 24px 70px rgba(12, 31, 65, .28)', 'important')
 
     const title = document.createElement('h2')
     title.className = 'client-confirm-title'
     title.textContent = options.title
+    title.style.setProperty('margin', '0', 'important')
+    title.style.setProperty('color', '#172e51', 'important')
+    title.style.setProperty('font-size', '20px', 'important')
+    title.style.setProperty('line-height', '1.4', 'important')
+    title.style.setProperty('font-weight', '800', 'important')
+    title.style.setProperty('text-align', 'center', 'important')
+
+    const badge = document.createElement('div')
+    badge.className = 'client-confirm-badge'
+    badge.setAttribute('aria-hidden', 'true')
+    badge.textContent = options.variant === 'danger' ? '↪' : '?'
+    badge.style.setProperty('display', 'grid', 'important')
+    badge.style.setProperty('place-items', 'center', 'important')
+    badge.style.setProperty('width', '52px', 'important')
+    badge.style.setProperty('height', '52px', 'important')
+    badge.style.setProperty('margin', '0 auto 14px', 'important')
+    badge.style.setProperty('border-radius', '50%', 'important')
+    badge.style.setProperty('color', options.variant === 'danger' ? '#d95757' : '#17366d', 'important')
+    badge.style.setProperty('background', options.variant === 'danger' ? '#fff0f0' : '#fff4c2', 'important')
+    badge.style.setProperty('font-size', '27px', 'important')
+    badge.style.setProperty('font-weight', '900', 'important')
+    badge.style.setProperty('line-height', '1', 'important')
 
     const content = document.createElement('p')
     content.className = 'client-confirm-content'
     content.textContent = options.content
+    content.style.setProperty('margin', '12px 0 24px', 'important')
+    content.style.setProperty('color', '#64748b', 'important')
+    content.style.setProperty('font-size', '15px', 'important')
+    content.style.setProperty('line-height', '1.55', 'important')
+    content.style.setProperty('white-space', 'pre-wrap', 'important')
+    content.style.setProperty('text-align', 'center', 'important')
 
     const actions = document.createElement('div')
     actions.className = 'client-confirm-actions'
+    actions.style.setProperty('display', 'flex', 'important')
+    actions.style.setProperty('gap', '12px', 'important')
+
+    const styleButton = (button: HTMLButtonElement, background: string, color: string) => {
+      button.style.setProperty('box-sizing', 'border-box', 'important')
+      button.style.setProperty('flex', '1 1 0', 'important')
+      button.style.setProperty('height', '46px', 'important')
+      button.style.setProperty('margin', '0', 'important')
+      button.style.setProperty('padding', '0 12px', 'important')
+      button.style.setProperty('border', '0', 'important')
+      button.style.setProperty('border-radius', '999px', 'important')
+      button.style.setProperty('color', color, 'important')
+      button.style.setProperty('background', background, 'important')
+      button.style.setProperty('font-size', '15px', 'important')
+      button.style.setProperty('font-weight', '800', 'important')
+      button.style.setProperty('line-height', '46px', 'important')
+      button.style.setProperty('text-align', 'center', 'important')
+      button.style.setProperty('cursor', 'pointer', 'important')
+      button.style.setProperty('appearance', 'none', 'important')
+    }
 
     const cancel = document.createElement('button')
     cancel.type = 'button'
     cancel.className = 'client-confirm-button client-confirm-button-cancel'
     cancel.textContent = options.cancelText || '取消'
+    styleButton(cancel, '#eef3f8', '#516173')
     cancel.addEventListener('click', () => closeActiveConfirm(false))
 
     const confirm = document.createElement('button')
     confirm.type = 'button'
     confirm.className = 'client-confirm-button client-confirm-button-confirm'
     confirm.textContent = options.confirmText || '确定'
+    styleButton(confirm, options.variant === 'danger' ? '#d95757' : '#ffd21f', options.variant === 'danger' ? '#fff' : '#17366d')
     confirm.addEventListener('click', () => closeActiveConfirm(true))
 
     actions.append(cancel, confirm)
-    dialog.append(title, content, actions)
+    dialog.append(badge, title, content, actions)
     root.append(mask, dialog)
     mask.addEventListener('click', () => closeActiveConfirm(false))
 

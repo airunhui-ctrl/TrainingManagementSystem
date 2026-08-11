@@ -30,15 +30,17 @@
           </view>
           <view class="order-meta"><text>{{ order.participantCount }} 位报名人</text><text class="amount">¥{{ order.amount }}</text><text>{{ paymentMethodLabel(order) }}</text><text>{{ formatDate(order.createdAt) }}</text></view>
           <view class="order-actions">
-            <label v-if="order.status === '已支付'" class="invoice-check"><checkbox :checked="selectedInvoiceOrderIds.includes(order.id)" color="#2F80ED" @tap.stop="toggleInvoiceOrder(order.id, !selectedInvoiceOrderIds.includes(order.id))" /><text>选择开票</text></label>
-            <button v-if="order.status === '已支付' && !invoicedOrderIds.has(order.id)" class="outline-button" @tap="openInvoiceDialog(order.id)">申请开票</button>
-            <text v-if="order.status === '已支付' && invoicedOrderIds.has(order.id)" class="invoice-done">已提交开票</text>
-            <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineWechatEnabled" class="primary-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'wechat')">{{ payingOrderKey ? '支付处理中...' : '微信支付' }}</button>
-            <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineAlipayEnabled" class="outline-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'alipay')">{{ payingOrderKey ? '支付处理中...' : '支付宝支付' }}</button>
-            <text v-if="order.status === '待支付' && paymentInfoLoaded && !paymentInfo.onlineWechatEnabled && !paymentInfo.onlineAlipayEnabled" class="status-hint">在线支付暂未启用，请使用线下对公转账并上传凭证。</text>
-            <button v-if="order.status === '待支付'" class="offline-button" @tap="openPaymentProofModal(order.id)">提交线下支付凭证</button>
-            <text v-if="order.status === '待审核'" class="status-hint">支付凭证审核中，暂不能重复提交。</text>
-            <button v-if="order.status === '待支付' || order.status === '待审核'" class="text-button" :disabled="Boolean(cancellingOrderId || cancelConfirming)" @tap="cancelOrder(order.id)">{{ cancellingOrderId === order.id || cancelConfirming ? '取消中...' : '取消报名' }}</button>
+            <view class="order-action-main">
+              <label v-if="order.status === '已支付'" class="invoice-check"><checkbox :checked="selectedInvoiceOrderIds.includes(order.id)" color="#2F80ED" @tap.stop="toggleInvoiceOrder(order.id, !selectedInvoiceOrderIds.includes(order.id))" /><text>选择开票</text></label>
+              <button v-if="order.status === '已支付' && !invoicedOrderIds.has(order.id)" class="outline-button" @tap="openInvoiceDialog(order.id)">申请开票</button>
+              <text v-if="order.status === '已支付' && invoicedOrderIds.has(order.id)" class="invoice-done">已提交开票</text>
+              <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineWechatEnabled" class="primary-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'wechat')">{{ payingOrderKey ? '支付处理中...' : '微信支付' }}</button>
+              <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineAlipayEnabled" class="outline-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'alipay')">{{ payingOrderKey ? '支付处理中...' : '支付宝支付' }}</button>
+              <text v-if="order.status === '待支付' && paymentInfoLoaded && !paymentInfo.onlineWechatEnabled && !paymentInfo.onlineAlipayEnabled" class="status-hint">在线支付暂未启用，请使用线下对公转账并上传凭证。</text>
+              <button v-if="order.status === '待支付'" class="offline-button" @tap="openPaymentProofModal(order.id)">提交线下支付凭证</button>
+              <text v-if="order.status === '待审核'" class="status-hint">支付凭证审核中，暂不能重复提交。</text>
+            </view>
+            <button v-if="order.status === '待支付' || order.status === '待审核'" class="text-button cancel-order-button" :disabled="Boolean(cancellingOrderId || cancelConfirming)" @tap="cancelOrder(order.id)">{{ cancellingOrderId === order.id || cancelConfirming ? '取消中...' : '取消报名' }}</button>
           </view>
           <text v-if="order.status === '待审核'" class="status-hint">凭证已提交，等待管理端审核到账。</text>
           <text v-if="order.paymentProofStatus === 'rejected'" class="status-hint rejected">上次凭证未通过：{{ order.paymentProofRemark || '请重新上传清晰的付款凭证' }}</text>
@@ -60,8 +62,8 @@
     <template v-else>
       <view v-if="invoices.length"><view v-for="invoice in invoices" :key="invoice.id" class="card invoice-card">
         <view class="order-heading"><text class="order-title">{{ invoice.title || '企业发票' }}</text><text :class="['status', statusClass(invoice.status)]">{{ invoice.status }}</text></view>
-        <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text v-if="invoice.status === '已驳回' && invoice.rejectReason" class="invoice-meta rejected">驳回理由：{{ invoice.rejectReason }}</text><text v-if="invoice.invoiceFileStatus" class="invoice-meta">电子发票：{{ invoice.invoiceFileStatus }}<text v-if="invoice.invoiceFileName">（{{ invoice.invoiceFileName }}）</text></text><text class="invoice-meta">申请时间：{{ formatDate(invoice.createdAt) }}</text>
-        <button v-if="invoice.invoiceFileStatus === '已上传'" class="outline-button invoice-file-button" @tap="openInvoiceFile(invoice)">查看电子发票</button>
+        <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.retryOfInvoiceId" class="invoice-meta">来源申请：{{ invoice.retryOfInvoiceId }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text v-if="invoice.status === '已驳回' && invoice.rejectReason" class="invoice-meta rejected">驳回理由：{{ invoice.rejectReason }}</text><text v-if="invoice.status === '已驳回' && !actionableRejectedIds.has(invoice.id)" class="invoice-meta">该申请已重新提交，历史记录保留</text><text v-if="invoice.invoiceFileStatus" class="invoice-meta">电子发票：{{ invoice.invoiceFileStatus }}<text v-if="invoice.invoiceFileName">（{{ invoice.invoiceFileName }}）</text></text>
+        <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="outline-button invoice-file-button" @tap="openInvoiceFile(invoice)">查看电子发票</button></view></view>
       </view></view>
       <view v-else-if="!loadError" class="card empty-state"><text>暂无开票记录</text></view>
     </template>
@@ -103,10 +105,10 @@
 
     <view v-if="invoiceDialogOpen" class="modal-mask" @tap.self="closeInvoiceDialog">
       <view class="invoice-dialog card">
-        <view class="modal-header"><text class="modal-title">提交开票信息</text><text class="close-button" @tap="closeInvoiceDialog">×</text></view>
-        <text class="dialog-hint">已选择 {{ selectedInvoiceOrderIds.length }} 笔订单</text>
+        <view class="modal-header"><text class="modal-title">{{ reapplyInvoiceId ? '修改后重新申请开票' : '提交开票信息' }}</text><text class="close-button" @tap="closeInvoiceDialog">×</text></view>
+        <text class="dialog-hint">已选择 {{ selectedInvoiceOrderIds.length }} 笔订单{{ reapplyInvoiceId ? '；请根据驳回理由修改信息后重新提交' : '' }}</text>
         <input v-model="invoiceForm.title" class="invoice-field" placeholder="请输入发票抬头" /><input v-model="invoiceForm.taxNo" class="invoice-field" placeholder="请输入纳税人识别号" /><input v-model="invoiceForm.email" class="invoice-field" placeholder="请输入接收发票的邮箱" />
-        <view class="dialog-actions"><button class="cancel-button" :disabled="invoiceSubmitting || invoiceConfirming" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length || invoiceSubmitting || invoiceConfirming" @tap="submitInvoice">{{ invoiceSubmitting ? '提交中...' : invoiceConfirming ? '确认中...' : '提交申请' }}</button></view>
+        <view class="dialog-actions"><button class="cancel-button" :disabled="invoiceSubmitting || invoiceConfirming" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length || invoiceSubmitting || invoiceConfirming" @tap="submitInvoice">{{ invoiceSubmitting ? '提交中...' : invoiceConfirming ? '确认中...' : reapplyInvoiceId ? '重新提交申请' : '提交申请' }}</button></view>
       </view>
     </view>
   </view>
@@ -117,11 +119,12 @@ import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api, apiAssetUrl, downloadInvoiceFile, type ApiCourse, uploadPaymentProof } from '../../common/api'
 import { showClientConfirm } from '../../common/confirm'
+import { actionableRejectedInvoices, consumeBusinessTargetTab } from '../../common/invoice-notice'
 import { requestNativePayment } from '../../common/payment'
 
 type TabKey = 'payments' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
-type Invoice = { id: string; status: string; title?: string; invoiceNo?: string; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; createdAt: string }
+type Invoice = { id: string; status: string; title?: string; taxNo?: string; email?: string; rejectReason?: string | null; retryOfInvoiceId?: string | null; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; createdAt: string }
 type Preview = { id: string; courseId: string; courseTitle: string; viewedAt: string }
 type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string; qrCodeText?: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled?: boolean; onlineAlipayEnabled?: boolean }
 
@@ -139,6 +142,7 @@ const invoiceDialogOpen = ref(false)
 const invoiceForm = reactive({ title: '', taxNo: '', email: '' })
 const invoiceSubmitting = ref(false)
 const invoiceConfirming = ref(false)
+const reapplyInvoiceId = ref('')
 const showAllPreviews = ref(false)
 const paymentProofModalOpen = ref(false)
 const selectedOrderId = ref('')
@@ -155,6 +159,7 @@ const loadError = ref('')
 const paidOrders = computed(() => orders.value.filter((order) => order.status === '已支付'))
 const paymentOrders = computed(() => paymentFilter.value === 'paid' ? paidOrders.value : orders.value)
 const invoicedOrderIds = computed(() => new Set(invoices.value.filter((invoice) => invoice.status !== '已驳回').flatMap((invoice) => invoice.orderIds || [])))
+const actionableRejectedIds = computed(() => new Set(actionableRejectedInvoices(invoices.value).map((invoice) => invoice.id)))
 const displayedPreviews = computed(() => showAllPreviews.value ? previews.value : previews.value.slice(0, 3))
 const invoiceSelectionLabel = computed(() => selectedInvoiceOrderIds.value.length ? '（' + selectedInvoiceOrderIds.value.length + '）' : '')
 const courseName = (id: string) => courses.value[id]?.title || '培训课程'
@@ -168,7 +173,7 @@ const paymentMethodLabel = (order: Order) => {
   if (order.status === '待支付') return '待选择支付方式'
   return order.paymentMethod === 'online' ? '在线支付' : '未选择支付方式'
 }
-const statusClass = (status: string) => status === '已支付' ? 'success' : status === '待审核' ? 'warning' : status === '已取消' ? 'muted' : ''
+const statusClass = (status: string) => status === '已支付' ? 'success' : status === '待审核' ? 'warning' : status === '已取消' ? 'muted' : status === '已驳回' ? 'rejected' : ''
 const formatDate = (value: string) => value ? value.replace('T', ' ').replace(/\.\d+Z$/, '') : '-'
 
 const loadAll = async () => {
@@ -262,9 +267,22 @@ const toggleInvoiceOrder = (id: string, checked: boolean) => {
 const openInvoiceDialog = (id?: string) => {
   if (id) toggleInvoiceOrder(id, true)
   if (!selectedInvoiceOrderIds.value.length) return uni.showToast({ title: '请先选择已支付订单', icon: 'none' })
+  reapplyInvoiceId.value = ''
+  invoiceForm.title = ''
+  invoiceForm.taxNo = ''
+  invoiceForm.email = ''
   invoiceDialogOpen.value = true
 }
-const closeInvoiceDialog = () => { if (invoiceSubmitting.value || invoiceConfirming.value) return; invoiceDialogOpen.value = false }
+const openInvoiceReapply = (invoice: Invoice) => {
+  if (invoice.status !== '已驳回' || !invoice.orderIds?.length) return uni.showToast({ title: '该申请没有可重新提交的订单', icon: 'none' })
+  reapplyInvoiceId.value = invoice.id
+  selectedInvoiceOrderIds.value = [...invoice.orderIds]
+  invoiceForm.title = invoice.title || ''
+  invoiceForm.taxNo = invoice.taxNo || ''
+  invoiceForm.email = invoice.email || ''
+  invoiceDialogOpen.value = true
+}
+const closeInvoiceDialog = () => { if (invoiceSubmitting.value || invoiceConfirming.value) return; invoiceDialogOpen.value = false; reapplyInvoiceId.value = '' }
 const submitInvoice = async () => {
   if (invoiceSubmitting.value || invoiceConfirming.value) return
   if (!invoiceForm.title.trim() || !invoiceForm.taxNo.trim() || !invoiceForm.email.trim()) return uni.showToast({ title: '请填写完整开票信息', icon: 'none' })
@@ -275,11 +293,13 @@ const submitInvoice = async () => {
     if (!confirmation) return
     invoiceSubmitting.value = true
     try {
-      await api.createInvoice(invoiceForm.title.trim(), invoiceForm.taxNo.trim(), invoiceForm.email.trim(), selectedInvoiceOrderIds.value)
+      if (reapplyInvoiceId.value) await api.reapplyInvoice(reapplyInvoiceId.value, invoiceForm.title.trim(), invoiceForm.taxNo.trim(), invoiceForm.email.trim())
+      else await api.createInvoice(invoiceForm.title.trim(), invoiceForm.taxNo.trim(), invoiceForm.email.trim(), selectedInvoiceOrderIds.value)
       selectedInvoiceOrderIds.value = []
       invoiceForm.title = ''
       invoiceForm.taxNo = ''
       invoiceForm.email = ''
+      reapplyInvoiceId.value = ''
       // The normal close handler intentionally blocks while submitting. Close
       // explicitly after a successful request so the completed form cannot
       // remain visible with zero selected orders.
@@ -296,7 +316,11 @@ const openInvoiceFile = async (invoice: Invoice) => {
   } catch (error: any) { uni.showToast({ title: error?.message || '电子发票下载失败', icon: 'none' }) }
 }
 const openCourseDetail = (courseId: string) => { uni.navigateTo({ url: '/pages/detail/detail?id=' + courseId }) }
-onShow(loadAll)
+const showBusinessPage = () => {
+  if (consumeBusinessTargetTab()) tab.value = 'invoices'
+  void loadAll()
+}
+onShow(showBusinessPage)
 </script>
 
 <style scoped lang="scss">
@@ -305,7 +329,13 @@ onShow(loadAll)
 .eyebrow { display: block; color: #8b98aa; font-size: 18rpx; letter-spacing: 2rpx; }
 .page-title { display: block; margin-top: 8rpx; color: $navy; font-size: 40rpx; font-weight: 900; }
 .invoice-link { color: $blue; font-size: 23rpx; }
-.invoice-file-button { margin-top: 14rpx; align-self: flex-start; }
+.invoice-footer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12rpx; margin-top: 8rpx; }
+.invoice-time { display: block; min-width: 0; margin-top: 0; }
+.invoice-card-actions { display: flex; width: auto; min-width: 0; align-items: center; justify-content: flex-end; gap: 12rpx; margin-top: 0; }
+.invoice-card-actions button { display: block; flex: 0 0 auto; width: auto !important; min-width: 0 !important; }
+.retry-invoice-button { box-sizing: border-box; width: fit-content !important; height: 54rpx; margin: 0; padding: 0 20rpx; border: 1rpx solid #b9d2f5; border-radius: 999rpx; color: $blue; background: #f5f9ff; font-size: 21rpx; line-height: 52rpx; }
+.retry-invoice-button::after { border: 0; }
+.invoice-file-button { margin-top: 0; align-self: center; }
 .tabs { display: flex; gap: 12rpx; margin: 28rpx 0 20rpx; overflow-x: auto; white-space: nowrap; }
 .tab { padding: 16rpx 24rpx; border-radius: $radius-pill; color: $muted; background: #edf0f4; font-size: 22rpx; }
 .tab.active { color: $navy; background: $yellow; font-weight: 800; }
@@ -322,13 +352,16 @@ onShow(loadAll)
 .order-heading-copy { min-width: 0; flex: 1; }
 .order-title { display: block; overflow: hidden; color: $navy; font-size: 28rpx; line-height: 1.45; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
 .order-id { display: block; margin-top: 6rpx; color: #9aa7b7; font-size: 19rpx; }
-.status { flex: 0 0 auto; padding: 7rpx 13rpx; border-radius: $radius-pill; color: $blue; background: #eaf3ff; font-size: 20rpx; }
+.status { flex: 0 0 auto; padding: 7rpx 13rpx; border-radius: $radius-pill; color: $blue; background: #eaf3ff; font-size: 20rpx; }.status.rejected { color: #b65c20; background: #fff1e8; }
 .status.success { color: #178a5a; background: #e4f8ef; }
 .status.warning { color: #ad6b00; background: #fff3d0; }
 .status.muted { color: #7c8796; background: #eef1f4; }
 .order-meta { display: flex; flex-wrap: wrap; gap: 12rpx 20rpx; margin-top: 18rpx; color: $muted; font-size: 21rpx; }
 .amount { color: #d56d1c; font-weight: 800; }
-.order-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12rpx; margin-top: 22rpx; }
+.order-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 12rpx; margin-top: 22rpx; }
+.order-action-main { display: flex; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; align-items: center; gap: 12rpx; }
+.order-action-main .status-hint { flex: 1 0 100%; }
+.cancel-order-button { flex: 0 0 auto; align-self: center; margin-left: auto !important; }
 .order-actions button { box-sizing: border-box; min-width: 142rpx; height: 62rpx; margin: 0; padding: 0 20rpx; border: 1rpx solid #d7e0eb; border-radius: $radius-pill; color: $navy; background: #fff; font-size: 20rpx; line-height: 60rpx; font-weight: 700; box-shadow: none; }
 .order-actions button::after { border: 0; }
 .order-actions button[disabled] { opacity: .55; }
@@ -352,14 +385,14 @@ onShow(loadAll)
 .preview-time, .invoice-meta { display: block; margin-top: 8rpx; color: $muted; font-size: 20rpx; }
 .preview-arrow { color: #aab4c1; font-size: 36rpx; }
 
-.modal-mask { position: fixed; inset: 0; z-index: 90; z-index: var(--client-business-modal-layer, 90); display: flex; align-items: center; justify-content: center; padding: 32rpx; background: rgba(20, 43, 74, .48); }
-.modal-mask { z-index: var(--client-business-modal-layer, 90) !important; }
-.payment-proof-modal { box-sizing: border-box; width: 100%; max-width: 680rpx; max-height: calc(100vh - 64rpx); overflow: hidden; border-radius: 28rpx; background: #fff; }
+.modal-mask { position: fixed; inset: 0; z-index: 1000; z-index: var(--client-business-modal-layer, 1000); display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 32rpx 24rpx calc(32rpx + env(safe-area-inset-bottom)); background: rgba(20, 43, 74, .48); }
+.modal-mask { z-index: var(--client-business-modal-layer, 1000) !important; }
+.payment-proof-modal { display: flex; flex-direction: column; box-sizing: border-box; width: 100%; max-width: 680rpx; height: min(calc(100vh - 64rpx - env(safe-area-inset-bottom)), 1180rpx); max-height: calc(100vh - 64rpx - env(safe-area-inset-bottom)); overflow: hidden; border-radius: 28rpx; background: #fff; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; padding: 30rpx 30rpx 22rpx; border-bottom: 1rpx solid #edf0f4; }
 .modal-title { display: block; color: $navy; font-size: 30rpx; font-weight: 900; }
 .modal-subtitle { display: block; margin-top: 8rpx; color: $muted; font-size: 19rpx; }
 .close-button { width: 46rpx; height: 46rpx; color: #8996a8; font-size: 44rpx; line-height: 38rpx; text-align: center; }
-.modal-scroll { max-height: calc(100vh - 260rpx); }
+.modal-scroll { flex: 1 1 auto; min-height: 0; height: auto; max-height: none; }
 .transfer-section, .proof-section { margin: 22rpx 28rpx 0; padding: 24rpx; border: 1rpx solid #e4eaf2; border-radius: 18rpx; }
 .proof-section { margin-bottom: 24rpx; background: #fbfcfe; }
 .copy-button { height: 52rpx; margin: 0; padding: 0 16rpx; border: 1rpx solid #b9d7ff; border-radius: $radius-pill; color: $blue; background: #f4f9ff; font-size: 20rpx; line-height: 50rpx; }
@@ -382,7 +415,7 @@ onShow(loadAll)
 .upload-title { margin-top: 16rpx; color: $navy; font-size: 24rpx; font-weight: 800; }
 .upload-caption, .replace-hint { display: block; margin-top: 8rpx; color: $muted; font-size: 19rpx; text-align: center; }
 .proof-preview { display: block; width: 100%; height: 320rpx; }
-.modal-footer { display: flex; gap: 14rpx; padding: 18rpx 28rpx calc(20rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #edf0f4; background: #fff; }
+.modal-footer { display: flex; flex: 0 0 auto; gap: 14rpx; padding: 18rpx 28rpx calc(28rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #edf0f4; background: #fff; }
 .modal-footer button { flex: 1; height: 76rpx; margin: 0; border-radius: $radius-pill; font-size: 23rpx; line-height: 76rpx; }
 .cancel-button { border: 1rpx solid #dfe5ed; color: $navy; background: #fff; }
 .submit-button { border: 0; color: $navy; background: $yellow; font-weight: 800; }

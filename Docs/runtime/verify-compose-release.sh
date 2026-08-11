@@ -63,6 +63,7 @@ if ! "${compose[@]}" ps -a api-migrate | grep -Eq 'Exited[[:space:]]+\(0\)|exite
 fi
 
 "${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:3100/api/health').then(async r=>{if(!r.ok)process.exit(1); const body=await r.json(); if(body.status!=='ok'||body.database!=='ok')process.exit(1)}).catch(()=>process.exit(1))"
+"${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:3100/api/payment-settings/public').then(async r=>{if(!r.ok)process.exit(1); const body=await r.json(); if(body.onlineWechatEnabled!==false||body.onlineAlipayEnabled!==false)process.exit(1)}).catch(()=>process.exit(1))"
 curl --fail --silent --show-error --max-time 10 "$BASE_URL:$ADMIN_PORT/" >/dev/null
 curl --fail --silent --show-error --max-time 10 "$BASE_URL:$H5_PORT/" >/dev/null
 

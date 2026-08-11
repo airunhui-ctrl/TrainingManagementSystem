@@ -32,6 +32,8 @@ type CourseForm = {
   subtitle: string
   category: string
   date: string
+  courseStartAt: string
+  courseEndAt: string
   location: string
   instructor: string
   price: string
@@ -49,7 +51,7 @@ type CourseForm = {
 }
 
 const emptyCourseForm = (): CourseForm => ({
-  title: '', subtitle: '', category: '综合管理', date: '', location: '', instructor: '',
+  title: '', subtitle: '', category: '综合管理', date: '', courseStartAt: '', courseEndAt: '', location: '', instructor: '',
   price: '', originalPrice: '', specialPrice: '', capacity: '30', enrolled: '0', status: '报名中',
   registrationDeadline: '', registrationTemplateId: '', allowMultiParticipant: true, description: '', descriptionRichText: '', image: '',
 })
@@ -84,6 +86,7 @@ const serverPagedModules = new Set(['courses', 'orders', 'invoices', 'users', 'f
 const PAGE_SIZE = 5
 const TEMPLATE_FIELD_PAGE_SIZE = 4
 const VISITED_TABS_STORAGE_KEY = 'training-management-admin-visited-tabs'
+const COURSE_DRAFT_STORAGE_KEY = 'training-management-admin-course-draft'
 
 const defaultTemplateFields = [
   { key: 'name', label: '姓名', type: 'text', required: true },
@@ -99,6 +102,28 @@ const emptyMessageForm = (): MessageForm => ({ title: '', content: '', channel: 
 const listFieldToText = (value: unknown) => Array.isArray(value) ? value.map(String).join(', ') : String(value || '')
 const textToListField = (value: string) => [...new Set(value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean))]
 const dateToLocalInput = (value: unknown) => { const source = String(value || '').trim(); if (!source) return ''; const date = new Date(source); if (!Number.isFinite(date.getTime())) return source.slice(0, 16); const pad = (item: number) => String(item).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}` }
+const normalizeCourseDateTime = (value: unknown) => {
+  const source = String(value || '').trim()
+  const match = source.match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/)
+  return match ? `${match[1]}T${match[2]}` : dateToLocalInput(source)
+}
+const parseCourseSchedule = (value: unknown) => {
+  const matches = String(value || '').match(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/g) || []
+  return { start: normalizeCourseDateTime(matches[0] || ''), end: normalizeCourseDateTime(matches[1] || '') }
+}
+const formatCourseSchedule = (start: string, end: string) => {
+  const format = (value: string) => value.trim().replace('T', ' ')
+  if (start && end) return `${format(start)} - ${format(end)}`
+  return format(start || end)
+}
+const readCourseDraft = (): Partial<CourseForm> | null => {
+  if (typeof window === 'undefined') return null
+  try {
+    const draft = JSON.parse(window.localStorage.getItem(COURSE_DRAFT_STORAGE_KEY) || 'null')
+    return draft && typeof draft === 'object' && !draft.id ? draft as Partial<CourseForm> : null
+  } catch { return null }
+}
+const removeCourseDraft = () => { try { window.localStorage.removeItem(COURSE_DRAFT_STORAGE_KEY) } catch { /* ignore unavailable storage */ } }
 const emptyConfigForm = (): ConfigForm => ({ key: '', value: '', description: '' })
 const emptyPointsForm = (): PointsForm => ({ userId: '', userName: '', points: '0', reason: '' })
 const emptyFeedbackForm = (): FeedbackForm => ({ id: '', reply: '' })
@@ -115,6 +140,10 @@ const getInitialVisitedTabs = () => {
   } catch {
     return fallback
   }
+}
+
+function ModalCloseButton({ onClick, disabled = false, label = '关闭弹窗' }: { onClick: () => void; disabled?: boolean; label?: string }) {
+  return <button type="button" className="modal-close" aria-label={label} title={label} disabled={disabled} onClick={onClick}>×</button>
 }
 
 const columnLabels: Record<string, string> = {
@@ -297,6 +326,7 @@ function App() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [courseForm, setCourseForm] = useState<CourseForm>(emptyCourseForm)
   const [courseSubmitting, setCourseSubmitting] = useState(false)
+  const courseInitialFormRef = useRef<CourseForm>(emptyCourseForm())
   const [operationKey, setOperationKey] = useState('')
   // React state updates are asynchronous; use a ref as the authoritative
   // same-tick guard so two rapid submits cannot both pass the busy check.
@@ -500,19 +530,46 @@ function App() {
   useEffect(() => { if (activeNavGroup) setOpenNavGroup(activeNavGroup.key) }, [activeNavGroup])
 
   const openCourseEditor = (item?: TableItem) => {
-    setCourseForm(item ? {
+    const nextForm = item ? {
       id: item.id,
       title: String(item.title || ''), subtitle: String(item.subtitle || ''), category: String(item.category || '综合管理'),
-      date: String(item.date || ''), location: String(item.location || ''), instructor: String(item.instructor || ''),
+      date: String(item.date || ''), ...(() => { const schedule = parseCourseSchedule(item.date); return { courseStartAt: schedule.start, courseEndAt: schedule.end } })(), location: String(item.location || ''), instructor: String(item.instructor || ''),
       price: String(item.price ?? ''), originalPrice: String(item.originalPrice ?? item.price ?? ''), specialPrice: String(item.specialPrice ?? ''),
       capacity: String(item.capacity ?? 30), enrolled: String(item.enrolled ?? 0), status: String(item.status || '报名中'),
-      registrationDeadline: String(item.registrationDeadline || ''), registrationTemplateId: String(item.registrationTemplateId || templateOptions[0]?.id || ''), allowMultiParticipant: item.allowMultiParticipant !== false,
+      registrationDeadline: dateToLocalInput(item.registrationDeadline), registrationTemplateId: String(item.registrationTemplateId || templateOptions[0]?.id || ''), allowMultiParticipant: item.allowMultiParticipant !== false,
       description: String(item.description || ''), descriptionRichText: String(item.descriptionRichText || plainTextToRichText(String(item.description || ''))), image: String(item.image || ''),
-    } : emptyCourseForm())
+    } : (() => {
+      const draft = readCourseDraft()
+      const base = { ...emptyCourseForm(), ...draft }
+      const schedule = parseCourseSchedule(base.date)
+      return {
+        ...base,
+        courseStartAt: base.courseStartAt || schedule.start,
+        courseEndAt: base.courseEndAt || schedule.end,
+        registrationTemplateId: base.registrationTemplateId || templateOptions[0]?.id || '',
+      }
+    })()
+    courseInitialFormRef.current = { ...nextForm }
+    setCourseForm(nextForm)
     setCourseModalOpen(true)
   }
 
   const updateCourseField = <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => setCourseForm(currentForm => ({ ...currentForm, [key]: value }))
+  const saveCourseDraft = () => {
+    if (courseForm.id) return flash('编辑中的课程无需保存草稿；请直接保存课程或取消关闭')
+    try {
+      window.localStorage.setItem(COURSE_DRAFT_STORAGE_KEY, JSON.stringify(courseForm))
+      flash('课程草稿已保存，关闭后重新打开仍可恢复')
+    } catch { flash('当前浏览器无法保存课程草稿') }
+  }
+  const resetCourse = async () => {
+    const hasContent = Object.entries(courseForm).some(([key, value]) => key !== 'category' && key !== 'status' && key !== 'capacity' && key !== 'enrolled' && Boolean(String(value || '').trim()))
+    if (hasContent && !await confirmAction('确定清空当前课程表单吗？已填写但未保存的内容将被清除。', '重置课程表单', true)) return
+    const nextForm = courseForm.id ? { ...courseInitialFormRef.current } : { ...emptyCourseForm(), registrationTemplateId: templateOptions[0]?.id || '' }
+    setCourseForm(nextForm)
+    if (!courseForm.id) removeCourseDraft()
+    flash('课程表单已重置')
+  }
   const uploadCourseImage = async (file: File) => {
     if (!file.type.startsWith('image/')) return flash('请选择图片文件')
     if (file.size > 5 * 1024 * 1024) return flash('课程图片不能超过 5MB')
@@ -538,7 +595,7 @@ function App() {
     setTemplateModalOpen(true)
   }
   const nextBannerSort = () => String(Math.max(0, ...(Array.isArray(data?.items) ? data.items.map((item: TableItem) => Number(item.sort) || 0) : [])) + 1)
-  const openBannerEditor = (item?: TableItem) => { setBannerForm(item ? { id: String(item.id), title: String(item.title || ''), courseId: String(item.courseId || ''), sort: String(item.sort ?? 0), enabled: item.enabled !== false, startsAt: String(item.startsAt || ''), endsAt: String(item.endsAt || '') } : { ...emptyBannerForm(nextBannerSort()), courseId: courseOptions[0]?.id || '' }); setBannerModalOpen(true) }
+  const openBannerEditor = (item?: TableItem) => { setBannerForm(item ? { id: String(item.id), title: String(item.title || ''), courseId: String(item.courseId || ''), sort: String(item.sort ?? 0), enabled: item.enabled !== false, startsAt: dateToLocalInput(item.startsAt), endsAt: dateToLocalInput(item.endsAt) } : { ...emptyBannerForm(nextBannerSort()), courseId: courseOptions[0]?.id || '' }); setBannerModalOpen(true) }
   const openPaymentEditor = (item?: TableItem) => { setPaymentForm({ ...emptyPaymentForm(), ...(item || {}) }); setPaymentModalOpen(true) }
   const openRuleEditor = (item?: TableItem) => { setRuleForm(item ? { id: String(item.id), minPeople: String(item.minPeople ?? 2), discountRate: String(item.discountRate ?? 0.9), courseIds: Array.isArray(item.courseIds) ? item.courseIds.join(', ') : '', enabled: item.enabled !== false } : emptyRuleForm()); setRuleModalOpen(true) }
   const openMessageEditor = (item?: TableItem) => { setMessageForm(item ? { id: String(item.id), title: String(item.title || ''), content: String(item.content || ''), channel: String(item.channel || '站内消息'), enabled: item.enabled !== false, targetUserIds: listFieldToText(item.targetUserIds), targetCourseIds: listFieldToText(item.targetCourseIds), startsAt: dateToLocalInput(item.startsAt), endsAt: dateToLocalInput(item.endsAt) } : emptyMessageForm()); setMessageModalOpen(true) }
@@ -688,20 +745,23 @@ function App() {
     if (courseSubmitting || operationKey) return
     const form = courseForm
     const numericFields = { price: Number(form.price), originalPrice: Number(form.originalPrice), specialPrice: form.specialPrice === '' ? null : Number(form.specialPrice), capacity: Number(form.capacity), enrolled: Number(form.enrolled) }
-    if (!form.title.trim() || !form.category.trim() || !form.date.trim() || !form.location.trim() || !form.instructor.trim()) return flash('请完整填写课程基础信息')
+    const scheduleDate = formatCourseSchedule(form.courseStartAt, form.courseEndAt)
+    if (!form.title.trim() || !form.category.trim() || !form.courseStartAt.trim() || !form.courseEndAt.trim() || !form.location.trim() || !form.instructor.trim()) return flash('请完整填写课程标题、开始/结束时间、地点和讲师')
+    if (new Date(form.courseStartAt).getTime() >= new Date(form.courseEndAt).getTime()) return flash('课程结束时间必须晚于开始时间')
+    if (!form.registrationTemplateId.trim()) return flash('请先选择报名模板；没有模板时请先到“报名模板”创建')
     if ([numericFields.price, numericFields.originalPrice, numericFields.capacity, numericFields.enrolled].some(value => !Number.isFinite(value)) || (numericFields.specialPrice !== null && !Number.isFinite(numericFields.specialPrice))) return flash('请填写有效的价格、名额和报名人数')
     if (numericFields.capacity < numericFields.enrolled) return flash('课程名额不能少于已报名人数')
     if (!await confirmAction(`${form.id ? '确认保存对课程的修改' : '确认创建课程'}“${form.title.trim()}”吗？`)) return
     setCourseSubmitting(true)
     try {
       const descriptionRichText = form.descriptionRichText.trim() || plainTextToRichText(form.description)
-      const payload = { ...form, title: form.title.trim(), subtitle: form.subtitle.trim(), category: form.category.trim(), date: form.date.trim(), location: form.location.trim(), instructor: form.instructor.trim(), registrationDeadline: form.registrationDeadline.trim() || null, description: richTextToPlainText(descriptionRichText), descriptionRichText, ...numericFields }
+      const payload = { ...form, title: form.title.trim(), subtitle: form.subtitle.trim(), category: form.category.trim(), date: scheduleDate, location: form.location.trim(), instructor: form.instructor.trim(), registrationDeadline: form.registrationDeadline.trim() || null, description: richTextToPlainText(descriptionRichText), descriptionRichText, ...numericFields }
       const saved = await runOperation(
         `course-save:${form.id || 'new'}`,
         () => apiFetch(form.id ? `/admin/courses/${form.id}` : '/admin/courses', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(payload) }),
         form.id ? '课程已更新' : '课程已创建',
       )
-      if (saved) { setCourseModalOpen(false); setCourseForm(emptyCourseForm()) }
+      if (saved) { removeCourseDraft(); setCourseModalOpen(false); setCourseForm(emptyCourseForm()) }
     } finally { setCourseSubmitting(false) }
   }
 
@@ -1110,7 +1170,7 @@ function App() {
          {active === 'enrollments' && !listLoading && !listError && <EnrollmentSummaryChart items={items} />}
          </>}
        </section>}
-      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} submitting={courseSubmitting} onChange={updateCourseField} onUploadImage={uploadCourseImage} onPrompt={promptAction} onNotify={flash} onClose={() => setCourseModalOpen(false)} onSave={saveCourse} onDelete={deleteCourse} />}
+      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} submitting={courseSubmitting} onChange={updateCourseField} onUploadImage={uploadCourseImage} onPrompt={promptAction} onNotify={flash} onClose={() => setCourseModalOpen(false)} onSaveDraft={saveCourseDraft} onReset={resetCourse} onSave={saveCourse} onDelete={deleteCourse} />}
       {templateModalOpen && <TemplateModal form={templateForm} onChange={setTemplateForm} onFieldChange={updateTemplateField} onClose={() => setTemplateModalOpen(false)} onSave={saveTemplate} onCopy={copyTemplate} onDelete={deleteTemplate} busy={Boolean(operationKey)} />}
       {bannerModalOpen && <BannerModal form={bannerForm} courses={courseOptions} onChange={setBannerForm} onClose={() => setBannerModalOpen(false)} onSave={saveBanner} onDelete={deleteBanner} busy={Boolean(operationKey)} />}
       {paymentModalOpen && <PaymentModal form={paymentForm} onChange={setPaymentForm} onUploadQr={uploadPaymentQr} onClose={() => setPaymentModalOpen(false)} onSave={savePayment} busy={Boolean(operationKey)} />}
@@ -1124,7 +1184,7 @@ function App() {
       {enrollmentSummaryDetail && <EnrollmentSummaryDetailPanel detail={enrollmentSummaryDetail} onClose={() => setEnrollmentSummaryDetail(null)} />}
       {reviewState && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeReview() }}>
         <section className="detail-modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
-          <div className="detail-head"><div><h3 id="review-modal-title">审核线下支付凭证</h3><p>订单 {reviewState.order.id} · {reviewState.order.courseTitle || reviewState.order.courseId || '培训订单'}</p></div><button type="button" onClick={closeReview} disabled={reviewSubmitting}>关闭</button></div>
+          <div className="detail-head"><div><h3 id="review-modal-title">审核线下支付凭证</h3><p>订单 {reviewState.order.id} · {reviewState.order.courseTitle || reviewState.order.courseId || '培训订单'}</p></div><ModalCloseButton onClick={closeReview} disabled={reviewSubmitting} label="关闭凭证审核" /></div>
           <div className="review-meta"><span>凭证文件：{reviewState.proof.originalName || '支付凭证'}</span><span>状态：{reviewState.proof.status || 'pending'}</span><span>{reviewState.proof.mimeType || '-'} · {reviewState.proof.size || 0} bytes</span></div>
           {reviewState.imageUrl ? <img className="payment-proof-preview" src={reviewState.imageUrl} alt="线下支付凭证预览" /> : <p className="detail-muted">当前凭证不是可直接预览的图片，请通过接口下载后核验。</p>}
           <label className="review-remark-field">审核备注<textarea value={reviewRemark} onChange={event => setReviewRemark(event.target.value)} placeholder="通过可填写到账信息；驳回时必须填写原因" /></label>
@@ -1255,7 +1315,13 @@ function StudentMergeDialog({ sourceId, busy, onClose, onSubmit }: { sourceId: s
   return typeof document === 'undefined' ? null : createPortal(dialog, document.body)
 }
 
-function CourseModal({ form, templates, submitting, onChange, onUploadImage, onPrompt, onNotify, onClose, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSave: () => void; onDelete: () => void }) {
+function CourseModal({ form, templates, submitting, onChange, onUploadImage, onPrompt, onNotify, onClose, onSaveDraft, onReset, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSaveDraft: () => void; onReset: () => void; onSave: () => void; onDelete: () => void }) {
+  const updateSchedule = (key: 'courseStartAt' | 'courseEndAt', value: string) => {
+    const nextStart = key === 'courseStartAt' ? value : form.courseStartAt
+    const nextEnd = key === 'courseEndAt' ? value : form.courseEndAt
+    onChange(key, value)
+    onChange('date', formatCourseSchedule(nextStart, nextEnd))
+  }
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (!submitting && event.target === event.currentTarget) onClose() }}>
     <section className="course-modal" role="dialog" aria-modal="true" aria-labelledby="course-modal-title">
       <div className="modal-head"><div><h2 id="course-modal-title">{form.id ? '编辑课程' : '新增课程'}</h2><p>维护课程基础信息、排课信息、价格和报名规则</p></div><button type="button" className="modal-close" disabled={submitting} onClick={onClose} aria-label="关闭">×</button></div>
@@ -1265,7 +1331,7 @@ function CourseModal({ form, templates, submitting, onChange, onUploadImage, onP
         <label>课程分类<input value={form.category} onChange={event => onChange('category', event.target.value)} placeholder="如：人才管理" /></label>
         <label>课程状态<select value={form.status} onChange={event => onChange('status', event.target.value)}><option value="待发布">待发布</option><option value="报名中">报名中</option><option value="名额紧张">名额紧张</option><option value="已结束">已结束</option><option value="已下架">已下架</option></select></label>
         <label>关联报名模板<select required value={form.registrationTemplateId} onChange={event => onChange('registrationTemplateId', event.target.value)}><option value="">请选择已创建的报名模板</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><small className="field-hint">一个课程必须选择一个模板；同一模板可复用于多个课程</small></label>
-        <label className="wide-field">上课时间<input value={form.date} onChange={event => onChange('date', event.target.value)} placeholder="如：2026-08-06 09:00 - 08-08 17:00" /></label>
+        <div className="wide-field course-schedule-field"><span className="form-label">上课时间</span><div className="course-schedule-grid"><label>课程开始时间<input type="datetime-local" required value={form.courseStartAt} onChange={event => updateSchedule('courseStartAt', event.target.value)} /></label><label>课程结束时间<input type="datetime-local" required value={form.courseEndAt} onChange={event => updateSchedule('courseEndAt', event.target.value)} /></label></div><small className="field-hint">点击日期输入框右侧日历图标选择开始和结束时间；保存时将自动生成课程时间段。</small><div className="course-date-summary">当前时间段：{form.courseStartAt && form.courseEndAt ? formatCourseSchedule(form.courseStartAt, form.courseEndAt) : '请选择完整的开始和结束时间'}</div></div>
         <label>上课地点<input value={form.location} onChange={event => onChange('location', event.target.value)} placeholder="请输入上课地点" /></label>
         <label>讲师<input value={form.instructor} onChange={event => onChange('instructor', event.target.value)} placeholder="请输入讲师" /></label>
 <label className="wide-field course-image-field">课程图片<input type="file" accept="image/*" disabled={submitting} onChange={event => { const file = event.target.files?.[0]; if (file) void onUploadImage(file); event.target.value = '' }} /><small className="field-hint">用于 C 端首页课程卡片、首页轮播和课程详情顶部；建议上传 16:9 图片，单张不超过 5MB。</small>{form.image && <img className="course-image-preview" src={assetUrl(form.image)} alt="课程图片预览" />}</label>
@@ -1274,18 +1340,34 @@ function CourseModal({ form, templates, submitting, onChange, onUploadImage, onP
         <label>课程特价<input type="number" min="0" value={form.specialPrice} onChange={event => onChange('specialPrice', event.target.value)} placeholder="可选" /></label>
         <label>课程名额<input type="number" min="0" value={form.capacity} onChange={event => onChange('capacity', event.target.value)} /></label>
         <label>已报名人数<input type="number" min="0" value={form.enrolled} readOnly aria-readonly="true" /><small className="field-hint">由报名、取消报名和退款自动维护，不可手动修改</small></label>
-        <label>报名截止时间<input value={form.registrationDeadline} onChange={event => onChange('registrationDeadline', event.target.value)} placeholder="可选，如：2026-08-01 23:59" /></label>
+        <label>报名截止时间<input type="datetime-local" value={form.registrationDeadline} onChange={event => onChange('registrationDeadline', event.target.value)} /><small className="field-hint">可选；点击日历图标选择截止日期和时间</small></label>
         <label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.allowMultiParticipant} onChange={event => onChange('allowMultiParticipant', event.target.checked)} /><span>支持多人报名</span></label>
         <div className="wide-field rich-text-field"><label>课程简介</label><RichTextEditor value={form.descriptionRichText} onChange={value => onChange('descriptionRichText', value)} onPrompt={onPrompt} onNotify={onNotify} /></div>
       </div>
-      <div className="modal-actions"><button type="button" onClick={onClose} disabled={submitting}>取消</button>{form.id && <button type="button" className="danger-button" onClick={onDelete} disabled={submitting}>删除课程</button>}<button type="button" className="primary" onClick={onSave} disabled={submitting}>{submitting ? '保存中…' : '保存课程'}</button></div>
+      <div className="modal-actions"><button type="button" onClick={onClose} disabled={submitting}>取消</button><button type="button" onClick={onReset} disabled={submitting}>重置</button>{!form.id && <button type="button" onClick={onSaveDraft} disabled={submitting}>保存草稿</button>}{form.id && <button type="button" className="danger-button" onClick={onDelete} disabled={submitting}>删除课程</button>}<button type="button" className="primary" onClick={onSave} disabled={submitting}>{submitting ? '保存中…' : '保存课程'}</button></div>
     </section>
+  </div>
+}
+
+function CourseSearchPicker({ value, courses, disabled, onChange }: { value: string; courses: CourseOption[]; disabled?: boolean; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const selected = courses.find(course => course.id === value)
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtered = courses.filter(course => !normalizedQuery || `${course.id} ${course.title}`.toLowerCase().includes(normalizedQuery))
+  return <div className="course-search-picker">
+    <button type="button" className="course-picker-summary" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(current => !current)}><span>{selected?.title || (value ? value : '请选择关联课程')}</span><b aria-hidden="true">⌄</b></button>
+    {open && <div className="course-picker-menu" role="listbox" aria-label="搜索并选择关联课程">
+      <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="输入课程名称或编号搜索" aria-label="搜索课程" />
+      <div className="course-picker-results">{filtered.length ? filtered.map(course => <button type="button" role="option" aria-selected={course.id === value} className={course.id === value ? 'course-picker-option is-selected' : 'course-picker-option'} key={course.id} onClick={() => { onChange(course.id); setQuery(''); setOpen(false) }}><span>{course.title}</span><small>{course.id}</small></button>) : <p className="course-picker-empty">没有匹配的课程</p>}</div>
+      {value && <button type="button" className="course-picker-clear" onClick={() => { onChange(''); setQuery(''); setOpen(false) }}>清除关联课程</button>}
+    </div>}
   </div>
 }
 
 function BannerModal({ form, courses, onChange, onClose, onSave, onDelete, busy = false }: { form: BannerForm; courses: CourseOption[]; onChange: (form: BannerForm) => void; onClose: () => void; onSave: () => void; onDelete: () => void; busy?: boolean }) {
   return <SimpleModal title={form.id ? '编辑 Banner' : '新增 Banner'} description="配置宣传位内容、关联课程和展示时间" onClose={onClose} busy={busy}>
-    <div className="course-form-grid"><label>Banner 标题<input disabled={busy} value={form.title} onChange={event => onChange({ ...form, title: event.target.value })} placeholder="请输入宣传位标题" /></label><label>关联课程<select disabled={busy} value={form.courseId} onChange={event => onChange({ ...form, courseId: event.target.value })}><option value="">请选择课程</option>{courses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label><label>排序<span className="field-hint">新增 Banner 默认排在现有列表末尾</span><input type="number" min="0" value={form.sort} disabled={busy || !form.id} onChange={event => onChange({ ...form, sort: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" disabled={busy} checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用展示</span></label><label>开始时间<input disabled={busy} value={form.startsAt} onChange={event => onChange({ ...form, startsAt: event.target.value })} placeholder="可选，如 2026-07-01" /></label><label>结束时间<input disabled={busy} value={form.endsAt} onChange={event => onChange({ ...form, endsAt: event.target.value })} placeholder="可选，如 2026-12-31" /></label></div>
+    <div className="course-form-grid"><label>Banner 标题<input disabled={busy} value={form.title} onChange={event => onChange({ ...form, title: event.target.value })} placeholder="请输入宣传位标题" /></label><label>关联课程<CourseSearchPicker value={form.courseId} courses={courses} disabled={busy} onChange={courseId => onChange({ ...form, courseId })} /><small className="field-hint">点击后输入课程名称或编号搜索，再选择对应课程</small></label><label>排序<span className="field-hint">新增 Banner 默认排在现有列表末尾</span><input type="number" min="0" value={form.sort} disabled={busy || !form.id} onChange={event => onChange({ ...form, sort: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" disabled={busy} checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用展示</span></label><label>开始时间<input type="datetime-local" disabled={busy} value={form.startsAt} onChange={event => onChange({ ...form, startsAt: event.target.value })} /><small className="field-hint">可选；点击日历图标选择开始时间</small></label><label>结束时间<input type="datetime-local" disabled={busy} value={form.endsAt} onChange={event => onChange({ ...form, endsAt: event.target.value })} /><small className="field-hint">可选；点击日历图标选择结束时间</small></label></div>
     <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button>{form.id && <button type="button" className="danger-button" disabled={busy} onClick={onDelete}>删除 Banner</button>}<button type="button" className="primary" disabled={busy} onClick={onSave}>{busy ? '保存中…' : '保存 Banner'}</button></div>
   </SimpleModal>
 }
@@ -1355,9 +1437,8 @@ function PointsModal({ form, onChange, onClose, onSave, busy = false }: { form: 
 function PointLedgerModal({ detail, onClose }: { detail: PointLedgerDetailState; onClose: () => void }) {
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="point-ledger-title">
-      <div className="detail-head"><div><h3 id="point-ledger-title">积分流水</h3><p>{detail.user.userName || detail.user.name || detail.user.username || detail.user.id} · 当前积分 {detail.user.points ?? 0}</p></div><button type="button" onClick={onClose}>关闭</button></div>
+      <div className="detail-head"><div><h3 id="point-ledger-title">积分流水</h3><p>{detail.user.userName || detail.user.name || detail.user.username || detail.user.id} · 当前积分 {detail.user.points ?? 0}</p></div><ModalCloseButton onClick={onClose} label="关闭积分流水" /></div>
       {detail.items.length ? <div className="table-scroll"><table><thead><tr><th>时间</th><th>变更积分</th><th>原因</th><th>流水编号</th></tr></thead><tbody>{detail.items.map(item => <tr key={item.id}><td>{formatValue(item.createdAt)}</td><td className={Number(item.points) >= 0 ? 'points-positive' : 'points-negative'}>{Number(item.points) >= 0 ? '+' : ''}{item.points}</td><td>{item.reason || '-'}</td><td>{item.id}</td></tr>)}</tbody></table></div> : <p className="detail-muted">暂无积分流水</p>}
-      <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
     </section>
   </div>
 }
@@ -1597,7 +1678,7 @@ function EnrollmentSummaryDetailPanel({ detail, onClose }: { detail: EnrollmentS
   return <>
     <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
       <section className="detail-modal enrollment-summary-modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-summary-detail-title">
-        <div className="detail-head"><div><h3 id="enrollment-summary-detail-title">{detail.summary.courseTitle || detail.summary.courseId} · 报名详情</h3><p>总报名 {detail.summary.enrollmentCount || 0} 人，请选择要查看的报名人状态</p></div><button type="button" onClick={onClose}>关闭</button></div>
+        <div className="detail-head"><div><h3 id="enrollment-summary-detail-title">{detail.summary.courseTitle || detail.summary.courseId} · 报名详情</h3><p>总报名 {detail.summary.enrollmentCount || 0} 人，请选择要查看的报名人状态</p></div><ModalCloseButton onClick={onClose} label="关闭报名详情" /></div>
         <div className="summary-detail-stats"><span>总计 <b>{detail.items.length}</b></span><span className="paid-stat">已支付 <b>{paid.length}</b></span><span className="unpaid-stat">未支付/其他 <b>{unpaid.length}</b></span></div>
         <div className="summary-detail-actions" aria-label="报名人详情分类">
           <button type="button" className="summary-status-button paid-button" onClick={() => setSelectedStatus('paid')} disabled={!paid.length}><span>已支付报名人详情</span><b>{paid.length} 人</b><small>查看已完成支付的报名人信息</small></button>
@@ -1608,7 +1689,7 @@ function EnrollmentSummaryDetailPanel({ detail, onClose }: { detail: EnrollmentS
     </div>
     {selectedStatus && <div className="modal-backdrop enrollment-participant-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedStatus(null) }}>
       <section className="detail-modal enrollment-participant-modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-participant-title">
-        <div className="detail-head"><div><h3 id="enrollment-participant-title">{detail.summary.courseTitle || detail.summary.courseId} · {selectedTitle}</h3><p>共 {selectedItems.length} 人，以下为该状态下的报名信息</p></div><button type="button" onClick={() => setSelectedStatus(null)}>返回</button></div>
+        <div className="detail-head"><div><h3 id="enrollment-participant-title">{detail.summary.courseTitle || detail.summary.courseId} · {selectedTitle}</h3><p>共 {selectedItems.length} 人，以下为该状态下的报名信息</p></div><ModalCloseButton onClick={() => setSelectedStatus(null)} label="关闭报名人详情" /></div>
         {renderRows(selectedItems, selectedStatus === 'paid' ? '暂无已支付报名人' : '暂无未支付报名人')}
       </section>
     </div>}
@@ -1639,7 +1720,7 @@ function DetailPanel({ detail, onClose, onStudentEdit, onStudentStatus, onStuden
   const otherKeys = Object.keys(item).filter(key => !['participants', 'paymentProof', 'paymentProofs', 'course', 'user', 'registrationTemplate', ...courseKeys, ...paymentKeys].includes(key) && item[key] !== undefined)
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
-      <div className="detail-head"><div><h3 id="detail-modal-title">{title}</h3><p>{detail.module === 'orders' ? `订单 ${item.id}` : item.id || '当前记录'}</p></div><button type="button" onClick={onClose}>关闭</button></div>
+      <div className="detail-head"><div><h3 id="detail-modal-title">{title}</h3><p>{detail.module === 'orders' ? `订单 ${item.id}` : item.id || '当前记录'}</p></div><ModalCloseButton onClick={onClose} label="关闭详情" /></div>
       {courseKeys.length > 0 && <><h4>课程信息</h4><div className="detail-grid">{courseKeys.map(key => <div key={`course-${key}`}><small>{displayColumnLabel(key)}</small><span>{formatValue(courseSource[key])}</span></div>)}</div></>}
       {(detail.module === 'orders' || detail.module === 'enrollment-details' || detail.module === 'students') && <>
         <h4>报名人（{participants.length}）</h4>
@@ -1649,7 +1730,6 @@ function DetailPanel({ detail, onClose, onStudentEdit, onStudentStatus, onStuden
         {detail.proof ? <div className="proof-summary"><span>{detail.proof.originalName || '凭证文件'}</span><span>{detail.proof.mimeType || '-'} · {detail.proof.size || 0} bytes · {detail.proof.status || 'pending'}</span></div> : <p className="detail-muted">暂无支付凭证</p>}
       </>}
       {otherKeys.length > 0 && <><h4>其他信息</h4><div className="detail-grid">{otherKeys.map(key => <div key={`other-${key}`}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div></>}
-      <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
     </section>
   </div>
 }
@@ -1659,11 +1739,11 @@ function StudentProfileDetailPanel({ item, onClose, onEdit, onStatus, onGrant, o
   const enrollments = Array.isArray(item.enrollments) ? item.enrollments : []
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="student-profile-title">
-      <div className="detail-head"><div><h3 id="student-profile-title">学员档案详情</h3><p>{item.id}</p></div><button type="button" onClick={onClose}>关闭</button></div>
+      <div className="detail-head"><div><h3 id="student-profile-title">学员档案详情</h3><p>{item.id}</p></div><ModalCloseButton onClick={onClose} label="关闭学员档案详情" /></div>
       <h4>基础资料</h4><div className="detail-grid">{['name', 'phone', 'email', 'company', 'department', 'position', 'status', 'enrollmentCount', 'createdAt', 'updatedAt'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
        <div className="section-action-row"><h4>授权账号（{relations.length}）</h4>{onGrant && <button type="button" disabled={busy || item.status === 'merged'} onClick={() => onGrant(String(item.id))}>授权账号</button>}</div>{relations.length ? <div className="participant-list">{relations.map((relation: TableItem) => <div key={relation.id || relation.userId}><b>{relation.username || relation.userId}</b><span>{relation.userName || '-'} · {relation.relationType || '其他'} · {relation.isDefault ? '默认报名人' : '普通关系'} · {relation.status || 'active'}</span><div className="detail-inline-actions"><button type="button" disabled={busy || relation.isDefault} onClick={() => onDefault?.(String(item.id), String(relation.userId))}>设为默认</button><button type="button" className="danger-button" disabled={busy} onClick={() => onRevoke?.(String(item.id), String(relation.userId), String(relation.username || relation.userId))}>解除关系</button></div></div>)}</div> : <p className="detail-muted">暂无授权账号</p>}
        <h4>报名履历（{enrollments.length}）</h4>{enrollments.length ? <div className="participant-list">{enrollments.map((enrollment: TableItem) => <div key={enrollment.id}><b>{enrollment.courseTitle || enrollment.courseId}</b><span>订单 {enrollment.orderId || '-'} · {enrollment.status || '-'} · 订单状态 {enrollment.orderStatus || '-'}</span><small>报名时间：{enrollment.registeredAt ? formatValue(enrollment.registeredAt) : '-'} · 模板 {enrollment.templateId || '-'} v{enrollment.templateVersion || '-'}</small></div>)}</div> : <p className="detail-muted">暂无报名履历</p>}
-       <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button>{onReload && <button type="button" className="query-button" disabled={busy} onClick={() => onReload(String(item.id))}>重新加载详情</button>}{onEdit && <button type="button" disabled={busy || item.status === 'merged'} onClick={() => onEdit(item)}>编辑资料</button>}{onStatus && <button type="button" className={item.status === 'active' ? 'danger-button' : 'primary'} disabled={busy || item.status === 'merged'} onClick={() => onStatus(item)}>{item.status === 'active' ? '停用档案' : item.status === 'inactive' ? '启用档案' : '已合并'}</button>}{onMerge && <button type="button" className="danger-button" disabled={busy || item.status === 'merged'} onClick={() => onMerge(item)}>合并到其他档案</button>}</div>
+       <div className="modal-actions">{onReload && <button type="button" className="query-button" disabled={busy} onClick={() => onReload(String(item.id))}>重新加载详情</button>}{onEdit && <button type="button" disabled={busy || item.status === 'merged'} onClick={() => onEdit(item)}>编辑资料</button>}{onStatus && <button type="button" className={item.status === 'active' ? 'danger-button' : 'primary'} disabled={busy || item.status === 'merged'} onClick={() => onStatus(item)}>{item.status === 'active' ? '停用档案' : item.status === 'inactive' ? '启用档案' : '已合并'}</button>}{onMerge && <button type="button" className="danger-button" disabled={busy || item.status === 'merged'} onClick={() => onMerge(item)}>合并到其他档案</button>}</div>
     </section>
   </div>
 }
@@ -1672,10 +1752,9 @@ function EnrollmentRecordDetailPanel({ item, onClose }: { item: TableItem; onClo
   const payload = item.formPayload && typeof item.formPayload === 'object' ? item.formPayload : {}
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-record-title">
-      <div className="detail-head"><div><h3 id="enrollment-record-title">报名履历详情</h3><p>{item.id}</p></div><button type="button" onClick={onClose}>关闭</button></div>
+      <div className="detail-head"><div><h3 id="enrollment-record-title">报名履历详情</h3><p>{item.id}</p></div><ModalCloseButton onClick={onClose} label="关闭报名履历详情" /></div>
       <h4>学员与课程</h4><div className="detail-grid">{['name', 'phone', 'company', 'department', 'position', 'courseTitle', 'date', 'location', 'orderId', 'orderStatus', 'status', 'accountUsername', 'accountUserName', 'registeredAt', 'cancelledAt', 'templateId', 'templateVersion'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
       <h4>当次报名表单快照</h4><div className="participant-list"><div><span>{Object.entries(payload).map(([key, value]) => `${displayColumnLabel(key)}：${formatValue(value)}`).join(' · ') || '无表单字段'}</span></div></div>
-      <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
     </section>
   </div>
 }

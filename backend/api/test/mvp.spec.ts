@@ -18,8 +18,10 @@ describe('Prisma 业务仓储', () => {
   afterAll(async () => { await db.$disconnect(); fixture.cleanup() })
 
   test('迁移与种子建立两角色及结构化业务表', async () => {
-    expect(await db.user.count()).toBe(3)
+    expect(await db.user.count()).toBe(5)
     expect((await db.user.findUnique({ where: { username: 'demo' } }))?.role).toBe('user')
+    expect((await db.user.findUnique({ where: { username: 'demo01' } }))?.role).toBe('user')
+    expect((await db.user.findUnique({ where: { username: 'demo02' } }))?.role).toBe('user')
     expect((await db.user.findUnique({ where: { username: 'operator' } }))?.role).toBe('operator')
     expect(await db.course.count()).toBe(6)
     expect(await db.registrationTemplate.count()).toBe(2)
@@ -196,6 +198,20 @@ describe('Prisma 业务仓储', () => {
     expect(uploaded.url).toMatch(/^\/api\/media\/payment-settings\/payment-wechat-/)
     const settings = await mvp.getPublicPaymentSettings()
     expect(settings.wechatQrImage).toBe(uploaded.url)
+    const savedNodeEnv = process.env.NODE_ENV
+    const savedPaymentAdapter = process.env.PAYMENT_ADAPTER
+    try {
+      process.env.NODE_ENV = 'production'
+      process.env.PAYMENT_ADAPTER = 'disabled'
+      const disabledSettings = await mvp.getPublicPaymentSettings()
+      expect(disabledSettings.onlineWechatEnabled).toBe(false)
+      expect(disabledSettings.onlineAlipayEnabled).toBe(false)
+    } finally {
+      if (savedNodeEnv === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = savedNodeEnv
+      if (savedPaymentAdapter === undefined) delete process.env.PAYMENT_ADAPTER
+      else process.env.PAYMENT_ADAPTER = savedPaymentAdapter
+    }
     const file = await mvp.readPaymentSettingImage(uploaded.name)
     expect(file.mimeType).toBe('image/png')
     await expect(mvp.uploadPaymentQr('alipay', { originalname: 'alipay.exe', mimetype: 'application/octet-stream', size: 4, buffer: Buffer.from('test') }, 'admin')).rejects.toThrow('仅支持')
