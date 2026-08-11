@@ -9,7 +9,7 @@ type TableItem = Record<string, any>
 type TabSnapshot = Record<string, any>
 type RowActionLabel = string | ((item: TableItem) => string)
 type CourseOption = { id: string; title: string }
-type TemplateOption = { id: string; name: string }
+type TemplateOption = { id: string; name: string; locked?: boolean }
 type TemplateField = { key: string; label: string; type: 'text' | 'phone' | 'select' | 'radio' | 'checkbox'; required: boolean; options?: string[] }
 type TemplateForm = { id?: string; name: string; fields: TemplateField[] }
 type BannerForm = { id?: string; title: string; courseId: string; sort: string; enabled: boolean; startsAt: string; endsAt: string }
@@ -51,10 +51,20 @@ type CourseForm = {
 }
 
 const emptyCourseForm = (): CourseForm => ({
-  title: '', subtitle: '', category: '综合管理', date: '', courseStartAt: '', courseEndAt: '', location: '', instructor: '',
+  title: '', subtitle: '', category: '01', date: '', courseStartAt: '', courseEndAt: '', location: '', instructor: '',
   price: '', originalPrice: '', specialPrice: '', capacity: '30', enrolled: '0', status: '报名中',
   registrationDeadline: '', registrationTemplateId: '', allowMultiParticipant: true, description: '', descriptionRichText: '', image: '',
 })
+
+const courseCategoryFallback: FilterOption[] = [
+  { value: '01', label: '综合管理' },
+  { value: '02', label: '人才管理' },
+  { value: '03', label: '经营管理' },
+  { value: '04', label: '组织效能' },
+  { value: '05', label: '绩效管理' },
+  { value: '06', label: '组织发展' },
+  { value: '07', label: '数字化学习' },
+]
 
 const modules: Module[] = [
   { key: 'dashboard', label: '工作台' },
@@ -84,7 +94,6 @@ const navGroups: NavGroup[] = [
 ]
 const serverPagedModules = new Set(['courses', 'orders', 'invoices', 'users', 'feedbacks', 'enrollment-details', 'students'])
 const PAGE_SIZE = 5
-const TEMPLATE_FIELD_PAGE_SIZE = 4
 const VISITED_TABS_STORAGE_KEY = 'training-management-admin-visited-tabs'
 const COURSE_DRAFT_STORAGE_KEY = 'training-management-admin-course-draft'
 
@@ -292,6 +301,7 @@ function App() {
   const [visitedTabs, setVisitedTabs] = useState<string[]>(getInitialVisitedTabs)
   const [courseOptions, setCourseOptions] = useState<CourseOption[]>([])
   const [templateOptions, setTemplateOptions] = useState<TemplateOption[]>([])
+  const [courseCategoryOptions, setCourseCategoryOptions] = useState<FilterOption[]>([])
   const [notice, setNotice] = useState('')
   const [dialogRequest, setDialogRequest] = useState<DialogRequest | null>(null)
   const [tableKeyword, setTableKeyword] = useState('')
@@ -305,6 +315,7 @@ function App() {
   const [courseModalOpen, setCourseModalOpen] = useState(false)
   const [templateModalOpen, setTemplateModalOpen] = useState(false)
   const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplateForm)
+  const [templateLocked, setTemplateLocked] = useState(false)
   const [bannerModalOpen, setBannerModalOpen] = useState(false)
   const [bannerForm, setBannerForm] = useState<BannerForm>(emptyBannerForm)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
@@ -485,7 +496,7 @@ function App() {
             apiFetch<{ items?: TableItem[] }>('/admin/templates'),
           ])
           commit(courseData)
-          if (version === loadVersion.current) setTemplateOptions(Array.isArray(templateData?.items) ? templateData.items.map(item => ({ id: String(item.id), name: String(item.name || item.id) })) : [])
+          if (version === loadVersion.current) setTemplateOptions(Array.isArray(templateData?.items) ? templateData.items.map(item => ({ id: String(item.id), name: String(item.name || item.id), locked: item.locked === true })) : [])
         } else if (active === 'banners' || active === 'templates' || active === 'rules' || active === 'enrollment-details') {
           const [moduleData, courseData] = await Promise.all([
             apiFetch(`${current.endpoint}${params}`),
@@ -521,6 +532,15 @@ function App() {
   }, [visitedTabs])
   useEffect(() => { if (loggedIn) load().catch((error) => flash(error instanceof Error ? error.message : '加载失败，请重新登录')) }, [active, loggedIn, page, queryKeyword, statusFilter, auditActionFilter, auditActorFilter, auditFrom, auditTo])
   useEffect(() => {
+    if (!loggedIn || courseCategoryOptions.length) return
+    apiFetch<{ items?: Array<{ code: string; label: string }> }>('/admin/course-categories')
+      .then(result => {
+        const items = Array.isArray(result?.items) ? result.items.map(item => ({ value: String(item.code), label: String(item.label) })).filter(item => item.value && item.label) : []
+        if (items.length) setCourseCategoryOptions(items)
+      })
+      .catch(() => undefined)
+  }, [loggedIn, courseCategoryOptions.length])
+  useEffect(() => {
     tableScrollRef.current = document.querySelector('.page-main .table-section .table-scroll') as HTMLDivElement | null
     const position = scrollPositionsRef.current[active]
     if (!position) return
@@ -530,9 +550,15 @@ function App() {
   useEffect(() => { if (activeNavGroup) setOpenNavGroup(activeNavGroup.key) }, [activeNavGroup])
 
   const openCourseEditor = (item?: TableItem) => {
+    const categoryCode = (value: unknown) => {
+      const raw = String(value || '').trim()
+      const options = courseCategoryOptions.length ? courseCategoryOptions : courseCategoryFallback
+      const matched = options.find(option => option.value === raw || option.label === raw)
+      return matched?.value || raw
+    }
     const nextForm = item ? {
       id: item.id,
-      title: String(item.title || ''), subtitle: String(item.subtitle || ''), category: String(item.category || '综合管理'),
+      title: String(item.title || ''), subtitle: String(item.subtitle || ''), category: categoryCode(item.categoryCode || item.category || ''),
       date: String(item.date || ''), ...(() => { const schedule = parseCourseSchedule(item.date); return { courseStartAt: schedule.start, courseEndAt: schedule.end } })(), location: String(item.location || ''), instructor: String(item.instructor || ''),
       price: String(item.price ?? ''), originalPrice: String(item.originalPrice ?? item.price ?? ''), specialPrice: String(item.specialPrice ?? ''),
       capacity: String(item.capacity ?? 30), enrolled: String(item.enrolled ?? 0), status: String(item.status || '报名中'),
@@ -544,6 +570,7 @@ function App() {
       const schedule = parseCourseSchedule(base.date)
       return {
         ...base,
+        category: categoryCode(base.category || ''),
         courseStartAt: base.courseStartAt || schedule.start,
         courseEndAt: base.courseEndAt || schedule.end,
         registrationTemplateId: base.registrationTemplateId || templateOptions[0]?.id || '',
@@ -592,6 +619,7 @@ function App() {
   const openTemplateEditor = (item?: TableItem) => {
     const fields = Array.isArray(item?.fields) ? item.fields : defaultTemplateFields
     setTemplateForm({ id: item?.id ? String(item.id) : undefined, name: String(item?.name || ''), fields: fields.map((field: any) => ({ key: String(field.key || ''), label: String(field.label || ''), type: field.type || 'text', required: field.required === true, options: Array.isArray(field.options) ? field.options.map(String) : [] })) })
+    setTemplateLocked(item?.locked === true)
     setTemplateModalOpen(true)
   }
   const nextBannerSort = () => String(Math.max(0, ...(Array.isArray(data?.items) ? data.items.map((item: TableItem) => Number(item.sort) || 0) : [])) + 1)
@@ -633,6 +661,12 @@ function App() {
     setStudentProfileForm(emptyStudentProfileForm())
   }
   const updateTemplateField = (index: number, patch: Partial<TemplateField>) => setTemplateForm(current => ({ ...current, fields: current.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) }))
+  const removeTemplateField = async (index: number) => {
+    const field = templateForm.fields[index]
+    if (!field) return
+    if (!await confirmAction(`确定删除字段“${field.label || field.key}”吗？删除后需要保存模板才会生效。`, '删除模板字段', true)) return
+    setTemplateForm(current => ({ ...current, fields: current.fields.filter((_, fieldIndex) => fieldIndex !== index) }))
+  }
   const saveTemplate = async () => {
     const fields = templateForm.fields.map(field => ({ ...field, key: field.key.trim(), label: field.label.trim(), options: ['select', 'radio', 'checkbox'].includes(field.type) ? (field.options || []).map(option => option.trim()).filter(Boolean) : undefined }))
     if (!templateForm.name.trim() || !fields.length || fields.some(field => !field.key || !field.label)) return flash('请完整填写报名模板名称和字段')
@@ -1170,8 +1204,8 @@ function App() {
          {active === 'enrollments' && !listLoading && !listError && <EnrollmentSummaryChart items={items} />}
          </>}
        </section>}
-      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} submitting={courseSubmitting} onChange={updateCourseField} onUploadImage={uploadCourseImage} onPrompt={promptAction} onNotify={flash} onClose={() => setCourseModalOpen(false)} onSaveDraft={saveCourseDraft} onReset={resetCourse} onSave={saveCourse} onDelete={deleteCourse} />}
-      {templateModalOpen && <TemplateModal form={templateForm} onChange={setTemplateForm} onFieldChange={updateTemplateField} onClose={() => setTemplateModalOpen(false)} onSave={saveTemplate} onCopy={copyTemplate} onDelete={deleteTemplate} busy={Boolean(operationKey)} />}
+      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} categories={courseCategoryOptions} submitting={courseSubmitting} onChange={updateCourseField} onUploadImage={uploadCourseImage} onPrompt={promptAction} onNotify={flash} onClose={() => setCourseModalOpen(false)} onSaveDraft={saveCourseDraft} onReset={resetCourse} onSave={saveCourse} onDelete={deleteCourse} />}
+      {templateModalOpen && <TemplateModal form={templateForm} onChange={setTemplateForm} onFieldChange={updateTemplateField} onFieldRemove={removeTemplateField} onClose={() => setTemplateModalOpen(false)} onSave={saveTemplate} onCopy={copyTemplate} onDelete={deleteTemplate} busy={Boolean(operationKey)} locked={templateLocked} />}
       {bannerModalOpen && <BannerModal form={bannerForm} courses={courseOptions} onChange={setBannerForm} onClose={() => setBannerModalOpen(false)} onSave={saveBanner} onDelete={deleteBanner} busy={Boolean(operationKey)} />}
       {paymentModalOpen && <PaymentModal form={paymentForm} onChange={setPaymentForm} onUploadQr={uploadPaymentQr} onClose={() => setPaymentModalOpen(false)} onSave={savePayment} busy={Boolean(operationKey)} />}
       {ruleModalOpen && <RuleModal form={ruleForm} courses={courseOptions} onChange={setRuleForm} onClose={() => setRuleModalOpen(false)} onSave={saveRule} onDelete={deleteRule} busy={Boolean(operationKey)} />}
@@ -1183,11 +1217,13 @@ function App() {
       {studentEditModalOpen && <StudentProfileModal form={studentProfileForm} onChange={setStudentProfileForm} onClose={() => setStudentEditModalOpen(false)} onSave={saveStudentProfile} busy={Boolean(operationKey)} />}
       {enrollmentSummaryDetail && <EnrollmentSummaryDetailPanel detail={enrollmentSummaryDetail} onClose={() => setEnrollmentSummaryDetail(null)} />}
       {reviewState && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeReview() }}>
-        <section className="detail-modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
+        <section className="detail-modal review-modal modal-with-footer" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
           <div className="detail-head"><div><h3 id="review-modal-title">审核线下支付凭证</h3><p>订单 {reviewState.order.id} · {reviewState.order.courseTitle || reviewState.order.courseId || '培训订单'}</p></div><ModalCloseButton onClick={closeReview} disabled={reviewSubmitting} label="关闭凭证审核" /></div>
-          <div className="review-meta"><span>凭证文件：{reviewState.proof.originalName || '支付凭证'}</span><span>状态：{reviewState.proof.status || 'pending'}</span><span>{reviewState.proof.mimeType || '-'} · {reviewState.proof.size || 0} bytes</span></div>
-          {reviewState.imageUrl ? <img className="payment-proof-preview" src={reviewState.imageUrl} alt="线下支付凭证预览" /> : <p className="detail-muted">当前凭证不是可直接预览的图片，请通过接口下载后核验。</p>}
-          <label className="review-remark-field">审核备注<textarea value={reviewRemark} onChange={event => setReviewRemark(event.target.value)} placeholder="通过可填写到账信息；驳回时必须填写原因" /></label>
+          <div className="modal-scroll review-scroll">
+            <div className="review-meta"><span>凭证文件：{reviewState.proof.originalName || '支付凭证'}</span><span>状态：{reviewState.proof.status || 'pending'}</span><span>{reviewState.proof.mimeType || '-'} · {reviewState.proof.size || 0} bytes</span></div>
+            {reviewState.imageUrl ? <img className="payment-proof-preview" src={reviewState.imageUrl} alt="线下支付凭证预览" /> : <p className="detail-muted">当前凭证不是可直接预览的图片，请通过接口下载后核验。</p>}
+            <label className="review-remark-field">审核备注<textarea value={reviewRemark} onChange={event => setReviewRemark(event.target.value)} placeholder="通过可填写到账信息；驳回时必须填写原因" /></label>
+          </div>
           <div className="modal-actions"><button type="button" onClick={closeReview} disabled={reviewSubmitting}>取消</button><button type="button" className="danger-button" onClick={() => submitOrderReview(false)} disabled={reviewSubmitting}>驳回凭证</button><button type="button" className="primary" onClick={() => submitOrderReview(true)} disabled={reviewSubmitting}>{reviewSubmitting ? '提交中…' : '审核通过'}</button></div>
         </section>
       </div>}
@@ -1315,7 +1351,7 @@ function StudentMergeDialog({ sourceId, busy, onClose, onSubmit }: { sourceId: s
   return typeof document === 'undefined' ? null : createPortal(dialog, document.body)
 }
 
-function CourseModal({ form, templates, submitting, onChange, onUploadImage, onPrompt, onNotify, onClose, onSaveDraft, onReset, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSaveDraft: () => void; onReset: () => void; onSave: () => void; onDelete: () => void }) {
+function CourseModal({ form, templates, categories, submitting, onChange, onUploadImage, onPrompt, onNotify, onClose, onSaveDraft, onReset, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; categories: FilterOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSaveDraft: () => void; onReset: () => void; onSave: () => void; onDelete: () => void }) {
   const updateSchedule = (key: 'courseStartAt' | 'courseEndAt', value: string) => {
     const nextStart = key === 'courseStartAt' ? value : form.courseStartAt
     const nextEnd = key === 'courseEndAt' ? value : form.courseEndAt
@@ -1328,7 +1364,7 @@ function CourseModal({ form, templates, submitting, onChange, onUploadImage, onP
       <div className="course-form-grid">
         <label>课程标题<input value={form.title} onChange={event => onChange('title', event.target.value)} placeholder="请输入课程标题" /></label>
         <label>课程副标题<input value={form.subtitle} onChange={event => onChange('subtitle', event.target.value)} placeholder="请输入课程副标题" /></label>
-        <label>课程分类<input value={form.category} onChange={event => onChange('category', event.target.value)} placeholder="如：人才管理" /></label>
+        <label>课程分类<select value={form.category} onChange={event => onChange('category', event.target.value)}>{[...(categories.length ? categories : courseCategoryFallback), ...(categories.some(option => option.value === form.category) ? [] : [{ value: form.category, label: `${form.category}（历史分类）` }])].map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small className="field-hint">分类来自系统数字字典，选择后展示标准名称</small></label>
         <label>课程状态<select value={form.status} onChange={event => onChange('status', event.target.value)}><option value="待发布">待发布</option><option value="报名中">报名中</option><option value="名额紧张">名额紧张</option><option value="已结束">已结束</option><option value="已下架">已下架</option></select></label>
         <label>关联报名模板<select required value={form.registrationTemplateId} onChange={event => onChange('registrationTemplateId', event.target.value)}><option value="">请选择已创建的报名模板</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><small className="field-hint">一个课程必须选择一个模板；同一模板可复用于多个课程</small></label>
         <div className="wide-field course-schedule-field"><span className="form-label">上课时间</span><div className="course-schedule-grid"><label>课程开始时间<input type="datetime-local" required value={form.courseStartAt} onChange={event => updateSchedule('courseStartAt', event.target.value)} /></label><label>课程结束时间<input type="datetime-local" required value={form.courseEndAt} onChange={event => updateSchedule('courseEndAt', event.target.value)} /></label></div><small className="field-hint">点击日期输入框右侧日历图标选择开始和结束时间；保存时将自动生成课程时间段。</small><div className="course-date-summary">当前时间段：{form.courseStartAt && form.courseEndAt ? formatCourseSchedule(form.courseStartAt, form.courseEndAt) : '请选择完整的开始和结束时间'}</div></div>
@@ -1469,33 +1505,21 @@ function SimpleModal({ title, description, onClose, children, busy = false }: { 
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (!busy && event.target === event.currentTarget) onClose() }}><section className="course-modal" role="dialog" aria-modal="true"><div className="modal-head"><div><h2>{title}</h2><p>{description}</p></div><button type="button" className="modal-close" disabled={busy} onClick={onClose} aria-label="关闭">×</button></div>{children}</section></div>
 }
 
-function TemplateModal({ form, onChange, onFieldChange, onClose, onSave, onCopy, onDelete, busy = false }: { form: TemplateForm; onChange: (form: TemplateForm) => void; onFieldChange: (index: number, patch: Partial<TemplateField>) => void; onClose: () => void; onSave: () => void; onCopy?: () => void; onDelete?: () => void; busy?: boolean }) {
-  const [fieldPage, setFieldPage] = useState(1)
-  const fieldTotalPages = Math.max(1, Math.ceil(form.fields.length / TEMPLATE_FIELD_PAGE_SIZE))
-  const visibleFields = form.fields.slice((fieldPage - 1) * TEMPLATE_FIELD_PAGE_SIZE, fieldPage * TEMPLATE_FIELD_PAGE_SIZE)
-
-  useEffect(() => {
-    setFieldPage(current => Math.min(current, fieldTotalPages))
-  }, [fieldTotalPages])
-
+function TemplateModal({ form, onChange, onFieldChange, onFieldRemove, onClose, onSave, onCopy, onDelete, busy = false, locked = false }: { form: TemplateForm; onChange: (form: TemplateForm) => void; onFieldChange: (index: number, patch: Partial<TemplateField>) => void; onFieldRemove: (index: number) => Promise<void> | void; onClose: () => void; onSave: () => void; onCopy?: () => void; onDelete?: () => void; busy?: boolean; locked?: boolean }) {
   const addField = () => {
-    if (busy) return
+    if (busy || locked) return
     const fields = [...form.fields, { key: `field${form.fields.length + 1}`, label: '新字段', type: 'text' as const, required: false, options: [] }]
     onChange({ ...form, fields })
-    setFieldPage(Math.max(1, Math.ceil(fields.length / TEMPLATE_FIELD_PAGE_SIZE)))
-  }
-  const removeField = (index: number) => {
-    if (busy) return
-    const fields = form.fields.filter((_, fieldIndex) => fieldIndex !== index)
-    onChange({ ...form, fields })
-    setFieldPage(current => Math.min(current, Math.max(1, Math.ceil(fields.length / TEMPLATE_FIELD_PAGE_SIZE))))
   }
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (!busy && event.target === event.currentTarget) onClose() }}>
     <section className="template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
       <div className="modal-head"><div><h2 id="template-modal-title">{form.id ? '编辑报名模板' : '新增报名模板'}</h2><p>模板可复用于多个课程，每个课程只能关联一个模板</p></div><button type="button" className="modal-close" disabled={busy} onClick={onClose} aria-label="关闭">×</button></div>
-      <label className="template-course-field">模板名称<input disabled={busy} value={form.name} onChange={event => onChange({ ...form, name: event.target.value })} placeholder="例如：通用基础报名模板" /></label>
-      <div className="template-layout"><div className="template-fields"><div className="template-section-head"><h3>字段配置</h3><button type="button" disabled={busy} onClick={addField}>添加字段</button></div>{visibleFields.map((field, visibleIndex) => { const index = (fieldPage - 1) * TEMPLATE_FIELD_PAGE_SIZE + visibleIndex; return <div className="template-field-row" key={`${field.key}-${index}`}><input disabled={busy} value={field.key} onChange={event => onFieldChange(index, { key: event.target.value })} placeholder="字段标识" /><input disabled={busy} value={field.label} onChange={event => onFieldChange(index, { label: event.target.value })} placeholder="显示名称" /><select disabled={busy} value={field.type} onChange={event => onFieldChange(index, { type: event.target.value as TemplateField['type'] })}><option value="text">文本</option><option value="phone">手机号</option><option value="select">下拉框</option><option value="radio">单选框</option><option value="checkbox">复选框</option></select><label className="template-required"><input type="checkbox" disabled={busy} checked={field.required} onChange={event => onFieldChange(index, { required: event.target.checked })} />必填</label>{['select', 'radio', 'checkbox'].includes(field.type) && <input className="template-options" disabled={busy} value={(field.options || []).join(',')} onChange={event => onFieldChange(index, { options: event.target.value.split(',') })} placeholder="选项用逗号分隔" />}<button type="button" className="danger-button template-remove" onClick={() => removeField(index)} disabled={busy || form.fields.length <= 1}>删除</button></div> })}<div className="template-pagination"><span>共 {form.fields.length} 个字段，第 {fieldPage} / {fieldTotalPages} 页（每页 {TEMPLATE_FIELD_PAGE_SIZE} 条）</span><div><button type="button" disabled={busy || fieldPage <= 1} onClick={() => setFieldPage(current => Math.max(1, current - 1))}>上一页</button><button type="button" disabled={busy || fieldPage >= fieldTotalPages} onClick={() => setFieldPage(current => Math.min(fieldTotalPages, current + 1))}>下一页</button></div></div></div><aside className="template-preview"><h3>报名页预览</h3><p>字段数量：{form.fields.length}</p>{form.fields.map((field, index) => <div className="template-preview-item" key={`${field.key}-preview-${index}`}><span>{field.label || '未命名字段'}</span><small>{field.type}{field.required ? ' · 必填' : ' · 选填'}</small></div>)}</aside></div>
-      <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button>{form.id && onCopy && <button type="button" disabled={busy} onClick={onCopy}>另存为副本</button>}{form.id && onDelete && <button type="button" className="danger-button" disabled={busy} onClick={onDelete}>删除模板</button>}<button type="button" className="primary" disabled={busy} onClick={onSave}>{busy ? '保存中…' : '保存模板'}</button></div>
+      <div className="modal-scroll template-modal-scroll">
+      {locked && <div className="template-lock-notice" role="status">该模板已关联报名中的课程，暂不可修改；如需调整请先结束或下架相关课程。</div>}
+      <label className="template-course-field">模板名称<input disabled={busy || locked} value={form.name} onChange={event => onChange({ ...form, name: event.target.value })} placeholder="例如：通用基础报名模板" /></label>
+      <div className="template-layout"><div className="template-fields"><div className="template-section-head"><h3>字段配置</h3><button type="button" disabled={busy || locked} onClick={addField}>添加字段</button></div>{form.fields.map((field, index) => <div className="template-field-row" key={`${field.key}-${index}`}><input disabled={busy || locked} value={field.key} onChange={event => onFieldChange(index, { key: event.target.value })} placeholder="字段标识" /><input disabled={busy || locked} value={field.label} onChange={event => onFieldChange(index, { label: event.target.value })} placeholder="显示名称" /><select disabled={busy || locked} value={field.type} onChange={event => onFieldChange(index, { type: event.target.value as TemplateField['type'] })}><option value="text">文本</option><option value="phone">手机号</option><option value="select">下拉框</option><option value="radio">单选框</option><option value="checkbox">复选框</option></select><label className="template-required"><input type="checkbox" disabled={busy || locked} checked={field.required} onChange={event => onFieldChange(index, { required: event.target.checked })} />必填</label><button type="button" className="template-remove-text" onClick={() => void onFieldRemove(index)} disabled={busy || locked || form.fields.length <= 1}>删除</button>{['select', 'radio', 'checkbox'].includes(field.type) && <input className="template-options" disabled={busy || locked} value={(field.options || []).join(',')} onChange={event => onFieldChange(index, { options: event.target.value.split(',') })} placeholder="选项用逗号分隔" />}</div>)}</div><aside className="template-preview"><h3>报名页预览</h3><p>字段数量：{form.fields.length}</p>{form.fields.map((field, index) => <div className="template-preview-item" key={`${field.key}-preview-${index}`}><span>{field.label || '未命名字段'}</span><small>{field.type}{field.required ? ' · 必填' : ' · 选填'}</small></div>)}</aside></div>
+      </div>
+      <div className="modal-actions"><button type="button" disabled={busy || locked} onClick={onClose}>取消</button>{form.id && onCopy && <button type="button" disabled={busy} onClick={onCopy}>另存为副本</button>}{form.id && onDelete && <button type="button" className="danger-button" disabled={busy || locked} onClick={onDelete}>删除模板</button>}<button type="button" className="primary" disabled={busy || locked} onClick={onSave}>{busy ? '保存中…' : '保存模板'}</button></div>
     </section>
   </div>
 }
@@ -1672,7 +1696,7 @@ function EnrollmentSummaryDetailPanel({ detail, onClose }: { detail: EnrollmentS
   const [selectedStatus, setSelectedStatus] = useState<'paid' | 'unpaid' | null>(null)
   const paid = detail.items.filter(item => item.paymentStatus === '已支付')
   const unpaid = detail.items.filter(item => item.paymentStatus !== '已支付')
-  const renderRows = (rows: TableItem[], empty: string) => rows.length ? <div className="enrollment-detail-list">{rows.map((row, index) => <article className="enrollment-detail-row" key={String(row.id || index)}><div className="enrollment-detail-head"><b>{row.name || `报名人 ${index + 1}`}</b><span>{row.paymentStatus || '-'}</span></div><div className="enrollment-detail-fields">{Object.entries(row).filter(([key, value]) => !['id', 'courseId', 'courseTitle', 'paymentStatus', 'orderId', 'accountUserId', 'accountUsername', 'accountUserName'].includes(key) && value !== undefined && value !== '').map(([key, value]) => <span key={key}>{displayColumnLabel(key)}：{String(value)}</span>)}</div><small>订单：{row.orderId || '-'} · 下单账号：{row.accountUsername || '-'}</small></article>)}</div> : <p className="detail-muted">{empty}</p>
+  const renderRows = (rows: TableItem[], empty: string) => rows.length ? <div className="enrollment-detail-list">{rows.map((row, index) => <article className="enrollment-detail-row" key={String(row.id || index)}><div className={`enrollment-detail-head ${row.paymentStatus === '已支付' ? 'is-paid' : 'is-unpaid'}`}><b>{row.name || `报名人 ${index + 1}`}</b><span>{row.paymentStatus || '-'}</span></div><div className="enrollment-detail-fields">{Object.entries(row).filter(([key, value]) => !['id', 'courseId', 'courseTitle', 'paymentStatus', 'orderId', 'accountUserId', 'accountUsername', 'accountUserName'].includes(key) && value !== undefined && value !== '').map(([key, value]) => <span key={key}><small>{displayColumnLabel(key)}</small><b>{formatValue(value)}</b></span>)}</div><small className="enrollment-detail-foot">订单：{row.orderId || '-'} · 下单账号：{row.accountUsername || '-'}</small></article>)}</div> : <p className="detail-muted">{empty}</p>
   const selectedItems = selectedStatus === 'paid' ? paid : unpaid
   const selectedTitle = selectedStatus === 'paid' ? '已支付报名人详情' : '未支付/其他状态报名人详情'
   return <>
@@ -1724,10 +1748,10 @@ function DetailPanel({ detail, onClose, onStudentEdit, onStudentStatus, onStuden
       {courseKeys.length > 0 && <><h4>课程信息</h4><div className="detail-grid">{courseKeys.map(key => <div key={`course-${key}`}><small>{displayColumnLabel(key)}</small><span>{formatValue(courseSource[key])}</span></div>)}</div></>}
       {(detail.module === 'orders' || detail.module === 'enrollment-details' || detail.module === 'students') && <>
         <h4>报名人（{participants.length}）</h4>
-        {participants.length ? <div className="participant-list">{participants.map((participant: TableItem, index: number) => <div key={index}><b>报名人 {index + 1}</b><span>{Object.entries(participant).map(([key, value]) => `${displayColumnLabel(key)}：${String(value)}`).join(' · ')}</span></div>)}</div> : <p className="detail-muted">未返回报名人明细</p>}
-        {paymentKeys.length > 0 && <><h4>费用与支付</h4><div className="detail-grid">{paymentKeys.map(key => <div key={`payment-${key}`}><small>{displayColumnLabel(key)}</small><span>{formatValue((relatedOrder || item)[key])}</span></div>)}</div></>}
+        {participants.length ? <div className="participant-list">{participants.map((participant: TableItem, index: number) => <div className="participant-card" key={index}><b>报名人 {index + 1}</b><div className="participant-fields">{Object.entries(participant).map(([key, value]) => <span key={key}><small>{displayColumnLabel(key)}</small><b>{formatValue(value)}</b></span>)}</div></div>)}</div> : <p className="detail-muted">未返回报名人明细</p>}
+        {paymentKeys.length > 0 && <><h4>费用与支付</h4><div className="detail-grid payment-detail-grid">{paymentKeys.map(key => <div key={`payment-${key}`}><small>{displayColumnLabel(key)}</small><span>{formatValue((relatedOrder || item)[key])}</span></div>)}</div></>}
         <h4>支付凭证</h4>
-        {detail.proof ? <div className="proof-summary"><span>{detail.proof.originalName || '凭证文件'}</span><span>{detail.proof.mimeType || '-'} · {detail.proof.size || 0} bytes · {detail.proof.status || 'pending'}</span></div> : <p className="detail-muted">暂无支付凭证</p>}
+        {detail.proof ? <div className="proof-summary"><span className="proof-name">{detail.proof.originalName || '凭证文件'}</span><span className="proof-meta"><i className={`proof-status ${detail.proof.status || 'pending'}`}>{detail.proof.status || 'pending'}</i>{detail.proof.mimeType || '-'} · {formatValue(detail.proof.size)}</span></div> : <p className="detail-muted">暂无支付凭证</p>}
       </>}
       {otherKeys.length > 0 && <><h4>其他信息</h4><div className="detail-grid">{otherKeys.map(key => <div key={`other-${key}`}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div></>}
     </section>
@@ -1738,11 +1762,13 @@ function StudentProfileDetailPanel({ item, onClose, onEdit, onStatus, onGrant, o
   const relations = Array.isArray(item.accountRelations) ? item.accountRelations : []
   const enrollments = Array.isArray(item.enrollments) ? item.enrollments : []
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
-    <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="student-profile-title">
+    <section className="detail-modal modal-with-footer" role="dialog" aria-modal="true" aria-labelledby="student-profile-title">
       <div className="detail-head"><div><h3 id="student-profile-title">学员档案详情</h3><p>{item.id}</p></div><ModalCloseButton onClick={onClose} label="关闭学员档案详情" /></div>
+      <div className="modal-scroll student-profile-scroll">
       <h4>基础资料</h4><div className="detail-grid">{['name', 'phone', 'email', 'company', 'department', 'position', 'status', 'enrollmentCount', 'createdAt', 'updatedAt'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
        <div className="section-action-row"><h4>授权账号（{relations.length}）</h4>{onGrant && <button type="button" disabled={busy || item.status === 'merged'} onClick={() => onGrant(String(item.id))}>授权账号</button>}</div>{relations.length ? <div className="participant-list">{relations.map((relation: TableItem) => <div key={relation.id || relation.userId}><b>{relation.username || relation.userId}</b><span>{relation.userName || '-'} · {relation.relationType || '其他'} · {relation.isDefault ? '默认报名人' : '普通关系'} · {relation.status || 'active'}</span><div className="detail-inline-actions"><button type="button" disabled={busy || relation.isDefault} onClick={() => onDefault?.(String(item.id), String(relation.userId))}>设为默认</button><button type="button" className="danger-button" disabled={busy} onClick={() => onRevoke?.(String(item.id), String(relation.userId), String(relation.username || relation.userId))}>解除关系</button></div></div>)}</div> : <p className="detail-muted">暂无授权账号</p>}
        <h4>报名履历（{enrollments.length}）</h4>{enrollments.length ? <div className="participant-list">{enrollments.map((enrollment: TableItem) => <div key={enrollment.id}><b>{enrollment.courseTitle || enrollment.courseId}</b><span>订单 {enrollment.orderId || '-'} · {enrollment.status || '-'} · 订单状态 {enrollment.orderStatus || '-'}</span><small>报名时间：{enrollment.registeredAt ? formatValue(enrollment.registeredAt) : '-'} · 模板 {enrollment.templateId || '-'} v{enrollment.templateVersion || '-'}</small></div>)}</div> : <p className="detail-muted">暂无报名履历</p>}
+      </div>
        <div className="modal-actions">{onReload && <button type="button" className="query-button" disabled={busy} onClick={() => onReload(String(item.id))}>重新加载详情</button>}{onEdit && <button type="button" disabled={busy || item.status === 'merged'} onClick={() => onEdit(item)}>编辑资料</button>}{onStatus && <button type="button" className={item.status === 'active' ? 'danger-button' : 'primary'} disabled={busy || item.status === 'merged'} onClick={() => onStatus(item)}>{item.status === 'active' ? '停用档案' : item.status === 'inactive' ? '启用档案' : '已合并'}</button>}{onMerge && <button type="button" className="danger-button" disabled={busy || item.status === 'merged'} onClick={() => onMerge(item)}>合并到其他档案</button>}</div>
     </section>
   </div>
@@ -1754,7 +1780,7 @@ function EnrollmentRecordDetailPanel({ item, onClose }: { item: TableItem; onClo
     <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="enrollment-record-title">
       <div className="detail-head"><div><h3 id="enrollment-record-title">报名履历详情</h3><p>{item.id}</p></div><ModalCloseButton onClick={onClose} label="关闭报名履历详情" /></div>
       <h4>学员与课程</h4><div className="detail-grid">{['name', 'phone', 'company', 'department', 'position', 'courseTitle', 'date', 'location', 'orderId', 'orderStatus', 'status', 'accountUsername', 'accountUserName', 'registeredAt', 'cancelledAt', 'templateId', 'templateVersion'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
-      <h4>当次报名表单快照</h4><div className="participant-list"><div><span>{Object.entries(payload).map(([key, value]) => `${displayColumnLabel(key)}：${formatValue(value)}`).join(' · ') || '无表单字段'}</span></div></div>
+      <h4>当次报名表单快照</h4><div className="form-snapshot-grid">{Object.entries(payload).length ? Object.entries(payload).map(([key, value]) => <span key={key}><small>{displayColumnLabel(key)}</small><b>{formatValue(value)}</b></span>) : <p className="detail-muted">无表单字段</p>}</div>
     </section>
   </div>
 }

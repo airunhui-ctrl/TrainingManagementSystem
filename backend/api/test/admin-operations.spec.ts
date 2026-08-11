@@ -67,9 +67,11 @@ describe('管理端非支付操作闭环', () => {
 
     const course = expectSuccess(await request('/admin/courses', {
       method: 'POST',
-      body: JSON.stringify({ id: 'COURSE-OPS-001', title: '操作闭环课程', subtitle: '', category: '测试', date: '2026-12-01 09:00', location: '线上', instructor: '测试讲师', price: 100, originalPrice: 100, specialPrice: null, capacity: 20, enrolled: 0, status: '报名中', registrationDeadline: null, registrationTemplateId: 'tpl-basic', allowMultiParticipant: true, description: '测试课程' }),
+      body: JSON.stringify({ id: 'COURSE-OPS-001', title: '操作闭环课程', subtitle: '', category: '01', date: '2026-12-01 09:00', location: '线上', instructor: '测试讲师', price: 100, originalPrice: 100, specialPrice: null, capacity: 20, enrolled: 0, status: '报名中', registrationDeadline: null, registrationTemplateId: 'tpl-basic', allowMultiParticipant: true, description: '测试课程' }),
     }, adminToken))
     expect(course.id).toBe('COURSE-OPS-001')
+    expect(course.category).toBe('综合管理')
+    expect(course.categoryCode).toBe('01')
     expectSuccess(await request('/admin/courses/COURSE-OPS-001', { method: 'PATCH', body: JSON.stringify({ title: '操作闭环课程（已编辑）', status: '已下架' }) }, adminToken))
     const refreshedCourseList = expectSuccess(await request('/admin/courses?keyword=COURSE-OPS-001&page=1&pageSize=20', {}, adminToken))
     expect(refreshedCourseList.items.some((item: any) => item.id === 'COURSE-OPS-001' && item.title === '操作闭环课程（已编辑）' && item.status === '已下架')).toBe(true)
@@ -81,6 +83,43 @@ describe('管理端非支付操作闭环', () => {
     const auditResult = expectSuccess(await request('/admin/audits?keyword=%E6%93%8D%E4%BD%9C%E9%97%AD%E7%8E%AF%E8%AF%BE%E7%A8%8B', {}, adminToken))
     expect(auditResult.items.some((item: any) => item.action === '课程维护' && String(item.detail).includes('操作闭环课程'))).toBe(true)
     expect(auditResult.items.some((item: any) => item.action === '课程删除' && String(item.detail).includes('操作闭环课程'))).toBe(true)
+  })
+
+  test('课程分类使用数字字典下拉并兼容历史中文分类', async () => {
+    const categories = expectSuccess(await request('/admin/course-categories', {}, adminToken))
+    expect(categories.items.some((item: any) => item.code === '01' && item.label === '综合管理')).toBe(true)
+    expect(categories.items.some((item: any) => item.code === '02' && item.label === '人才管理')).toBe(true)
+
+    const course = expectSuccess(await request('/admin/courses', {
+      method: 'POST',
+      body: JSON.stringify({ id: 'COURSE-CAT-001', title: '字典分类课程', subtitle: '', category: '人才管理', date: '2026-12-01 09:00', location: '线上', instructor: '测试讲师', price: 100, originalPrice: 100, specialPrice: null, capacity: 20, enrolled: 0, status: '待发布', registrationDeadline: null, registrationTemplateId: 'tpl-basic', allowMultiParticipant: true, description: '字典分类测试' }),
+    }, adminToken))
+    expect(course.category).toBe('人才管理')
+    expect(course.categoryCode).toBe('02')
+
+    const list = expectSuccess(await request('/admin/courses?keyword=COURSE-CAT-001&page=1&pageSize=20', {}, adminToken))
+    expect(list.items[0].categoryCode).toBe('02')
+    const invalid = await request('/admin/courses', {
+      method: 'POST',
+      body: JSON.stringify({ id: 'COURSE-CAT-INVALID', title: '非法分类课程', subtitle: '', category: '不存在的分类', date: '2026-12-01 09:00', location: '线上', instructor: '测试讲师', price: 100, originalPrice: 100, specialPrice: null, capacity: 20, enrolled: 0, status: '待发布', registrationDeadline: null, registrationTemplateId: 'tpl-basic', allowMultiParticipant: true, description: '非法分类测试' }),
+    }, adminToken)
+    expect(invalid.response.status).toBe(400)
+    expectSuccess(await request('/admin/courses/COURSE-CAT-001', { method: 'DELETE' }, adminToken))
+  })
+
+  test('报名模板已关联报名中课程时禁止修改', async () => {
+    const templates = expectSuccess(await request('/admin/templates', {}, adminToken))
+    const lockedTemplate = templates.items.find((item: any) => item.id === 'tpl-basic')
+    expect(lockedTemplate?.locked).toBe(true)
+    expect((await request('/admin/templates/tpl-basic', { method: 'PATCH', body: JSON.stringify({ name: '不应成功', fields: [{ key: 'name', label: '姓名', type: 'text', required: true }] }) }, adminToken)).response.status).toBe(400)
+
+    const free = expectSuccess(await request('/admin/templates', {
+      method: 'POST',
+      body: JSON.stringify({ id: 'TPL-FREE-001', name: '未关联模板', fields: [{ key: 'name', label: '姓名', type: 'text', required: true }] }),
+    }, adminToken))
+    expect(free.id).toBe('TPL-FREE-001')
+    expectSuccess(await request('/admin/templates/TPL-FREE-001', { method: 'PATCH', body: JSON.stringify({ name: '未关联模板（已编辑）', fields: [{ key: 'name', label: '姓名', type: 'text', required: true }] }) }, adminToken))
+    expectSuccess(await request('/admin/templates/TPL-FREE-001', { method: 'DELETE' }, adminToken))
   })
 
   test('优惠规则、消息、系统配置和积分操作可完成并保留结果', async () => {
@@ -206,7 +245,7 @@ describe('管理端非支付操作闭环', () => {
 
     const hidden = expectSuccess(await request('/admin/courses', {
       method: 'POST',
-      body: JSON.stringify({ id: 'COURSE-HIDDEN-OPS', title: 'Hidden course permission check', subtitle: '', category: 'test', date: '2026-12-01 09:00', location: 'online', instructor: 'tester', price: 100, originalPrice: 100, specialPrice: null, capacity: 20, enrolled: 0, status: '待发布', registrationDeadline: null, registrationTemplateId: 'tpl-basic', allowMultiParticipant: true, description: 'hidden course' }),
+      body: JSON.stringify({ id: 'COURSE-HIDDEN-OPS', title: 'Hidden course permission check', subtitle: '', category: '01', date: '2026-12-01 09:00', location: 'online', instructor: 'tester', price: 100, originalPrice: 100, specialPrice: null, capacity: 20, enrolled: 0, status: '待发布', registrationDeadline: null, registrationTemplateId: 'tpl-basic', allowMultiParticipant: true, description: 'hidden course' }),
     }, adminToken))
     expect(hidden.status).toBe('待发布')
 

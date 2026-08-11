@@ -44,6 +44,12 @@ if (normalized) {
   if (exists('Course') && !has('Course', 'registrationTemplateId')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationTemplateId" TEXT`)
   if (exists('RegistrationTemplate') && !has('RegistrationTemplate', 'name')) db.exec(`ALTER TABLE "RegistrationTemplate" ADD COLUMN "name" TEXT NOT NULL DEFAULT '报名模板'`)
   if (exists('Course') && exists('RegistrationTemplate') && has('RegistrationTemplate', 'courseId')) db.exec(`UPDATE "Course" SET "registrationTemplateId"=(SELECT "id" FROM "RegistrationTemplate" WHERE "RegistrationTemplate"."courseId"="Course"."id") WHERE "registrationTemplateId" IS NULL`)
+  const courseCategoryMap = { '综合管理':'01', '人才管理':'02', '经营管理':'03', '组织效能':'04', '绩效管理':'05', '组织发展':'06', '数字化学习':'07' }
+  const updateCourseCategory = db.prepare('UPDATE "Course" SET category=? WHERE id=?')
+  for (const row of rows('Course')) {
+    const target = courseCategoryMap[row.category]
+    if (target && target !== row.category) updateCourseCategory.run(target, row.id)
+  }
   const templateInfo = info('RegistrationTemplate')
   const legacyTemplateCourseColumn = templateInfo.find((column) => column.name === 'courseId')
   const rebuildTemplateTable = legacyTemplateCourseColumn?.notnull === 1

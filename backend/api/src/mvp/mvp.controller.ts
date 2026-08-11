@@ -5,6 +5,7 @@ import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Min, ValidateNest
 import { AdminGuard } from '../auth/admin.guard'
 import { JwtGuard } from '../auth/jwt.guard'
 import { MvpService } from './mvp.service'
+import { COURSE_CATEGORY_DICTIONARY } from './course-categories'
 import { getIntegrationReadiness, verifyAlipayNotification, verifyWechatNotification } from '../channel-adapters'
 import { getPasswordResetReadiness } from '../auth/password-reset-delivery'
 import { getPhoneRegistrationReadiness } from '../auth/phone-registration-delivery'
@@ -25,6 +26,7 @@ export class MvpController {
   }
 
   @Get('courses') courses(@Query('keyword') keyword?: string, @Query('category') category?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listCoursesPage(keyword, category, Number(page || 1), Number(pageSize || 20), status) }
+  @Get('course-categories') publicCourseCategories() { return { items: COURSE_CATEGORY_DICTIONARY } }
   @Get('courses/:id') course(@Param('id') id: string) { return this.mvp.getCourse(id) }
   @Get('courses/:id/registration-template') template(@Param('id') id: string) { return this.mvp.getTemplate(id) }
   @Post('orders/quote') quote(@Body() dto: QuoteDto) { return this.mvp.quote(dto.courseId, dto.participantCount) }
@@ -96,6 +98,8 @@ export class MvpController {
 
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/courses') adminCourses(@Query('keyword') keyword?: string, @Query('category') category?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listAdminCoursesPage(keyword, category, Number(page || 1), Number(pageSize || 20), status) }
+  @UseGuards(JwtGuard, AdminGuard)
+  @Get('admin/course-categories') adminCourseCategories() { return { items: COURSE_CATEGORY_DICTIONARY } }
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/uploads/course-image')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))

@@ -15,12 +15,12 @@ const db = new PrismaClient({ datasources: { db: { url: `file:${filePath.replace
 const hash = (password) => { const salt = randomBytes(16).toString('hex'); return `${salt}:${scryptSync(password, salt, 64).toString('hex')}` }
 
 const courses = [
-  { id:'course-1', title:'人才选拔与结构化面试实战公开课', subtitle:'把好人才入口，提升面试判断力', category:'人才管理', date:'2026-08-06 09:00 - 08-08 17:00', location:'厦门市中小企业公共服务平台', instructor:'林老师', price:1980, capacity:60, enrolled:48, status:'报名中', description:'围绕人才选拔、结构化面试和面试评价，帮助企业建立可复用的人才识别方法。' },
-  { id:'course-2', title:'企业经营管理领军人才训练营', subtitle:'从经营视角看组织与人才', category:'经营管理', date:'2026-08-20 09:00 - 08-21 17:00', location:'厦门软件园二期 B 区', instructor:'陈老师', price:2980, capacity:30, enrolled:28, status:'名额紧张', description:'聚焦经营目标拆解、团队协同与管理者成长，形成可落地的经营动作。' },
-  { id:'course-3', title:'企业精益突破之道实战公开课', subtitle:'从流程优化到组织效率提升', category:'组织效能', date:'2026-06-25 09:00 - 06-26 17:00', location:'厦门市中小企业服务中心', instructor:'周老师', price:1680, capacity:50, enrolled:50, status:'已结束', description:'以真实业务场景为案例，拆解流程改善、岗位协同和持续改进的方法。' },
-  { id:'course-4', title:'数据驱动的绩效管理实战', subtitle:'让目标、过程和结果真正对齐', category:'绩效管理', date:'2026-09-10 09:00 - 09-11 17:00', location:'厦门国际会议中心 3F', instructor:'许老师', price:2280, capacity:45, enrolled:21, status:'报名中', description:'从指标设计、过程辅导到绩效复盘，建立可持续的绩效管理闭环。' },
-  { id:'course-5', title:'高效团队沟通与协作工作坊', subtitle:'减少内耗，提升跨团队协同效率', category:'组织发展', date:'2026-09-24 09:00 - 09-24 17:00', location:'厦门软件园创新会议室', instructor:'黄老师', price:1280, capacity:36, enrolled:16, status:'报名中', description:'通过情景演练和团队共创，掌握高效沟通、冲突处理与协作机制。' },
-  { id:'course-6', title:'AI 赋能培训管理实战营', subtitle:'用智能工具提升培训运营效率', category:'数字化学习', date:'2026-10-15 09:00 - 10-16 17:00', location:'线上直播 + 厦门分会场', instructor:'吴老师', price:2680, capacity:40, enrolled:12, status:'报名中', description:'围绕课程运营、内容生产和数据分析，探索 AI 在培训管理中的落地应用。' },
+  { id:'course-1', title:'人才选拔与结构化面试实战公开课', subtitle:'把好人才入口，提升面试判断力', category:'02', date:'2026-08-06 09:00 - 08-08 17:00', location:'厦门市中小企业公共服务平台', instructor:'林老师', price:1980, capacity:60, enrolled:48, status:'报名中', description:'围绕人才选拔、结构化面试和面试评价，帮助企业建立可复用的人才识别方法。' },
+  { id:'course-2', title:'企业经营管理领军人才训练营', subtitle:'从经营视角看组织与人才', category:'03', date:'2026-08-20 09:00 - 08-21 17:00', location:'厦门软件园二期 B 区', instructor:'陈老师', price:2980, capacity:30, enrolled:28, status:'名额紧张', description:'聚焦经营目标拆解、团队协同与管理者成长，形成可落地的经营动作。' },
+  { id:'course-3', title:'企业精益突破之道实战公开课', subtitle:'从流程优化到组织效率提升', category:'04', date:'2026-06-25 09:00 - 06-26 17:00', location:'厦门市中小企业服务中心', instructor:'周老师', price:1680, capacity:50, enrolled:50, status:'已结束', description:'以真实业务场景为案例，拆解流程改善、岗位协同和持续改进的方法。' },
+  { id:'course-4', title:'数据驱动的绩效管理实战', subtitle:'让目标、过程和结果真正对齐', category:'05', date:'2026-09-10 09:00 - 09-11 17:00', location:'厦门国际会议中心 3F', instructor:'许老师', price:2280, capacity:45, enrolled:21, status:'报名中', description:'从指标设计、过程辅导到绩效复盘，建立可持续的绩效管理闭环。' },
+  { id:'course-5', title:'高效团队沟通与协作工作坊', subtitle:'减少内耗，提升跨团队协同效率', category:'06', date:'2026-09-24 09:00 - 09-24 17:00', location:'厦门软件园创新会议室', instructor:'黄老师', price:1280, capacity:36, enrolled:16, status:'报名中', description:'通过情景演练和团队共创，掌握高效沟通、冲突处理与协作机制。' },
+  { id:'course-6', title:'AI 赋能培训管理实战营', subtitle:'用智能工具提升培训运营效率', category:'07', date:'2026-10-15 09:00 - 10-16 17:00', location:'线上直播 + 厦门分会场', instructor:'吴老师', price:2680, capacity:40, enrolled:12, status:'报名中', description:'围绕课程运营、内容生产和数据分析，探索 AI 在培训管理中的落地应用。' },
 ]
 const templates = {
   'course-1': [{ key:'name',label:'姓名',type:'text',required:true },{ key:'phone',label:'手机号',type:'phone',required:true },{ key:'company',label:'公司名称',type:'text',required:true },{ key:'role',label:'职务',type:'text',required:false }],

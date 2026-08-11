@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { PrismaService } from '../prisma.service'
 import { createPaymentIntent as createPaymentIntentAdapter } from '../channel-adapters'
 import { isAdminRole } from '../auth/roles'
+import { courseCategoryLabel, normalizeCourseCategory } from './course-categories'
 
 export interface RegistrationField {
   key: string
@@ -90,6 +91,8 @@ export class MvpService {
     const registrationOpen = REGISTRATION_OPEN_STATUSES.has(String(course.status)) && !deadlinePassed && seatsAvailable
     return {
       ...base,
+      category: courseCategoryLabel(course.category),
+      categoryCode: normalizeCourseCategory(course.category) || String(course.category || ''),
       description: hasRichText ? stripRichText(rawDescription) : rawDescription,
       ...(hasRichText ? { descriptionRichText: sanitizeRichText(rawDescription) } : {}),
       seatsLeft: Math.max(course.capacity - course.enrolled, 0),
@@ -160,13 +163,14 @@ export class MvpService {
 
   async listCoursesPage(keyword?: string, category?: string, page = 1, pageSize = 20, status?: string) {
     const args = pageArgs(page, pageSize)
+    const normalizedCategory = category ? (normalizeCourseCategory(category) || category) : category
     // C 端只允许看到已经发布且未下架的课程；管理端使用
     // listAdminCoursesPage 读取完整课程集合，避免把待发布课程误暴露到公共接口。
     const requestedStatus = String(status || '').trim()
     if (PUBLIC_HIDDEN_COURSE_STATUSES.has(requestedStatus)) return { items: [], page: args.page, pageSize: args.pageSize, total: 0 }
     const where = {
       ...(keyword ? { OR: [{ id: { contains: keyword } }, { title: { contains: keyword } }, { subtitle: { contains: keyword } }, { instructor: { contains: keyword } }] } : {}),
-      ...(category ? { category } : {}),
+      ...(normalizedCategory ? { category: normalizedCategory } : {}),
       ...(requestedStatus ? { status: requestedStatus } : { status: { notIn: [...PUBLIC_HIDDEN_COURSE_STATUSES] } }),
     }
     const [items, total] = await this.db.$transaction([
@@ -178,9 +182,10 @@ export class MvpService {
 
   async listAdminCoursesPage(keyword?: string, category?: string, page = 1, pageSize = 20, status?: string) {
     const args = pageArgs(page, pageSize)
+    const normalizedCategory = category ? (normalizeCourseCategory(category) || category) : category
     const where = {
       ...(keyword ? { OR: [{ id: { contains: keyword } }, { title: { contains: keyword } }, { subtitle: { contains: keyword } }, { instructor: { contains: keyword } }] } : {}),
-      ...(category ? { category } : {}),
+      ...(normalizedCategory ? { category: normalizedCategory } : {}),
       ...(status ? { status } : {}),
     }
     const [items, total] = await this.db.$transaction([
@@ -551,6 +556,8 @@ export class MvpService {
     const location = String(source.location || '').trim()
     const instructor = String(source.instructor || '').trim()
     if (!title || !category || !date || !location || !instructor) throw new BadRequestException('课程标题、分类、时间、地点和讲师不能为空')
+    const normalizedCategory = normalizeCourseCategory(category)
+    if (!normalizedCategory) throw new BadRequestException('课程分类不合法，请从系统数字字典中选择')
     const price = Number(source.price)
     const originalPrice = source.originalPrice === '' || source.originalPrice == null ? null : Number(source.originalPrice)
     const specialPrice = source.specialPrice === '' || source.specialPrice == null ? null : Number(source.specialPrice)
@@ -564,7 +571,7 @@ export class MvpService {
     const enrolled = existing ? Number(existing.enrolled || 0) : 0
     if (enrolled > capacity) throw new BadRequestException('课程名额不能小于当前已报名人数')
     const richDescription = sanitizeRichText(source.descriptionRichText || source.description)
-    const data = { title, subtitle: String(source.subtitle || '').trim(), category, date, location, instructor, image: source.image ? String(source.image) : null, price, originalPrice, specialPrice, allowMultiParticipant: source.allowMultiParticipant !== false, registrationDeadline: source.registrationDeadline ? String(source.registrationDeadline).trim() : null, capacity, enrolled, status: String(source.status), description: richDescription, registrationTemplateId }
+    const data = { title, subtitle: String(source.subtitle || '').trim(), category: normalizedCategory, date, location, instructor, image: source.image ? String(source.image) : null, price, originalPrice, specialPrice, allowMultiParticipant: source.allowMultiParticipant !== false, registrationDeadline: source.registrationDeadline ? String(source.registrationDeadline).trim() : null, capacity, enrolled, status: String(source.status), description: richDescription, registrationTemplateId }
     const item = await this.db.course.upsert({ where: { id: courseId }, create: { id: courseId, ...data }, update: data })
     await this.audit(actor, '课程维护', item.title)
     return this.courseView(item)
@@ -580,8 +587,8 @@ export class MvpService {
   }
 
   async listTemplates() {
-    const items = await this.db.registrationTemplate.findMany({ include: { courses: { select: { id: true, title: true } } }, orderBy: { updatedAt: 'desc' } })
-    return items.map((item) => ({ id: item.id, name: item.name, version: item.version, courseCount: item.courses.length, courseIds: item.courses.map(course => course.id), courseNames: item.courses.map(course => course.title), courses: item.courses, fields: json<RegistrationField[]>(item.payload, []) }))
+    const items = await this.db.registrationTemplate.findMany({ include: { courses: { select: { id: true, title: true, status: true } } }, orderBy: { updatedAt: 'desc' } })
+    return items.map((item) => ({ id: item.id, name: item.name, version: item.version, courseCount: item.courses.length, courseIds: item.courses.map(course => course.id), courseNames: item.courses.map(course => course.title), courses: item.courses, locked: item.courses.some(course => REGISTRATION_OPEN_STATUSES.has(String(course.status))), fields: json<RegistrationField[]>(item.payload, []) }))
   }
 
   async saveTemplate(templateId: string | undefined, payload: { name?: string; fields?: RegistrationField[] }, actor = 'admin', requireExisting = false) {
@@ -604,6 +611,10 @@ export class MvpService {
     const idValue = String(templateId || id('tpl'))
     const current = await this.db.registrationTemplate.findUnique({ where: { id: idValue } })
     if (requireExisting && !current) throw new NotFoundException('报名模板不存在')
+    if (current) {
+      const linkedCourses = await this.db.course.findMany({ where: { registrationTemplateId: idValue }, select: { id: true, status: true } })
+      if (linkedCourses.some(course => REGISTRATION_OPEN_STATUSES.has(String(course.status)))) throw new BadRequestException('该报名模板已关联报名中的课程，暂不可修改；请先结束或下架相关课程')
+    }
     const name = String(payload.name || current?.name || '报名模板').trim()
     if (!name) throw new BadRequestException('报名模板名称不能为空')
     const item = await this.db.registrationTemplate.upsert({ where: { id: idValue }, create: { id: idValue, name, version: 1, payload: JSON.stringify(fields) }, update: { name, version: { increment: 1 }, payload: JSON.stringify(fields) } })

@@ -106,9 +106,11 @@
     <view v-if="invoiceDialogOpen" class="modal-mask" @tap.self="closeInvoiceDialog">
       <view class="invoice-dialog card">
         <view class="modal-header"><text class="modal-title">{{ reapplyInvoiceId ? '修改后重新申请开票' : '提交开票信息' }}</text><text class="close-button" @tap="closeInvoiceDialog">×</text></view>
-        <text class="dialog-hint">已选择 {{ selectedInvoiceOrderIds.length }} 笔订单{{ reapplyInvoiceId ? '；请根据驳回理由修改信息后重新提交' : '' }}</text>
-        <input v-model="invoiceForm.title" class="invoice-field" placeholder="请输入发票抬头" /><input v-model="invoiceForm.taxNo" class="invoice-field" placeholder="请输入纳税人识别号" /><input v-model="invoiceForm.email" class="invoice-field" placeholder="请输入接收发票的邮箱" />
-        <view class="dialog-actions"><button class="cancel-button" :disabled="invoiceSubmitting || invoiceConfirming" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length || invoiceSubmitting || invoiceConfirming" @tap="submitInvoice">{{ invoiceSubmitting ? '提交中...' : invoiceConfirming ? '确认中...' : reapplyInvoiceId ? '重新提交申请' : '提交申请' }}</button></view>
+        <view class="modal-scroll invoice-scroll">
+          <text class="dialog-hint">已选择 {{ selectedInvoiceOrderIds.length }} 笔订单{{ reapplyInvoiceId ? '；请根据驳回理由修改信息后重新提交' : '' }}</text>
+          <input v-model="invoiceForm.title" class="invoice-field" placeholder="请输入发票抬头" /><input v-model="invoiceForm.taxNo" class="invoice-field" placeholder="请输入纳税人识别号" /><input v-model="invoiceForm.email" class="invoice-field" placeholder="请输入接收发票的邮箱" />
+        </view>
+        <view class="dialog-actions invoice-actions"><button class="cancel-button" :disabled="invoiceSubmitting || invoiceConfirming" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length || invoiceSubmitting || invoiceConfirming" @tap="submitInvoice">{{ invoiceSubmitting ? '提交中...' : invoiceConfirming ? '确认中...' : reapplyInvoiceId ? '重新提交申请' : '提交申请' }}</button></view>
       </view>
     </view>
   </view>
@@ -420,10 +422,11 @@ onShow(showBusinessPage)
 .cancel-button { border: 1rpx solid #dfe5ed; color: $navy; background: #fff; }
 .submit-button { border: 0; color: $navy; background: $yellow; font-weight: 800; }
 .submit-button[disabled] { opacity: .45; }
-.invoice-dialog { box-sizing: border-box; width: calc(100% - 64rpx); max-width: 680rpx; padding-bottom: 28rpx; }
+.invoice-dialog { box-sizing: border-box; display: flex; flex-direction: column; width: calc(100% - 64rpx); max-width: 680rpx; max-height: calc(100vh - 120rpx); overflow: hidden; padding: 0; }
+.invoice-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 8rpx; }
 .dialog-hint { display: block; margin: 16rpx 30rpx 0; color: $muted; font-size: 21rpx; }
 .invoice-field { box-sizing: border-box; display: block; width: calc(100% - 60rpx); height: 74rpx; margin: 18rpx 30rpx 0; padding: 0 20rpx; border: 1rpx solid #dce4ee; border-radius: 14rpx; color: $navy; background: #fbfcfe; font-size: 22rpx; }
-.dialog-actions { display: flex; gap: 14rpx; margin: 24rpx 30rpx 0; }
+.dialog-actions { display: flex; flex: 0 0 auto; gap: 14rpx; margin: 0; padding: 18rpx 30rpx calc(28rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #edf0f4; background: #fff; }
 .dialog-actions button { flex: 1; height: 68rpx; margin: 0; border-radius: $radius-pill; font-size: 22rpx; line-height: 68rpx; }
 @media (min-width: 700px) { .payment-proof-modal { width: 680rpx; } }
 </style>
