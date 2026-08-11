@@ -21,6 +21,7 @@ check(/\.search-toolbar input[\s\S]*?height:\s*26px/.test(css) && /\.page-main \
 check(css.includes('.search-toolbar input { width: 145px; min-width: 96px;') && css.includes('.search-section .search-toolbar > input:first-child { width: 165px;') && css.includes('.page-main .search-toolbar input { width: 135px; min-width: 90px;') && css.includes('.page-main .search-toolbar select { width: auto; min-width: 84px;'), '搜索区文本框和筛选下拉框缺少紧凑宽度或中等屏幕适配')
 check(app.includes('header-top-row') && app.includes('className="visited-tabs"') && app.includes('module-breadcrumb') && app.includes('退出登录') && app.indexOf('header-top-row') < app.indexOf('className="visited-tabs"'), '顶部面包屑/退出登录与下方独占标签页的布局未接入')
 check(app.includes('selectedRows') && app.includes('selectedKeys') && app.includes('toggleAllSelection') && app.includes('exportData'), '列表复选和筛选导出动作未完整')
+check(app.includes('const primary = String(item.id ?? item.courseId ?? item.orderId ?? item.userId ?? item.username ?? item.name ?? \'\')') && app.includes('try { return JSON.stringify(item) }'), '列表复选 selectionKey 缺少无 ID 行的稳定兜底')
 check(app.includes('全选当前列表') && app.includes('onToggleSelect') && app.includes('onToggleAll') && app.includes('>导出<'), '列表复选框或导出名称未接入')
 check(css.includes('.select-column') && css.includes('.select-cell') && css.includes('.selection-hint'), '列表复选框缺少紧凑样式')
 const requiredOperationRoutes = [

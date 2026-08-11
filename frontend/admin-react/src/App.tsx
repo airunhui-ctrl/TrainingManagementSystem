@@ -228,7 +228,11 @@ const filterMatches = (item: TableItem, field: string, expected: string) => {
   if (Array.isArray(item[field])) return item[field].map(String).includes(expected)
   return String(item[field] ?? '') === expected
 }
-const selectionKey = (item: TableItem) => String(item.id ?? item.courseId ?? item.orderId ?? item.userId ?? item.username ?? item.name ?? '')
+const selectionKey = (item: TableItem) => {
+  const primary = String(item.id ?? item.courseId ?? item.orderId ?? item.userId ?? item.username ?? item.name ?? '')
+  if (primary) return primary
+  try { return JSON.stringify(item) } catch { return String(Object.values(item).join('|')) }
+}
 
 const escapeHtml = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 const plainTextToRichText = (value: string) => value.trim() ? `<p>${escapeHtml(value.trim()).replace(/\r?\n/g, '<br />')}</p>` : '<p><br /></p>'
