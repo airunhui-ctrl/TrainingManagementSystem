@@ -11,6 +11,6 @@ export const useAuthStore = defineStore('auth', {
       this.userName = userName
       tokenStorage.setTokens(accessToken, refreshToken)
     },
-    logout() { this.accessToken = ''; this.userName = ''; tokenStorage.clear(); uni.reLaunch({ url: '/pages/login/login' }) }
+    logout() { this.accessToken = ''; this.userName = ''; tokenStorage.clear(); uni.switchTab({ url: '/pages/index/index' }) }
   }
 })

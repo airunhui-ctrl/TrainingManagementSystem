@@ -18,6 +18,8 @@
       </view>
 
       <button class="primary-btn" :loading="loading" @tap="login">登录</button>
+      <view v-if="isWeixinMp" class="wechat-divider"><text>或</text></view>
+      <button v-if="isWeixinMp" class="wechat-btn" :loading="wechatLoading" @tap="wechatLogin">微信一键登录</button>
       <view class="form-links"><text @tap="goRegister">立即注册</text><text @tap="goForgotPassword">忘记密码</text></view>
     </view>
   </view>
@@ -27,12 +29,16 @@
 import { ref } from 'vue'
 import { api } from '../../common/api'
 import { redirectAfterLogin } from '../../common/invoice-notice'
+import { navigateAfterLogin } from '../../common/login-redirect'
 import { useAuthStore } from '../../stores/auth'
 
 const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
+const wechatLoading = ref(false)
+const isWeixinMp = ref(false)
+try { isWeixinMp.value = String((uni.getSystemInfoSync() as any).uniPlatform || '').toLowerCase() === 'mp-weixin' } catch { /* 非小程序环境保持隐藏 */ }
 
 const login = async () => {
   if (!username.value.trim() || !password.value) {
@@ -43,11 +49,33 @@ const login = async () => {
   try {
     const result = await api.login(username.value.trim(), password.value)
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
-    await redirectAfterLogin()
+    navigateAfterLogin(() => void redirectAfterLogin())
   } catch {
     uni.showToast({ title: '账号或密码错误', icon: 'none' })
   } finally {
     loading.value = false
+  }
+}
+const wechatLogin = async () => {
+  if (wechatLoading.value) return
+  wechatLoading.value = true
+  try {
+    const loginResult = await new Promise<{ code?: string }>((resolve, reject) => uni.login({ provider: 'weixin', success: resolve, fail: reject }))
+    const code = String(loginResult.code || '')
+    if (!code) throw new Error('未获取到微信登录凭证，请重试')
+    const profile: Record<string, any> = {}
+    try {
+      const userResult = await new Promise<any>((resolve, reject) => uni.getUserProfile({ desc: '用于完善登录后展示资料', success: resolve, fail: reject }))
+      profile.nickName = userResult?.userInfo?.nickName || ''
+      profile.avatarUrl = userResult?.userInfo?.avatarUrl || ''
+    } catch { /* 用户拒绝头像昵称授权时仍可完成登录 */ }
+    const result = await api.wechatLogin(code, profile, 'mini_program')
+    useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
+    navigateAfterLogin(() => void redirectAfterLogin())
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '微信登录失败，请重试', icon: 'none' })
+  } finally {
+    wechatLoading.value = false
   }
 }
 const goRegister = () => uni.navigateTo({ url: '/pages/register-account/register-account' })
@@ -69,6 +97,10 @@ const goForgotPassword = () => uni.navigateTo({ url: '/pages/forgot-password/for
 .password-toggle { position: absolute; top: 0; right: 26rpx; height: 82rpx; color: #697386; font-size: 20rpx; line-height: 82rpx; }
 .primary-btn { width: 100%; height: 82rpx; margin-top: 34rpx; border: 0; border-radius: 999rpx; color: #fff; background: #111318; font-size: 26rpx; line-height: 82rpx; font-weight: 800; }
 .primary-btn::after { border: 0; }
+.wechat-divider { display: flex; align-items: center; gap: 18rpx; margin: 30rpx 0 4rpx; color: #9aa3af; font-size: 20rpx; }
+.wechat-divider::before, .wechat-divider::after { content: ''; flex: 1; height: 1rpx; background: #e8ebef; }
+.wechat-btn { width: 100%; height: 82rpx; margin-top: 16rpx; border: 0; border-radius: 999rpx; color: #fff; background: #07c160; font-size: 26rpx; line-height: 82rpx; font-weight: 800; }
+.wechat-btn::after { border: 0; }
 .form-links { display: flex; justify-content: space-between; margin-top: 28rpx; padding: 0 8rpx; color: #52627a; font-size: 22rpx; }
 .form-links text:last-child { color: #2c67c7; }
 </style>

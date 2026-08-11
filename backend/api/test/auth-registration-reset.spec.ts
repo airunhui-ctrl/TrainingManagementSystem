@@ -80,4 +80,18 @@ describe('账号注册与找回密码', () => {
     expect((await request('/auth/login', { method: 'POST', body: JSON.stringify({ username: phone, password: 'sms-password' }) })).response.status).toBe(201)
     expect((await request('/auth/register/sms/confirm', { method: 'POST', body: JSON.stringify({ challengeId: requested.data.challengeId, phone, code: requested.data.devCode, password: 'sms-password', confirmPassword: 'sms-password' }) })).response.status).toBe(400)
   })
+
+  test('小程序微信一键登录自动建档并支持再次登录', async () => {
+    const first = await request('/auth/wechat-login', { method: 'POST', body: JSON.stringify({ code: 'wx-code-demo-001', scene: 'mini_program', profile: { nickName: '微信用户甲' } }) })
+    expect(first.response.status).toBe(201)
+    expect(first.data.accessToken).toBeTruthy()
+    expect(first.data.user.username).toMatch(/^wx_/)
+
+    const second = await request('/auth/wechat-login', { method: 'POST', body: JSON.stringify({ code: 'wx-code-demo-001', scene: 'mini_program' }) })
+    expect(second.response.status).toBe(201)
+    expect(second.data.user.username).toBe(first.data.user.username)
+
+    const invalid = await request('/auth/wechat-login', { method: 'POST', body: JSON.stringify({ code: '', scene: 'mini_program' }) })
+    expect(invalid.response.status).toBe(401)
+  })
 })

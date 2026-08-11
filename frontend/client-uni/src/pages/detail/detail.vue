@@ -58,6 +58,8 @@ import managementImage from '../../assets/courses/course-management.svg'
 import leanImage from '../../assets/courses/course-lean.svg'
 import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
 import { tokenStorage } from '../../common/auth'
+import { showClientConfirm } from '../../common/confirm'
+import { goLogin } from '../../common/login-redirect'
 
 type DisplayCourse = ApiCourse & { image: string; descriptionRichText?: string }
 type IntroBlock =
@@ -131,7 +133,21 @@ onLoad((query) => { currentCourseId.value = String(query?.id || 'course-1'); loa
 const retryLoad = () => { if (!loading.value) void loadCourse(currentCourseId.value) }
 const back = () => uni.navigateBack()
 const toggleIntro = () => { if (shouldCollapseIntro.value) introExpanded.value = !introExpanded.value }
-const register = () => { if (course.value) uni.navigateTo({ url: `/pages/register/register?id=${course.value.id}` }) }
+const register = () => {
+  if (!course.value) return
+  if (!tokenStorage.getAccessToken()) {
+    void showClientConfirm({
+      title: '请先登录',
+      content: '登录后才能报名该课程，是否前往登录？',
+      confirmText: '去登录',
+      cancelText: '继续浏览',
+    }).then((confirmed) => {
+      if (confirmed && course.value) goLogin(`/pages/detail/detail?id=${course.value.id}`)
+    })
+    return
+  }
+  uni.navigateTo({ url: `/pages/register/register?id=${course.value.id}` })
+}
 </script>
 
 <style scoped lang="scss">

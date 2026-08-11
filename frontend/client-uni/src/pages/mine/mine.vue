@@ -1,15 +1,16 @@
 <template>
   <view class="page">
     <view class="profile">
-      <view class="avatar">{{ profile.avatarText || profile.name?.slice(0, 1) || '六' }}</view>
+      <view class="avatar">{{ isLoggedIn ? (profile.avatarText || profile.name?.slice(0, 1) || '六') : '未' }}</view>
       <view class="profile-copy">
-        <text class="name">{{ profile.name || '微信用户' }}</text>
-        <text class="account">账号：{{ profile.username }}</text>
+        <text v-if="isLoggedIn" class="name">{{ profile.name || '微信用户' }}</text>
+        <text v-else class="name login-name" @tap="goMineLogin">点击登录</text>
+        <text class="account">{{ isLoggedIn ? '账号：' + profile.username : '登录后查看个人信息' }}</text>
         <text class="company">{{ profile.company || '完善企业资料，获得更精准服务' }}</text>
       </view>
       <view class="stats">
         <view><text>{{ profile.points }}</text><small>我的积分</small></view>
-        <view><text>{{ invoiceCount }}</text><small>开票申请</small></view>
+        <view class="stat-button" @tap="openInvoices"><text>{{ invoiceCount }}</text><small>开票申请</small><text class="stat-arrow">›</text></view>
       </view>
     </view>
 
@@ -23,12 +24,13 @@
       <view class="menu-row" @tap="openProfile"><view><text class="menu-title">个人资料</text><text class="menu-hint">姓名、联系方式、性别、企业信息</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="openSecurity"><view><text class="menu-title">账号与安全</text><text class="menu-hint">登录账号和密码</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="openMessages"><view><text class="menu-title">我的消息<text v-if="messageUnreadCount" class="unread-badge">{{ messageUnreadCount }}</text></text><text class="menu-hint">查看课程提醒和服务通知</text></view><text class="arrow">›</text></view>
+      <view class="menu-row" @tap="openInvoices"><view><text class="menu-title">我的开票申请</text><text class="menu-hint">查看已提交的开票申请及状态</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="openStudents"><view><text class="menu-title">我的学员</text><text class="menu-hint">维护本人或代报名学员档案</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="showPoints"><view><text class="menu-title">我的积分</text><text class="menu-hint">查看当前积分和运营奖励说明</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="showFeedback"><view><text class="menu-title">问题反馈</text><text class="menu-hint">告诉我们你的使用建议</text></view><text class="arrow">›</text></view>
     </view>
 
-    <view class="logout-section"><button class="logout-btn" type="button" @tap="logout">退出登录</button></view>
+    <view v-if="isLoggedIn" class="logout-section"><button class="logout-btn" type="button" @tap="logout">退出登录</button></view>
 
     <view v-if="profileModalOpen" class="modal-mask" @tap.self="closeProfile">
       <view class="modal-card">
@@ -53,6 +55,19 @@
       </view>
     </view>
 
+    <view v-if="invoiceModalOpen" class="modal-mask" @tap.self="closeInvoices">
+      <view class="modal-card">
+        <view class="modal-head"><view><text class="modal-title">我的开票申请</text><text class="modal-subtitle">共 {{ invoices.length }} 笔申请</text></view><text class="close" @tap="closeInvoices">×</text></view>
+        <view v-if="invoices.length" class="invoice-list">
+          <view v-for="invoice in invoices" :key="invoice.id" class="invoice-row" @tap="goBusinessInvoices(invoice.id)">
+            <view class="invoice-row-main"><text class="invoice-row-title">{{ invoice.title || '企业发票' }}</text><text class="invoice-row-id">申请编号：{{ invoice.id }}</text><text class="invoice-row-time">{{ formatDate(invoice.createdAt) }}</text></view>
+            <view class="invoice-row-side"><text :class="['invoice-status', invoiceStatusClass(invoice.status)]">{{ invoice.status }}</text><text class="arrow">›</text></view>
+          </view>
+        </view>
+        <view v-else class="invoice-empty">暂无开票申请</view>
+      </view>
+    </view>
+
   </view>
 </template>
 
@@ -60,12 +75,19 @@
 import { reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
+import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
+import { openBusinessInvoices } from '../../common/invoice-notice'
+import { goLogin } from '../../common/login-redirect'
 import { useAuthStore } from '../../stores/auth'
 
 type Profile = { name: string; username: string; company: string; phone: string; gender: string; email: string; avatarText: string; points: number; registeredAt: string; lastLoginAt?: string | null }
+type InvoiceItem = { id: string; title?: string; status: string; createdAt: string }
 const profile = reactive<Profile>({ name: '培训用户', username: 'demo', company: '', phone: '', gender: '', email: '', avatarText: '六', points: 0, registeredAt: '', lastLoginAt: null })
+const isLoggedIn = ref(Boolean(tokenStorage.getAccessToken()))
 const invoiceCount = ref(0)
+const invoices = ref<InvoiceItem[]>([])
+const invoiceModalOpen = ref(false)
 const messageUnreadCount = ref(0)
 const loadError = ref('')
 const profileModalOpen = ref(false)
@@ -80,10 +102,18 @@ const passwordForm = reactive({ password: '', confirm: '' })
 
 const load = async () => {
   loadError.value = ''
+  isLoggedIn.value = Boolean(tokenStorage.getAccessToken())
+  if (!isLoggedIn.value) {
+    invoiceCount.value = 0
+    invoices.value = []
+    messageUnreadCount.value = 0
+    return
+  }
   try {
     Object.assign(profile, await api.profile())
-    const [invoices, messages] = await Promise.all([api.listInvoices(), api.listMessages()])
-    invoiceCount.value = invoices.items.length
+    const [invoiceResult, messages] = await Promise.all([api.listInvoices(), api.listMessages()])
+    invoices.value = invoiceResult.items as InvoiceItem[]
+    invoiceCount.value = invoices.value.length
     messageUnreadCount.value = messages.unreadCount || 0
   } catch (error: any) {
     loadError.value = error?.message || '网络异常，请检查网络后重试'
@@ -106,6 +136,11 @@ const closeProfile = () => { if (!mineOperationKey.value) profileModalOpen.value
 const openSecurity = () => { if (mineOperationKey.value) return; passwordForm.password = ''; passwordForm.confirm = ''; securityModalOpen.value = true }
 const openStudents = () => uni.navigateTo({ url: '/pages/students/students' })
 const openMessages = () => uni.navigateTo({ url: '/pages/messages/messages' })
+const openInvoices = () => { invoiceModalOpen.value = true }
+const closeInvoices = () => { invoiceModalOpen.value = false }
+const goBusinessInvoices = (invoiceId: string) => { invoiceModalOpen.value = false; openBusinessInvoices(invoiceId) }
+const goMineLogin = () => goLogin('/pages/mine/mine')
+const invoiceStatusClass = (status: string) => status === '已开票' ? 'success' : status === '已驳回' ? 'rejected' : status === '待处理' ? 'pending' : ''
 const closeSecurity = () => { if (!mineOperationKey.value) securityModalOpen.value = false }
 const confirmAction = (title: string, content: string) => showClientConfirm({ title, content })
 const saveProfile = async () => {
@@ -171,13 +206,15 @@ onShow(load)
 .load-error { display: flex; flex-direction: column; align-items: center; margin-top: 18rpx; padding: 24rpx; border-radius: 18rpx; color: $muted; background: #fff7ed; text-align: center; }.error-title { color: #9a5a16; font-size: 24rpx; font-weight: 800; }.error-hint { margin-top: 8rpx; line-height: 1.5; }.retry-button { width: 210rpx; height: 60rpx; margin-top: 14rpx; border: 0; border-radius: 999rpx; color: #17366d; background: $yellow; font-size: 21rpx; line-height: 60rpx; font-weight: 800; }.retry-button::after { border: 0; }
 .profile { position: relative; padding: 34rpx; color: #fff; border-radius: 28rpx; background: linear-gradient(130deg, #234DBB, #2F80ED); box-shadow: 0 18rpx 50rpx rgba(20,43,74,.18); }
 .avatar { display: inline-grid; place-items: center; width: 108rpx; height: 108rpx; border-radius: 50%; color: $navy; background: $yellow; font-size: 38rpx; font-weight: 900; }
-.profile-copy { display: inline-flex; flex-direction: column; vertical-align: top; margin: 8rpx 0 0 24rpx; max-width: calc(100% - 160rpx); }.name { font-size: 32rpx; font-weight: 900; }.account, .company { margin-top: 8rpx; color: rgba(255,255,255,.78); font-size: 20rpx; }.company { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-copy { display: inline-flex; flex-direction: column; vertical-align: top; margin: 8rpx 0 0 24rpx; max-width: calc(100% - 160rpx); }.name { font-size: 32rpx; font-weight: 900; }.login-name { color: #ffd21f; text-decoration: underline; cursor: pointer; }.account, .company { margin-top: 8rpx; color: rgba(255,255,255,.78); font-size: 20rpx; }.company { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; margin-top: 30rpx; padding-top: 22rpx; border-top: 1rpx solid rgba(255,255,255,.24); }.stats view+view { padding-left: 28rpx; border-left: 1rpx solid rgba(255,255,255,.24); }.stats text, .stats small { display: block; }.stats text { font-size: 40rpx; font-weight: 900; }.stats small { font-size: 20rpx; opacity: .78; }
+.stats .stat-button { position: relative; cursor: pointer; }.stat-arrow { position: absolute; right: 8rpx; bottom: 8rpx; display: block !important; font-size: 26rpx !important; line-height: 1; opacity: .85; }
 .menu { overflow: hidden; margin-top: 24rpx; }.menu-row { display: flex; align-items: center; justify-content: space-between; padding: 28rpx 30rpx; border-bottom: 1rpx solid #E8EDF4; }.menu-row:last-child { border-bottom: 0; }.menu-title, .menu-hint { display: block; }.menu-title { color: $navy; font-size: 27rpx; font-weight: 800; }.menu-hint { margin-top: 8rpx; color: $muted; font-size: 20rpx; }.arrow { color: #ACB7C5; font-size: 36rpx; line-height: 1; }
 .unread-badge { display: inline-block; min-width: 30rpx; margin-left: 10rpx; padding: 2rpx 8rpx; border-radius: 999rpx; color: #fff; background: #2f80ed; font-size: 17rpx; line-height: 26rpx; text-align: center; vertical-align: 3rpx; }
 .students-card { margin-top: 24rpx; padding: 28rpx 30rpx; }.section-head { display: flex; align-items: center; justify-content: space-between; }.section-title, .section-hint { display: block; }.section-title { color: $navy; font-size: 27rpx; font-weight: 800; }.section-hint { margin-top: 8rpx; color: $muted; font-size: 20rpx; }.add-student { color: $blue; font-size: 22rpx; font-weight: 800; }.student-list { margin-top: 16rpx; }.student-row { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; padding: 20rpx 0; border-top: 1rpx solid #edf1f5; }.student-main { display: flex; align-items: center; min-width: 0; }.student-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 64rpx; height: 64rpx; margin-right: 14rpx; border-radius: 50%; color: $navy; background: #e8f1ff; font-size: 24rpx; font-weight: 900; }.student-name { display: block; color: $navy; font-size: 24rpx; font-weight: 800; }.student-meta { display: block; max-width: 330rpx; margin-top: 6rpx; overflow: hidden; color: $muted; font-size: 19rpx; text-overflow: ellipsis; white-space: nowrap; }.default-tag { display: inline-block; margin-left: 8rpx; padding: 2rpx 8rpx; border-radius: 999rpx; color: #2a6fce; background: #eaf3ff; font-size: 17rpx; font-weight: 700; }.student-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10rpx; color: $blue; font-size: 19rpx; }.student-actions .danger { color: #d95757; }.students-empty { margin-top: 18rpx; padding: 22rpx; border-radius: 12rpx; color: $muted; background: #f8fafc; text-align: center; font-size: 20rpx; }.student-check { display: flex; align-items: center; gap: 8rpx; margin-top: 20rpx; color: $muted; font-size: 21rpx; }
 .logout-section { display: flex; justify-content: center; margin-top: 28rpx; }.logout-btn { box-sizing: border-box; width: 320rpx; height: 76rpx; line-height: 76rpx; margin: 0; padding: 0 28rpx; border: 1rpx solid #F4C7C7; border-radius: 999rpx; color: #D95757; background: #FFF8F8; font-size: 26rpx; font-weight: 700; }.logout-btn::after { border: 0; }
 .modal-mask { position: fixed; inset: 0; z-index: 1000; z-index: var(--client-business-modal-layer, 1000); display: flex; align-items: flex-end; justify-content: center; background: rgba(12,31,65,.48); }.modal-card { box-sizing: border-box; width: 100%; max-height: calc(100vh - 64rpx); overflow-y: auto; padding: 30rpx 28rpx calc(36rpx + env(safe-area-inset-bottom)); border-radius: 28rpx 28rpx 0 0; background: #fff; }.modal-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18rpx; }.modal-title { display: block; color: $navy; font-size: 34rpx; font-weight: 900; }.modal-subtitle { display: block; margin-top: 8rpx; color: $muted; font-size: 20rpx; }.close { color: #8391a3; font-size: 44rpx; line-height: 1; }.form-row { margin-top: 18rpx; }.form-row > text { display: block; margin-bottom: 10rpx; color: $muted; font-size: 22rpx; }.form-row input, .picker-value { box-sizing: border-box; width: 100%; height: 78rpx; padding: 0 22rpx; border: 1rpx solid #dce4ee; border-radius: 14rpx; color: $navy; background: #fbfcfe; font-size: 24rpx; line-height: 78rpx; }.picker-value { display: flex; justify-content: space-between; }.primary-btn { width: 100%; height: 82rpx; margin-top: 26rpx; border: 0; border-radius: 999rpx; color: #17366d; background: $yellow; font-size: 25rpx; line-height: 82rpx; font-weight: 900; }.primary-btn::after { border: 0; }.security-tip { display: flex; justify-content: space-between; padding: 20rpx 0; border-bottom: 1rpx solid #edf1f5; color: $muted; font-size: 21rpx; }.security-tip .bound { color: #2aa66f; font-weight: 800; }
+.invoice-list { margin-top: 8rpx; }.invoice-row { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; padding: 22rpx 0; border-top: 1rpx solid #edf1f5; }.invoice-row-main { min-width: 0; }.invoice-row-title, .invoice-row-id, .invoice-row-time { display: block; }.invoice-row-title { color: $navy; font-size: 25rpx; font-weight: 800; }.invoice-row-id { margin-top: 8rpx; color: $muted; font-size: 19rpx; word-break: break-all; }.invoice-row-time { margin-top: 6rpx; color: $muted; font-size: 19rpx; }.invoice-row-side { display: flex; align-items: center; gap: 10rpx; }.invoice-status { padding: 5rpx 12rpx; border-radius: 999rpx; font-size: 19rpx; font-weight: 800; }.invoice-status.success { color: #178a56; background: #effbf5; }.invoice-status.rejected { color: #b42318; background: #fff0f1; }.invoice-status.pending { color: #b87314; background: #fff8e9; }.invoice-empty { padding: 40rpx 0; color: $muted; text-align: center; font-size: 22rpx; }
 .modal-mask { z-index: var(--client-business-modal-layer, 1000) !important; }
 .action-disabled { opacity: .45; pointer-events: none; }
 @media (min-width: 700px) { .modal-mask { align-items: center; padding: 30rpx; }.modal-card { width: 680rpx; border-radius: 28rpx; } }

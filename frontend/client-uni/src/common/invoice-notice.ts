@@ -1,9 +1,13 @@
 import { api } from './api'
+import { showClientConfirm } from './confirm'
 
 const BUSINESS_TARGET_TAB_KEY = 'client-business-target-tab'
+const BUSINESS_TARGET_INVOICE_KEY = 'client-business-target-invoice'
 
-const openBusinessInvoices = () => {
+export const openBusinessInvoices = (invoiceId?: string) => {
   uni.setStorageSync(BUSINESS_TARGET_TAB_KEY, 'invoices')
+  if (invoiceId) uni.setStorageSync(BUSINESS_TARGET_INVOICE_KEY, String(invoiceId))
+  else uni.removeStorageSync(BUSINESS_TARGET_INVOICE_KEY)
   uni.switchTab({ url: '/pages/business/business' })
 }
 
@@ -23,14 +27,14 @@ export const redirectAfterLogin = async () => {
     if (!rejected.length) return openClientHome()
     const firstReason = rejected.find((invoice) => invoice.rejectReason)?.rejectReason
     const suffix = rejected.length > 1 ? `，共 ${rejected.length} 条` : ''
-    uni.showModal({
+    const confirmed = await showClientConfirm({
       title: '有开票申请被驳回',
       content: `${firstReason ? `驳回原因：${firstReason}\n\n` : ''}请前往“订单 → 开票记录”修改信息后重新申请${suffix}。`,
       cancelText: '稍后处理',
       confirmText: '去开票记录',
-      success: ({ confirm }) => confirm ? openBusinessInvoices() : openClientHome(),
-      fail: openClientHome,
     })
+    if (confirmed) openBusinessInvoices()
+    else openClientHome()
   } catch {
     openClientHome()
   }
@@ -41,4 +45,11 @@ export const consumeBusinessTargetTab = () => {
   if (target !== 'invoices') return false
   uni.removeStorageSync(BUSINESS_TARGET_TAB_KEY)
   return true
+}
+
+export const consumeBusinessTargetInvoice = () => {
+  const target = String(uni.getStorageSync(BUSINESS_TARGET_INVOICE_KEY) || '').trim()
+  if (!target) return ''
+  uni.removeStorageSync(BUSINESS_TARGET_INVOICE_KEY)
+  return target
 }

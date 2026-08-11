@@ -46,7 +46,7 @@ function performRequest<T>(options: UniApp.RequestOptions, retried: boolean): Pr
         if (response.statusCode === 401 && !retried && tokenStorage.getRefreshToken()) {
           try { await refreshAccessToken(); resolve(await performRequest<T>(options, true)); return } catch { /* clear below */ }
         }
-        if (response.statusCode === 401) { tokenStorage.clear(); uni.reLaunch({ url: '/pages/login/login' }); reject(new Error('登录已过期')); return }
+        if (response.statusCode === 401) { tokenStorage.clear(); uni.switchTab({ url: '/pages/index/index' }); reject(new Error('登录已过期')); return }
         if (response.statusCode >= 400) {
           const payload = response.data as { message?: string | string[]; error?: string } | undefined
           const message = Array.isArray(payload?.message) ? payload.message.join('；') : payload?.message || payload?.error

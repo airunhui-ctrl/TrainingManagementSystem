@@ -1,12 +1,19 @@
 <template>
   <view class="page">
-    <view class="page-header">
+    <view v-if="isLoggedIn" class="page-header">
       <view><text class="eyebrow">ORDER CENTER</text><text class="page-title">订单</text></view>
       <view class="page-header-actions"><text class="invoice-link" @tap="tab = 'invoices'">开票记录</text><text class="refresh-link" :class="{ disabled: loadInFlight }" @tap="loadAll">刷新</text></view>
     </view>
-    <view class="tabs">
+    <view v-if="isLoggedIn" class="tabs">
       <text v-for="item in tabs" :key="item.key" :class="['tab', { active: tab === item.key }]" @tap="tab = item.key">{{ item.label }}</text>
     </view>
+
+    <view v-if="!isLoggedIn" class="login-hint">
+      <view class="login-hint-icon">!</view>
+      <text class="login-hint-text">您尚未登录，无法查看订单详情</text>
+      <button class="login-hint-btn" @tap="goOrderLogin">登录查看历史详情</button>
+    </view>
+    <template v-if="isLoggedIn">
 
     <view v-if="loadError" class="card error-state">
       <text class="error-title">业务数据加载失败</text>
@@ -60,10 +67,10 @@
     </template>
 
     <template v-else>
-      <view v-if="invoices.length"><view v-for="invoice in invoices" :key="invoice.id" class="card invoice-card">
+      <view v-if="invoices.length"><view v-for="invoice in invoices" :key="invoice.id" class="card invoice-card" @tap="openInvoiceDetail(invoice)">
         <view class="order-heading"><text class="order-title">{{ invoice.title || '企业发票' }}</text><text :class="['status', statusClass(invoice.status)]">{{ invoice.status }}</text></view>
         <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.retryOfInvoiceId" class="invoice-meta">来源申请：{{ invoice.retryOfInvoiceId }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text v-if="invoice.status === '已驳回' && invoice.rejectReason" class="invoice-meta rejected">驳回理由：{{ invoice.rejectReason }}</text><text v-if="invoice.status === '已驳回' && !actionableRejectedIds.has(invoice.id)" class="invoice-meta">该申请已重新提交，历史记录保留</text><text v-if="invoice.invoiceFileStatus" class="invoice-meta">电子发票：{{ invoice.invoiceFileStatus }}<text v-if="invoice.invoiceFileName">（{{ invoice.invoiceFileName }}）</text></text>
-        <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="outline-button invoice-file-button" @tap="openInvoiceFile(invoice)">查看电子发票</button></view></view>
+        <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap.stop="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="outline-button invoice-file-button" @tap.stop="openInvoiceFile(invoice)">查看电子发票</button><button class="invoice-detail-button" @tap.stop="openInvoiceDetail(invoice)">查看详情</button></view></view>
       </view></view>
       <view v-else-if="!loadError" class="card empty-state"><text>暂无开票记录</text></view>
     </template>
@@ -113,6 +120,30 @@
         <view class="dialog-actions invoice-actions"><button class="cancel-button" :disabled="invoiceSubmitting || invoiceConfirming" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length || invoiceSubmitting || invoiceConfirming" @tap="submitInvoice">{{ invoiceSubmitting ? '提交中...' : invoiceConfirming ? '确认中...' : reapplyInvoiceId ? '重新提交申请' : '提交申请' }}</button></view>
       </view>
     </view>
+
+    <view v-if="invoiceDetail" class="modal-mask" @tap.self="closeInvoiceDetail">
+      <view class="invoice-detail-modal">
+        <view class="modal-header"><view><text class="modal-title">开票申请详情</text><text class="modal-subtitle">{{ invoiceDetail.id }}</text></view><text class="close-button" @tap="closeInvoiceDetail">×</text></view>
+        <view class="modal-scroll invoice-detail-scroll">
+          <view class="invoice-detail-section">
+            <view class="invoice-detail-row"><text class="invoice-detail-label">发票抬头</text><text class="invoice-detail-value">{{ invoiceDetail.title || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">纳税人识别号</text><text class="invoice-detail-value">{{ invoiceDetail.taxNo || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">接收邮箱</text><text class="invoice-detail-value">{{ invoiceDetail.email || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">申请状态</text><text class="invoice-detail-value">{{ invoiceDetail.status || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">关联订单</text><text class="invoice-detail-value">{{ (invoiceDetail.orderIds || []).join('、') || '-' }}</text></view>
+            <view v-if="invoiceDetail.retryOfInvoiceId" class="invoice-detail-row"><text class="invoice-detail-label">来源申请</text><text class="invoice-detail-value">{{ invoiceDetail.retryOfInvoiceId }}</text></view>
+            <view v-if="invoiceDetail.invoiceNo" class="invoice-detail-row"><text class="invoice-detail-label">发票号码</text><text class="invoice-detail-value">{{ invoiceDetail.invoiceNo }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">电子发票</text><text class="invoice-detail-value">{{ invoiceDetail.invoiceFileStatus || '未生成' }}<text v-if="invoiceDetail.invoiceFileName">（{{ invoiceDetail.invoiceFileName }}）</text></text></view>
+            <view v-if="invoiceDetail.rejectReason" class="invoice-detail-row"><text class="invoice-detail-label">驳回理由</text><text class="invoice-detail-value rejected">{{ invoiceDetail.rejectReason }}</text></view>
+            <view v-if="invoiceDetail.remark" class="invoice-detail-row"><text class="invoice-detail-label">备注</text><text class="invoice-detail-value">{{ invoiceDetail.remark }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">申请时间</text><text class="invoice-detail-value">{{ formatDate(invoiceDetail.createdAt) }}</text></view>
+            <view v-if="invoiceDetail.processedAt" class="invoice-detail-row"><text class="invoice-detail-label">处理时间</text><text class="invoice-detail-value">{{ formatDate(invoiceDetail.processedAt) }}</text></view>
+          </view>
+        </view>
+        <view class="dialog-actions invoice-detail-actions"><button class="cancel-button" @tap="closeInvoiceDetail">关闭</button><button v-if="actionableRejectedIds.has(invoiceDetail.id)" class="submit-button" @tap="openReapplyFromDetail(invoiceDetail)">修改后重新申请</button><button v-if="invoiceDetail.invoiceFileStatus === '已上传'" class="outline-button" @tap="openFileFromDetail(invoiceDetail)">查看电子发票</button></view>
+      </view>
+    </view>
+    </template>
   </view>
 </template>
 
@@ -120,13 +151,15 @@
 import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { api, apiAssetUrl, downloadInvoiceFile, type ApiCourse, uploadPaymentProof } from '../../common/api'
+import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
-import { actionableRejectedInvoices, consumeBusinessTargetTab } from '../../common/invoice-notice'
+import { actionableRejectedInvoices, consumeBusinessTargetInvoice, consumeBusinessTargetTab } from '../../common/invoice-notice'
+import { goLogin } from '../../common/login-redirect'
 import { requestNativePayment } from '../../common/payment'
 
 type TabKey = 'payments' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
-type Invoice = { id: string; status: string; title?: string; taxNo?: string; email?: string; rejectReason?: string | null; retryOfInvoiceId?: string | null; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; createdAt: string }
+type Invoice = { id: string; status: string; title?: string; taxNo?: string; email?: string; remark?: string; invoiceNo?: string; rejectReason?: string | null; retryOfInvoiceId?: string | null; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; createdAt: string; processedAt?: string }
 type Preview = { id: string; courseId: string; courseTitle: string; viewedAt: string }
 type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string; qrCodeText?: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled?: boolean; onlineAlipayEnabled?: boolean }
 
@@ -141,6 +174,8 @@ const previews = ref<Preview[]>([])
 const courses = ref<Record<string, ApiCourse>>({})
 const selectedInvoiceOrderIds = ref<string[]>([])
 const invoiceDialogOpen = ref(false)
+const invoiceDetail = ref<Invoice | null>(null)
+const pendingInvoiceDetailId = ref('')
 const invoiceForm = reactive({ title: '', taxNo: '', email: '' })
 const invoiceSubmitting = ref(false)
 const invoiceConfirming = ref(false)
@@ -157,6 +192,7 @@ const payingOrderKey = ref('')
 const paymentInfo = reactive<PaymentInfo>({})
 const paymentInfoLoaded = ref(false)
 const loadError = ref('')
+const isLoggedIn = ref(Boolean(tokenStorage.getAccessToken()))
 
 const paidOrders = computed(() => orders.value.filter((order) => order.status === '已支付'))
 const paymentOrders = computed(() => paymentFilter.value === 'paid' ? paidOrders.value : orders.value)
@@ -187,6 +223,11 @@ const loadAll = async () => {
     const [orderResult, invoiceResult, courseResult, previewResult, paymentResult] = await Promise.all([api.listOrders(), api.listInvoices(), api.listCourses(), api.listPreviews(), api.paymentInfo()])
     orders.value = orderResult.items as Order[]
     invoices.value = invoiceResult.items
+    const targetInvoiceId = pendingInvoiceDetailId.value
+    if (targetInvoiceId) {
+      const matched = invoices.value.find((invoice) => invoice.id === targetInvoiceId)
+      if (matched) { invoiceDetail.value = matched; pendingInvoiceDetailId.value = '' }
+    }
     courses.value = Object.fromEntries(courseResult.items.map((course) => [course.id, course]))
     previews.value = previewResult.items
     Object.assign(paymentInfo, paymentResult)
@@ -285,6 +326,10 @@ const openInvoiceReapply = (invoice: Invoice) => {
   invoiceDialogOpen.value = true
 }
 const closeInvoiceDialog = () => { if (invoiceSubmitting.value || invoiceConfirming.value) return; invoiceDialogOpen.value = false; reapplyInvoiceId.value = '' }
+const openInvoiceDetail = (invoice: Invoice) => { invoiceDetail.value = invoice }
+const closeInvoiceDetail = () => { invoiceDetail.value = null }
+const openReapplyFromDetail = (invoice: Invoice) => { closeInvoiceDetail(); openInvoiceReapply(invoice) }
+const openFileFromDetail = (invoice: Invoice) => { closeInvoiceDetail(); openInvoiceFile(invoice) }
 const submitInvoice = async () => {
   if (invoiceSubmitting.value || invoiceConfirming.value) return
   if (!invoiceForm.title.trim() || !invoiceForm.taxNo.trim() || !invoiceForm.email.trim()) return uni.showToast({ title: '请填写完整开票信息', icon: 'none' })
@@ -318,7 +363,12 @@ const openInvoiceFile = async (invoice: Invoice) => {
   } catch (error: any) { uni.showToast({ title: error?.message || '电子发票下载失败', icon: 'none' }) }
 }
 const openCourseDetail = (courseId: string) => { uni.navigateTo({ url: '/pages/detail/detail?id=' + courseId }) }
+const goOrderLogin = () => goLogin('/pages/business/business')
 const showBusinessPage = () => {
+  isLoggedIn.value = Boolean(tokenStorage.getAccessToken())
+  if (!isLoggedIn.value) return
+  const targetInvoiceId = consumeBusinessTargetInvoice()
+  if (targetInvoiceId) pendingInvoiceDetailId.value = targetInvoiceId
   if (consumeBusinessTargetTab()) tab.value = 'invoices'
   void loadAll()
 }
@@ -327,6 +377,7 @@ onShow(showBusinessPage)
 
 <style scoped lang="scss">
 .page { min-height: 100vh; padding: 40rpx 32rpx calc(140rpx + env(safe-area-inset-bottom)); background: #f6f8fb; }
+.login-hint { display: flex; flex-direction: column; align-items: center; margin: 180rpx -32rpx 0; padding: 0; }.login-hint-icon { display: grid; place-items: center; width: 132rpx; height: 132rpx; border: 2rpx solid #cfe0f5; border-radius: 50%; color: #2f80ed; background: #eaf3ff; font-size: 64rpx; font-weight: 900; line-height: 1; }.login-hint-text { display: block; width: 60%; margin-top: 46rpx; color: #8492a7; font-size: 30rpx; line-height: 1.7; text-align: center; }.login-hint-btn { width: 60%; height: 88rpx; margin-top: 60rpx; border: 0; border-radius: $radius-pill; color: #17366d; background: $yellow; font-size: 28rpx; line-height: 88rpx; font-weight: 800; }.login-hint-btn::after { border: 0; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20rpx; }.page-header-actions { display: flex; align-items: center; gap: 20rpx; }.refresh-link { color: $blue; font-size: 23rpx; }.refresh-link.disabled { opacity: .55; }
 .eyebrow { display: block; color: #8b98aa; font-size: 18rpx; letter-spacing: 2rpx; }
 .page-title { display: block; margin-top: 8rpx; color: $navy; font-size: 40rpx; font-weight: 900; }
@@ -424,6 +475,16 @@ onShow(showBusinessPage)
 .submit-button[disabled] { opacity: .45; }
 .invoice-dialog { box-sizing: border-box; display: flex; flex-direction: column; width: calc(100% - 64rpx); max-width: 680rpx; max-height: calc(100vh - 120rpx); overflow: hidden; padding: 0; }
 .invoice-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 8rpx; }
+.invoice-detail-modal { box-sizing: border-box; display: flex; flex-direction: column; width: calc(100% - 64rpx); max-width: 680rpx; max-height: calc(100vh - 120rpx); overflow: hidden; border-radius: 28rpx; background: #fff; }
+.invoice-detail-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 30rpx 12rpx; }
+.invoice-detail-section { margin-top: 22rpx; padding: 4rpx 22rpx; border: 1rpx solid #e4eaf2; border-radius: 18rpx; background: #fbfcfe; }
+.invoice-detail-row { display: flex; align-items: flex-start; gap: 18rpx; padding: 18rpx 0; border-bottom: 1rpx solid #edf0f4; }
+.invoice-detail-row:last-child { border-bottom: 0; }
+.invoice-detail-label { flex: 0 0 150rpx; color: $muted; font-size: 21rpx; }
+.invoice-detail-value { flex: 1; color: $navy; font-size: 22rpx; line-height: 1.45; word-break: break-all; }
+.invoice-detail-value.rejected { color: $danger; }
+.invoice-detail-actions { border-radius: 0 0 28rpx 28rpx; }
+.invoice-detail-button { min-height: 48rpx; margin: 0; padding: 0 14rpx; border: 1rpx solid #b9d7ff; border-radius: $radius-pill; color: $blue; background: #f4f9ff; font-size: 20rpx; line-height: 46rpx; }
 .dialog-hint { display: block; margin: 16rpx 30rpx 0; color: $muted; font-size: 21rpx; }
 .invoice-field { box-sizing: border-box; display: block; width: calc(100% - 60rpx); height: 74rpx; margin: 18rpx 30rpx 0; padding: 0 20rpx; border: 1rpx solid #dce4ee; border-radius: 14rpx; color: $navy; background: #fbfcfe; font-size: 22rpx; }
 .dialog-actions { display: flex; flex: 0 0 auto; gap: 14rpx; margin: 0; padding: 18rpx 30rpx calc(28rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #edf0f4; background: #fff; }
