@@ -363,6 +363,7 @@ onMounted(installSystemModalLayerGuard)
 <style lang="scss">
 @import './uni.scss';
 
+/* #ifdef H5 */
 // Layer contract: page < business modal < system confirmation dialog.
 // uni.showModal is mounted outside the page component, so these rules must be global.
 :root {
@@ -874,4 +875,5 @@ html body .client-confirm-button-confirm { color: #17366d !important; background
 html body [data-client-confirm-layer='content'][data-variant='danger'] .client-confirm-button-confirm { color: #fff !important; background: #d95757 !important; }
 html body .client-confirm-button:hover { filter: brightness(.97) !important; transform: translateY(-1px) !important; }
 html body .client-confirm-button:focus-visible { outline: 3px solid rgba(47, 128, 237, .32) !important; outline-offset: 2px !important; }
+/* #endif */
 </style>

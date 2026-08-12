@@ -17,6 +17,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { onShareAppMessage, onUnload } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
 
 const identifier = ref('')
@@ -29,6 +30,7 @@ const countdown = ref(0)
 const requesting = ref(false)
 const loading = ref(false)
 let timer: ReturnType<typeof setInterval> | undefined
+let navigateBackTimer: ReturnType<typeof setTimeout> | null = null
 
 const requestCode = async () => {
   if (!identifier.value.trim()) return uni.showToast({ title: '请输入账号、手机号或邮箱', icon: 'none' })
@@ -49,10 +51,17 @@ const submit = async () => {
   if (newPassword.value.length < 8) return uni.showToast({ title: '密码至少 8 位', icon: 'none' })
   if (newPassword.value !== confirmPassword.value) return uni.showToast({ title: '两次输入的密码不一致', icon: 'none' })
   loading.value = true
-  try { await api.confirmPasswordReset({ challengeId: challengeId.value, code: code.value, newPassword: newPassword.value, confirmPassword: confirmPassword.value }); uni.showToast({ title: '密码已重置', icon: 'none' }); setTimeout(() => uni.navigateBack(), 400) }
+  try { await api.confirmPasswordReset({ challengeId: challengeId.value, code: code.value, newPassword: newPassword.value, confirmPassword: confirmPassword.value }); uni.showToast({ title: '密码已重置', icon: 'none' }); navigateBackTimer = setTimeout(() => uni.navigateBack(), 400) }
   catch (error: any) { uni.showToast({ title: error?.message || '密码重置失败', icon: 'none' }) } finally { loading.value = false }
 }
 const backToLogin = () => uni.navigateBack()
+onUnload(() => {
+  if (timer) clearInterval(timer)
+  timer = undefined
+  if (navigateBackTimer) clearTimeout(navigateBackTimer)
+  navigateBackTimer = null
+})
+onShareAppMessage(() => ({ title: '找回密码', path: '/pages/forgot-password/forgot-password' }))
 </script>
 
 <style scoped lang="scss">

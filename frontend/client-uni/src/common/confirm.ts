@@ -62,15 +62,29 @@ const closeActiveConfirm = (confirmed: boolean) => {
 }
 
 const showNativeConfirm = (options: ClientConfirmOptions) => new Promise<boolean>((resolve) => {
-  uni.showModal({
-    title: options.title,
-    content: options.content,
-    confirmText: options.confirmText,
-    cancelText: options.cancelText,
-    success: (result) => resolve(Boolean(result.confirm)),
-    fail: () => resolve(false),
-  })
+  try {
+    uni.showModal({
+      title: options.title,
+      content: options.content,
+      ...(options.confirmText ? { confirmText: options.confirmText } : {}),
+      ...(options.cancelText ? { cancelText: options.cancelText } : {}),
+      success: (result) => resolve(Boolean(result.confirm)),
+      fail: () => resolve(false),
+    })
+  } catch {
+    uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' })
+    resolve(false)
+  }
 })
+
+const isMiniProgramPlatform = () => {
+  try {
+    const info = uni.getSystemInfoSync() as { uniPlatform?: string; platform?: string }
+    return String(info.uniPlatform || info.platform || '').toLowerCase().startsWith('mp-')
+  } catch {
+    return false
+  }
+}
 
 /**
  * On H5, render confirmations from one html-mounted fixed-layer portal.
@@ -80,9 +94,10 @@ const showNativeConfirm = (options: ClientConfirmOptions) => new Promise<boolean
  * Other platforms keep the native uni.showModal implementation.
  */
 export const showClientConfirm = (options: ClientConfirmOptions) => {
-  if (typeof document === 'undefined' || !document.body) return showNativeConfirm(options)
+  if (isMiniProgramPlatform() || typeof document === 'undefined' || !document.body) return showNativeConfirm(options)
 
-  return new Promise<boolean>((resolve) => {
+  try {
+    return new Promise<boolean>((resolve) => {
     closeActiveConfirm(false)
 
     // Always use a plain div. It is deliberately mounted as the last body
@@ -251,6 +266,10 @@ export const showClientConfirm = (options: ClientConfirmOptions) => {
       window.setTimeout(() => { if (activeConfirm?.root === root) enforceConfirmLayer(root) }, 0)
       window.setTimeout(() => { if (activeConfirm?.root === root) enforceConfirmLayer(root) }, 32)
     }
-    confirm.focus()
-  })
+      confirm.focus()
+    })
+  } catch {
+    uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' })
+    return Promise.resolve(false)
+  }
 }

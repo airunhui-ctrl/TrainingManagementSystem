@@ -1,6 +1,6 @@
 <template>
   <view class="detail-page">
-    <view class="detail-topbar"><text class="back" @tap="back">‹</text><text class="detail-topbar-title">{{ topbarTitle }}</text><text class="detail-refresh" :class="{ disabled: loading }" @tap="retryLoad">刷新</text></view>
+    <view class="detail-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }"><text class="back" @tap="back">‹</text><text class="detail-topbar-title" :style="{ left: '150rpx', right: (nav.capsuleRight + nav.capsuleWidth + 12) + 'px' }">{{ topbarTitle }}</text><view class="detail-topbar-actions"></view></view>
     <view v-if="loading && !course" class="page-state">正在加载课程…</view>
     <view v-else-if="loadError && !course" class="page-state error-state">
       <text class="state-title">课程加载失败</text>
@@ -51,7 +51,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
 import bannerImage from '../../assets/courses/banner-training.svg'
 import talentImage from '../../assets/courses/course-talent.svg'
 import managementImage from '../../assets/courses/course-management.svg'
@@ -60,6 +60,7 @@ import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
 import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
 import { goLogin } from '../../common/login-redirect'
+import { useNavLayout } from '../../common/nav-layout'
 
 type DisplayCourse = ApiCourse & { image: string; descriptionRichText?: string }
 type IntroBlock =
@@ -68,6 +69,7 @@ type IntroBlock =
   | { type: 'list'; items: string[] }
   | { type: 'rich'; html: string }
 const course = ref<DisplayCourse | null>(null)
+const nav = useNavLayout()
 const loading = ref(true)
 const loadError = ref('')
 const currentCourseId = ref('course-1')
@@ -130,6 +132,7 @@ const loadCourse = async (id: string) => {
 }
 
 onLoad((query) => { currentCourseId.value = String(query?.id || 'course-1'); loadCourse(currentCourseId.value) })
+onShareAppMessage(() => ({ title: course.value?.title || '课程详情', path: `/pages/detail/detail?id=${currentCourseId.value}` }))
 const retryLoad = () => { if (!loading.value) void loadCourse(currentCourseId.value) }
 const back = () => uni.navigateBack()
 const toggleIntro = () => { if (shouldCollapseIntro.value) introExpanded.value = !introExpanded.value }
@@ -143,7 +146,7 @@ const register = () => {
       cancelText: '继续浏览',
     }).then((confirmed) => {
       if (confirmed && course.value) goLogin(`/pages/detail/detail?id=${course.value.id}`)
-    })
+    }).catch(() => { uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }) })
     return
   }
   uni.navigateTo({ url: `/pages/register/register?id=${course.value.id}` })
@@ -151,7 +154,7 @@ const register = () => {
 </script>
 
 <style scoped lang="scss">
-.detail-page { min-height: 100vh; padding-bottom: 190rpx; background: #f5f7fa; }.detail-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; height: 92rpx; padding: 0 30rpx; color: #fff; background: linear-gradient(108deg, #55cfe9 0%, #2f80ed 52%, #234dbb 100%); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .2); }.back { width: 120rpx; font-size: 64rpx; line-height: 1; font-weight: 200; }.detail-refresh { width: 120rpx; color: #fff; text-align: right; font-size: 23rpx; font-weight: 800; }.detail-refresh.disabled { opacity: .55; }.detail-topbar-title { flex: 1; min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 30rpx; font-weight: 800; letter-spacing: 0; }.page-state { display: flex; flex-direction: column; align-items: center; box-sizing: border-box; min-height: calc(100vh - 92rpx); padding: 180rpx 40rpx; color: #8492a7; text-align: center; font-size: 26rpx; }.state-title { display: block; color: #243956; font-size: 30rpx; font-weight: 800; }.state-hint { display: block; margin-top: 12rpx; line-height: 1.5; }.state-retry { width: 220rpx; height: 64rpx; margin-top: 24rpx; border: 0; border-radius: 999rpx; color: #17366d; background: #ffd21f; font-size: 22rpx; line-height: 64rpx; font-weight: 800; }.state-retry::after { border: 0; }
+.detail-page { min-height: 100vh; padding-bottom: 190rpx; background: #f5f7fa; }.detail-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: calc(92rpx + var(--status-bar-height)); padding: var(--status-bar-height) 30rpx 0; color: #243956; background: rgba(255, 255, 255, .82); backdrop-filter: blur(18px); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .08); }.back { width: 100rpx; margin-top: -36rpx; color: #243956; font-size: 64rpx; line-height: 1; font-weight: 200; }.detail-topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 20rpx; min-width: 220rpx; }.detail-refresh { width: 90rpx; color: #2f80ed; text-align: right; font-size: 23rpx; font-weight: 800; }.detail-refresh.disabled { opacity: .55; }.detail-topbar-title { position: absolute; left: 0; right: 0; top: calc(var(--status-bar-height) + 12rpx); bottom: -12rpx; display: flex; align-items: center; justify-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #243956; font-size: 30rpx; font-weight: 800; letter-spacing: 0; pointer-events: none; }.topbar-share { margin: 0; padding: 0 8rpx; border: 0; border-radius: 999rpx; color: #1742a5; background: rgba(47, 128, 237, .1); font-size: 22rpx; line-height: 52rpx; font-weight: 800; }.topbar-share::after { border: 0; }.page-state { display: flex; flex-direction: column; align-items: center; box-sizing: border-box; min-height: calc(100vh - 92rpx); padding: 180rpx 40rpx; color: #8492a7; text-align: center; font-size: 26rpx; }.state-title { display: block; color: #243956; font-size: 30rpx; font-weight: 800; }.state-hint { display: block; margin-top: 12rpx; line-height: 1.5; }.state-retry { width: 220rpx; height: 64rpx; margin-top: 24rpx; border: 0; border-radius: 999rpx; color: #17366d; background: #ffd21f; font-size: 22rpx; line-height: 64rpx; font-weight: 800; }.state-retry::after { border: 0; }
 .hero-wrap { position: relative; width: 100%; height: 430rpx; overflow: hidden; }.hero-image { display: block; width: 100%; height: 100%; }.hero-gradient { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(12, 31, 92, .62), rgba(12, 31, 92, 0) 58%); }.hero-category { position: absolute; left: 32rpx; bottom: 28rpx; padding: 8rpx 18rpx; border: 1rpx solid rgba(255,255,255,.6); border-radius: 999rpx; color: #fff; background: rgba(16, 54, 145, .35); font-size: 21rpx; }
 .summary { padding: 28rpx 32rpx 30rpx; background: #fff; }.course-title { display: block; color: #172e51; font-size: 37rpx; line-height: 1.35; font-weight: 900; }.course-subtitle { display: block; margin-top: 9rpx; color: #76879c; font-size: 23rpx; }.summary-time { display: flex; align-items: center; gap: 10rpx; margin-top: 24rpx; padding-bottom: 22rpx; border-bottom: 1rpx solid #edf0f4; color: #2e3e52; font-size: 23rpx; }.time-dot { color: #2f80ed; font-size: 22rpx; }.summary-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16rpx; padding-top: 22rpx; }.summary-item { display: flex; gap: 10rpx; min-width: 0; }.item-icon { flex: 0 0 auto; width: 40rpx; height: 40rpx; line-height: 40rpx; border-radius: 12rpx; color: #2f80ed; background: #eaf3ff; text-align: center; font-size: 23rpx; }.item-label, .item-value { display: block; }.item-label { color: #8996a8; font-size: 18rpx; }.item-value { margin-top: 8rpx; overflow: hidden; color: #3d4d61; font-size: 21rpx; line-height: 1.35; text-overflow: ellipsis; }.price-value { color: #ed781d; }
 .bottom-cta { position: fixed; right: 0; bottom: 0; left: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 24rpx; min-height: 112rpx; padding: 16rpx 28rpx calc(16rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #e6ebf2; background: rgba(255, 255, 255, .97); box-shadow: 0 -8rpx 28rpx rgba(20, 43, 74, .12); backdrop-filter: blur(12px); }

@@ -1,5 +1,6 @@
 <template>
   <view class="students-page">
+    <view class="students-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }"><text class="topbar-back" @tap="backToPrevious">‹</text><text class="topbar-title">我的学员</text><text class="topbar-side"></text></view>
     <view class="page-intro">
       <text class="intro-title">学员档案</text>
       <text class="intro-hint">可维护本人或代报名学员，报名时可直接选择并回填资料</text>
@@ -58,7 +59,7 @@
     <button class="add-button" @tap="openCreate">＋ 添加学员</button>
 
     <view v-if="studentModalOpen" class="modal-mask" @tap.self="closeModal">
-      <view class="modal-card">
+      <view class="modal-card" @tap.stop>
         <view class="modal-head">
           <view><text class="modal-title">{{ editingStudentId ? '编辑学员' : '新增学员' }}</text><text class="modal-subtitle">资料会保存为独立学员档案，可用于后续报名</text></view>
         <text class="close" :class="{ 'action-disabled': Boolean(studentOperationKey) }" @tap="closeModal">×</text>
@@ -78,9 +79,10 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShareAppMessage, onShow } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
 import { showClientConfirm } from '../../common/confirm'
+import { useNavLayout } from '../../common/nav-layout'
 
 type Profile = { name?: string; phone?: string; company?: string; email?: string }
 type Student = { id: string; name: string; phone?: string | null; gender?: string | null; email?: string | null; company?: string | null; department?: string | null; position?: string | null; relationType?: string; isDefault?: boolean }
@@ -88,6 +90,7 @@ type StudentGroup = { key: string; items: Student[] }
 
 const profile = ref<Profile>({})
 const students = ref<Student[]>([])
+const nav = useNavLayout()
 const loading = ref(false)
 const loadInFlight = ref(false)
 const loadError = ref('')
@@ -96,6 +99,8 @@ const savingStudent = ref(false)
 const studentOperationKey = ref('')
 const editingStudentId = ref('')
 const studentForm = reactive({ name: '', phone: '', company: '', department: '', position: '', email: '', isDefault: false })
+const backToPrevious = () => uni.navigateBack()
+const confirmStudentAction = async (title: string, content: string) => { try { return await showClientConfirm({ title, content }) } catch { uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }); return false } }
 
 const normalize = (value?: string | null) => String(value || '').trim().toLowerCase()
 const normalizePhone = (value?: string | null) => String(value || '').replace(/\D/g, '')
@@ -187,7 +192,7 @@ const saveStudent = async () => {
   const operationKey = 'save'
   if (!beginStudentOperation(operationKey)) return
   try {
-    const confirmation = await showClientConfirm({ title: editingStudentId.value ? '确认保存修改' : '确认保存学员', content: '保存后将更新学员档案，确定继续吗？' })
+    const confirmation = await confirmStudentAction(editingStudentId.value ? '确认保存修改' : '确认保存学员', '保存后将更新学员档案，确定继续吗？')
     if (!confirmation) return
     savingStudent.value = true
     if (editingStudentId.value) await api.updateStudent(editingStudentId.value, { ...studentForm })
@@ -199,7 +204,7 @@ const makeDefault = async (id: string) => {
   const operationKey = `default:${id}`
   if (!beginStudentOperation(operationKey)) return
   try {
-    const confirmation = await showClientConfirm({ title: '确认设为默认学员', content: '后续报名将优先回填该学员信息，确定继续吗？' })
+    const confirmation = await confirmStudentAction('确认设为默认学员', '后续报名将优先回填该学员信息，确定继续吗？')
     if (!confirmation) return
     await api.setDefaultStudent(id); await load(); uni.showToast({ title: '默认学员已更新', icon: 'none' })
   } catch (error: any) { uni.showToast({ title: error?.message || '设置失败', icon: 'none' }) } finally { endStudentOperation(operationKey) }
@@ -208,16 +213,18 @@ const removeStudent = async (id: string) => {
   const operationKey = `remove:${id}`
   if (!beginStudentOperation(operationKey)) return
   try {
-    const confirmation = await showClientConfirm({ title: '解除学员关系', content: '解除后仍保留历史报名记录，确定继续吗？' })
+    const confirmation = await confirmStudentAction('解除学员关系', '解除后仍保留历史报名记录，确定继续吗？')
     if (!confirmation) return
     await api.removeStudent(id); await load(); uni.showToast({ title: '已解除关系', icon: 'none' })
   } catch (error: any) { uni.showToast({ title: error?.message || '解除失败', icon: 'none' }) } finally { endStudentOperation(operationKey) }
 }
 onShow(load)
+onShareAppMessage(() => ({ title: '我的学员', path: '/pages/students/students' }))
 </script>
 
 <style scoped lang="scss">
 .students-page { min-height: 100vh; padding: 0 28rpx calc(120rpx + env(safe-area-inset-bottom)); background: #f4f7fb; }
+.students-topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: calc(92rpx + var(--status-bar-height)); margin: 0 -28rpx 18rpx; padding: var(--status-bar-height) 28rpx 0; color: #243956; background: rgba(255, 255, 255, .82); backdrop-filter: blur(18px); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .08); }.students-topbar .topbar-back { width: 100rpx; margin-top: -36rpx; color: #243956; font-size: 56rpx; line-height: 1; font-weight: 300; }.students-topbar .topbar-title { position: absolute; left: 0; right: 0; top: calc(var(--status-bar-height) + 12rpx); bottom: -12rpx; display: flex; align-items: center; justify-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #243956; font-size: 30rpx; font-weight: 800; pointer-events: none; }.students-topbar .topbar-side { width: 100rpx; }
 .page-intro { position: relative; padding: 28rpx 0 20rpx; }.intro-title { display: block; color: $navy; font-size: 30rpx; font-weight: 900; }.intro-hint { display: block; margin-top: 8rpx; padding-right: 100rpx; color: $muted; font-size: 20rpx; line-height: 1.5; }.refresh-link { position: absolute; top: 30rpx; right: 0; color: $blue; font-size: 22rpx; font-weight: 800; }.refresh-link.disabled { opacity: .5; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; padding: 18rpx 4rpx 12rpx; color: $navy; font-size: 26rpx; font-weight: 900; }.other-heading { margin-top: 14rpx; }.count { color: $muted; font-size: 20rpx; font-weight: 400; }
 .card { border-radius: 18rpx; background: #fff; box-shadow: 0 8rpx 24rpx rgba(20,43,74,.06); }.state-card { display: flex; flex-direction: column; align-items: center; box-sizing: border-box; margin-top: 18rpx; padding: 64rpx 28rpx; border-radius: 18rpx; color: $muted; background: #fff; text-align: center; }.state-title { color: $navy; font-size: 28rpx; font-weight: 900; }.state-hint { margin-top: 10rpx; line-height: 1.5; }.state-retry { width: 220rpx; height: 64rpx; margin-top: 22rpx; border: 0; border-radius: 999rpx; color: #17366d; background: $yellow; font-size: 22rpx; line-height: 64rpx; font-weight: 800; }.state-retry::after { border: 0; }.current-card, .student-card { padding: 24rpx; }.student-card { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; margin-bottom: 14rpx; }.student-row-main { display: flex; align-items: center; min-width: 0; }.student-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 72rpx; height: 72rpx; margin-right: 16rpx; border-radius: 50%; color: $navy; background: #e8f1ff; font-size: 26rpx; font-weight: 900; }.current-avatar { color: #fff; background: #2f80ed; }.student-copy { min-width: 0; }.student-name { display: block; overflow: hidden; color: $navy; font-size: 26rpx; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }.student-meta { display: block; max-width: 470rpx; margin-top: 8rpx; overflow: hidden; color: $muted; font-size: 19rpx; text-overflow: ellipsis; white-space: nowrap; }.current-tag { display: inline-block; margin-left: 10rpx; padding: 3rpx 10rpx; border-radius: 999rpx; color: #177b51; background: #eaf9f1; font-size: 17rpx; font-weight: 700; }.row-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 12rpx; color: $blue; font-size: 19rpx; }.row-actions .danger { color: #d95757; }.group-label { padding: 12rpx 10rpx 8rpx; color: $muted; font-size: 22rpx; font-weight: 900; }.current-empty, .other-empty { padding: 30rpx 24rpx; text-align: center; }.empty-title { display: block; color: $navy; font-size: 25rpx; font-weight: 800; }.empty-hint { display: block; margin-top: 8rpx; color: $muted; font-size: 20rpx; line-height: 1.5; }.small-primary { width: 230rpx; height: 62rpx; margin: 20rpx auto 0; border: 0; border-radius: 999rpx; color: #17366d; background: $yellow; font-size: 21rpx; line-height: 62rpx; font-weight: 800; }.add-button { width: calc(100% - 80rpx); height: 78rpx; margin: 28rpx auto 0; border: 0; border-radius: 999rpx; color: #17366d; background: $yellow; font-size: 24rpx; line-height: 78rpx; font-weight: 900; }.add-button::after, .small-primary::after, .primary-btn::after { border: 0; }

@@ -1,5 +1,6 @@
 <template>
   <view class="page">
+    <view class="mine-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }"><text class="topbar-title">我的</text></view>
     <view class="profile">
       <view class="avatar">{{ isLoggedIn ? (profile.avatarText || profile.name?.slice(0, 1) || '六') : '未' }}</view>
       <view class="profile-copy">
@@ -33,7 +34,7 @@
     <view v-if="isLoggedIn" class="logout-section"><button class="logout-btn" type="button" @tap="logout">退出登录</button></view>
 
     <view v-if="profileModalOpen" class="modal-mask" @tap.self="closeProfile">
-      <view class="modal-card">
+      <view class="modal-card" @tap.stop>
         <view class="modal-head"><view><text class="modal-title">个人资料</text><text class="modal-subtitle">完善资料后便于报名、通知和企业服务</text></view><text class="close" :class="{ 'action-disabled': Boolean(mineOperationKey) }" @tap="closeProfile">×</text></view>
         <view class="form-row"><text>姓名</text><input v-model="profileForm.name" placeholder="请输入姓名" /></view>
         <view class="form-row"><text>联系方式</text><input v-model="profileForm.phone" type="number" maxlength="11" placeholder="请输入手机号" /></view>
@@ -45,7 +46,7 @@
     </view>
 
     <view v-if="securityModalOpen" class="modal-mask" @tap.self="closeSecurity">
-      <view class="modal-card">
+      <view class="modal-card" @tap.stop>
         <view class="modal-head"><view><text class="modal-title">账号与安全</text><text class="modal-subtitle">账号：{{ profile.username }}</text></view><text class="close" :class="{ 'action-disabled': Boolean(mineOperationKey) }" @tap="closeSecurity">×</text></view>
         <view class="security-tip"><text>登录方式</text><text class="bound">账号密码登录</text></view>
         <view class="security-tip"><text>最近登录</text><text>{{ profile.lastLoginAt ? formatDate(profile.lastLoginAt) : '暂无记录' }}</text></view>
@@ -56,7 +57,7 @@
     </view>
 
     <view v-if="invoiceModalOpen" class="modal-mask" @tap.self="closeInvoices">
-      <view class="modal-card">
+      <view class="modal-card" @tap.stop>
         <view class="modal-head"><view><text class="modal-title">我的开票申请</text><text class="modal-subtitle">共 {{ invoices.length }} 笔申请</text></view><text class="close" @tap="closeInvoices">×</text></view>
         <view v-if="invoices.length" class="invoice-list">
           <view v-for="invoice in invoices" :key="invoice.id" class="invoice-row" @tap="goBusinessInvoices(invoice.id)">
@@ -73,17 +74,19 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShareAppMessage, onShow } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
 import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
 import { openBusinessInvoices } from '../../common/invoice-notice'
 import { goLogin } from '../../common/login-redirect'
+import { useNavLayout } from '../../common/nav-layout'
 import { useAuthStore } from '../../stores/auth'
 
 type Profile = { name: string; username: string; company: string; phone: string; gender: string; email: string; avatarText: string; points: number; registeredAt: string; lastLoginAt?: string | null }
 type InvoiceItem = { id: string; title?: string; status: string; createdAt: string }
 const profile = reactive<Profile>({ name: '培训用户', username: 'demo', company: '', phone: '', gender: '', email: '', avatarText: '六', points: 0, registeredAt: '', lastLoginAt: null })
+const nav = useNavLayout()
 const isLoggedIn = ref(Boolean(tokenStorage.getAccessToken()))
 const invoiceCount = ref(0)
 const invoices = ref<InvoiceItem[]>([])
@@ -142,7 +145,7 @@ const goBusinessInvoices = (invoiceId: string) => { invoiceModalOpen.value = fal
 const goMineLogin = () => goLogin('/pages/mine/mine')
 const invoiceStatusClass = (status: string) => status === '已开票' ? 'success' : status === '已驳回' ? 'rejected' : status === '待处理' ? 'pending' : ''
 const closeSecurity = () => { if (!mineOperationKey.value) securityModalOpen.value = false }
-const confirmAction = (title: string, content: string) => showClientConfirm({ title, content })
+const confirmAction = async (title: string, content: string) => { try { return await showClientConfirm({ title, content }) } catch { uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }); return false } }
 const saveProfile = async () => {
   if (!profileForm.name.trim()) return uni.showToast({ title: '请输入姓名', icon: 'none' })
   if (profileForm.phone && !/^1\d{10}$/.test(profileForm.phone.trim())) return uni.showToast({ title: '请输入正确的手机号', icon: 'none' })
@@ -190,19 +193,25 @@ const showFeedback = async () => {
   }
 }
 const logout = async () => {
-  if (await showClientConfirm({
-    title: '确定要退出吗？',
-    content: '退出后需要重新登录才能继续使用当前账号。',
-    confirmText: '退出登录',
-    cancelText: '继续使用',
-    variant: 'danger',
-  })) useAuthStore().logout()
+  try {
+    if (await showClientConfirm({
+      title: '确定要退出吗？',
+      content: '退出后需要重新登录才能继续使用当前账号。',
+      confirmText: '退出登录',
+      cancelText: '继续使用',
+      variant: 'danger',
+    })) useAuthStore().logout()
+  } catch {
+    uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' })
+  }
 }
 onShow(load)
+onShareAppMessage(() => ({ title: '六边形培训 · 我的', path: '/pages/mine/mine' }))
 </script>
 
 <style scoped lang="scss">
-.page { padding: 40rpx 32rpx calc(140rpx + env(safe-area-inset-bottom)); }
+.page { padding: 40rpx 32rpx calc(140rpx + env(safe-area-inset-bottom)); background: #f6f8fb; }
+.mine-topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: center; box-sizing: border-box; height: calc(92rpx + var(--status-bar-height)); margin: -40rpx -32rpx 24rpx; padding: var(--status-bar-height) 32rpx 0; color: #243956; background: rgba(255, 255, 255, .82); backdrop-filter: blur(18px); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .08); }.mine-topbar .topbar-title { position: absolute; left: 0; right: 0; top: calc(var(--status-bar-height) + 12rpx); bottom: -12rpx; display: flex; align-items: center; justify-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #243956; font-size: 30rpx; font-weight: 800; pointer-events: none; }
 .load-error { display: flex; flex-direction: column; align-items: center; margin-top: 18rpx; padding: 24rpx; border-radius: 18rpx; color: $muted; background: #fff7ed; text-align: center; }.error-title { color: #9a5a16; font-size: 24rpx; font-weight: 800; }.error-hint { margin-top: 8rpx; line-height: 1.5; }.retry-button { width: 210rpx; height: 60rpx; margin-top: 14rpx; border: 0; border-radius: 999rpx; color: #17366d; background: $yellow; font-size: 21rpx; line-height: 60rpx; font-weight: 800; }.retry-button::after { border: 0; }
 .profile { position: relative; padding: 34rpx; color: #fff; border-radius: 28rpx; background: linear-gradient(130deg, #234DBB, #2F80ED); box-shadow: 0 18rpx 50rpx rgba(20,43,74,.18); }
 .avatar { display: inline-grid; place-items: center; width: 108rpx; height: 108rpx; border-radius: 50%; color: $navy; background: $yellow; font-size: 38rpx; font-weight: 900; }

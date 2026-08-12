@@ -1,8 +1,8 @@
 <template>
   <view class="page">
-    <view v-if="isLoggedIn" class="page-header">
-      <view><text class="eyebrow">ORDER CENTER</text><text class="page-title">订单</text></view>
-      <view class="page-header-actions"><text class="invoice-link" @tap="tab = 'invoices'">开票记录</text><text class="refresh-link" :class="{ disabled: loadInFlight }" @tap="loadAll">刷新</text></view>
+    <view class="business-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }">
+      <text class="topbar-title">订单</text>
+      <view class="topbar-actions"></view>
     </view>
     <view v-if="isLoggedIn" class="tabs">
       <text v-for="item in tabs" :key="item.key" :class="['tab', { active: tab === item.key }]" @tap="tab = item.key">{{ item.label }}</text>
@@ -68,7 +68,7 @@
 
     <template v-else>
       <view v-if="invoices.length"><view v-for="invoice in invoices" :key="invoice.id" class="card invoice-card" @tap="openInvoiceDetail(invoice)">
-        <view class="order-heading"><text class="order-title">{{ invoice.title || '企业发票' }}</text><text :class="['status', statusClass(invoice.status)]">{{ invoice.status }}</text></view>
+        <view class="order-heading"><text class="order-title">{{ invoice.title || '企业发票' }}</text><text :class="['status', invoiceStatusClass(invoice)]">{{ invoiceStatusText(invoice) }}</text></view>
         <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.retryOfInvoiceId" class="invoice-meta">来源申请：{{ invoice.retryOfInvoiceId }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text v-if="invoice.status === '已驳回' && invoice.rejectReason" class="invoice-meta rejected">驳回理由：{{ invoice.rejectReason }}</text><text v-if="invoice.status === '已驳回' && !actionableRejectedIds.has(invoice.id)" class="invoice-meta">该申请已重新提交，历史记录保留</text><text v-if="invoice.invoiceFileStatus" class="invoice-meta">电子发票：{{ invoice.invoiceFileStatus }}<text v-if="invoice.invoiceFileName">（{{ invoice.invoiceFileName }}）</text></text>
         <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap.stop="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="outline-button invoice-file-button" @tap.stop="openInvoiceFile(invoice)">查看电子发票</button><button class="invoice-detail-button" @tap.stop="openInvoiceDetail(invoice)">查看详情</button></view></view>
       </view></view>
@@ -77,7 +77,7 @@
 
     <!-- 上半部分为对公账户信息，下半部分为凭证图片上传 -->
     <view v-if="paymentProofModalOpen" class="modal-mask" @tap.self="closePaymentProofModal">
-      <view class="payment-proof-modal">
+      <view class="payment-proof-modal" @tap.stop>
         <view class="modal-header"><view><text class="modal-title">提交线下支付凭证</text><text class="modal-subtitle">订单号：{{ selectedOrderId }}</text></view><text class="close-button" @tap="closePaymentProofModal">×</text></view>
         <scroll-view scroll-y class="modal-scroll">
           <view class="transfer-section">
@@ -111,7 +111,7 @@
     </view>
 
     <view v-if="invoiceDialogOpen" class="modal-mask" @tap.self="closeInvoiceDialog">
-      <view class="invoice-dialog card">
+      <view class="invoice-dialog card" @tap.stop>
         <view class="modal-header"><text class="modal-title">{{ reapplyInvoiceId ? '修改后重新申请开票' : '提交开票信息' }}</text><text class="close-button" @tap="closeInvoiceDialog">×</text></view>
         <view class="modal-scroll invoice-scroll">
           <text class="dialog-hint">已选择 {{ selectedInvoiceOrderIds.length }} 笔订单{{ reapplyInvoiceId ? '；请根据驳回理由修改信息后重新提交' : '' }}</text>
@@ -122,7 +122,7 @@
     </view>
 
     <view v-if="invoiceDetail" class="modal-mask" @tap.self="closeInvoiceDetail">
-      <view class="invoice-detail-modal">
+      <view class="invoice-detail-modal" @tap.stop>
         <view class="modal-header"><view><text class="modal-title">开票申请详情</text><text class="modal-subtitle">{{ invoiceDetail.id }}</text></view><text class="close-button" @tap="closeInvoiceDetail">×</text></view>
         <view class="modal-scroll invoice-detail-scroll">
           <view class="invoice-detail-section">
@@ -149,12 +149,13 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import { api, apiAssetUrl, downloadInvoiceFile, type ApiCourse, uploadPaymentProof } from '../../common/api'
 import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
 import { actionableRejectedInvoices, consumeBusinessTargetInvoice, consumeBusinessTargetTab } from '../../common/invoice-notice'
 import { goLogin } from '../../common/login-redirect'
+import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
 
 type TabKey = 'payments' | 'orders' | 'invoices'
@@ -193,6 +194,8 @@ const paymentInfo = reactive<PaymentInfo>({})
 const paymentInfoLoaded = ref(false)
 const loadError = ref('')
 const isLoggedIn = ref(Boolean(tokenStorage.getAccessToken()))
+const nav = useNavLayout()
+let pageUnloaded = false
 
 const paidOrders = computed(() => orders.value.filter((order) => order.status === '已支付'))
 const paymentOrders = computed(() => paymentFilter.value === 'paid' ? paidOrders.value : orders.value)
@@ -212,6 +215,8 @@ const paymentMethodLabel = (order: Order) => {
   return order.paymentMethod === 'online' ? '在线支付' : '未选择支付方式'
 }
 const statusClass = (status: string) => status === '已支付' ? 'success' : status === '待审核' ? 'warning' : status === '已取消' ? 'muted' : status === '已驳回' ? 'rejected' : ''
+const invoiceStatusText = (invoice: Invoice) => invoice.status === '已驳回' && !actionableRejectedIds.value.has(invoice.id) ? '已重新提交' : invoice.status
+const invoiceStatusClass = (invoice: Invoice) => invoice.status === '已驳回' && !actionableRejectedIds.value.has(invoice.id) ? 'muted' : statusClass(invoice.status)
 const formatDate = (value: string) => value ? value.replace('T', ' ').replace(/\.\d+Z$/, '') : '-'
 
 const loadAll = async () => {
@@ -249,10 +254,13 @@ const payOnline = async (id: string, channel: 'wechat' | 'alipay') => {
     if (result === 'redirected') { uni.showToast({ title: '已跳转支付，请完成付款后返回刷新订单', icon: 'none' }); return }
     if (result === 'unavailable') { uni.showToast({ title: '当前设备无法打开支付，请在支持的微信/支付宝环境操作', icon: 'none' }); return }
     for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (pageUnloaded) return
       const status = await api.paymentStatus(id)
+      if (pageUnloaded) return
       if (status.paid) { uni.showToast({ title: (channel === 'alipay' ? '支付宝' : '微信') + '支付成功', icon: 'none' }); await loadAll(); return }
       if (attempt < 9) await new Promise((resolve) => setTimeout(resolve, 2000))
     }
+    if (pageUnloaded) return
     uni.showToast({ title: '暂未收到支付平台回调，请稍后刷新订单', icon: 'none' })
   } catch (error: any) { uni.showToast({ title: error?.message || '支付失败', icon: 'none' }) } finally { payingOrderKey.value = '' }
 }
@@ -280,7 +288,8 @@ const submitPaymentProof = async () => {
   if (!selectedOrderId.value || !selectedProofImage.value || uploading.value || proofConfirming.value) return
   proofConfirming.value = true
   try {
-    const confirmation = await showClientConfirm({ title: '确认提交支付凭证', content: '提交后将进入管理端审核，确定继续吗？' })
+    let confirmation = false
+    try { confirmation = await showClientConfirm({ title: '确认提交支付凭证', content: '提交后将进入管理端审核，确定继续吗？' }) } catch { confirmation = false; uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }) }
     if (!confirmation) return
     uploading.value = true
     try {
@@ -297,7 +306,8 @@ const cancelOrder = async (id: string) => {
   if (cancellingOrderId.value || cancelConfirming.value) return
   cancelConfirming.value = true
   try {
-    const confirmation = await showClientConfirm({ title: '确认取消报名', content: '取消后本次报名将不再保留待支付状态，确定继续吗？' })
+    let confirmation = false
+    try { confirmation = await showClientConfirm({ title: '确认取消报名', content: '取消后本次报名将不再保留待支付状态，确定继续吗？' }) } catch { confirmation = false; uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }) }
     if (!confirmation) return
     cancellingOrderId.value = id
     try { await api.cancelOrder(id); uni.showToast({ title: '报名已取消', icon: 'none' }); await loadAll() } catch (error: any) { uni.showToast({ title: error?.message || '取消失败', icon: 'none' }) } finally { cancellingOrderId.value = '' }
@@ -336,7 +346,8 @@ const submitInvoice = async () => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(invoiceForm.email.trim())) return uni.showToast({ title: '请输入正确的邮箱地址', icon: 'none' })
   invoiceConfirming.value = true
   try {
-    const confirmation = await showClientConfirm({ title: '确认提交开票申请', content: `将为 ${selectedInvoiceOrderIds.value.length} 笔订单提交开票申请，确定继续吗？` })
+    let confirmation = false
+    try { confirmation = await showClientConfirm({ title: '确认提交开票申请', content: `将为 ${selectedInvoiceOrderIds.value.length} 笔订单提交开票申请，确定继续吗？` }) } catch { confirmation = false; uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }) }
     if (!confirmation) return
     invoiceSubmitting.value = true
     try {
@@ -373,10 +384,13 @@ const showBusinessPage = () => {
   void loadAll()
 }
 onShow(showBusinessPage)
+onUnload(() => { pageUnloaded = true })
+onShareAppMessage(() => ({ title: '我的订单', path: '/pages/business/business' }))
 </script>
 
 <style scoped lang="scss">
 .page { min-height: 100vh; padding: 40rpx 32rpx calc(140rpx + env(safe-area-inset-bottom)); background: #f6f8fb; }
+.business-topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: calc(92rpx + var(--status-bar-height)); margin: -40rpx -32rpx 28rpx; padding: var(--status-bar-height) 32rpx 0; color: #243956; background: rgba(255, 255, 255, .82); backdrop-filter: blur(18px); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .08); }.business-topbar .topbar-title { position: absolute; left: 0; right: 0; top: calc(var(--status-bar-height) + 12rpx); bottom: -12rpx; display: flex; align-items: center; justify-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #243956; font-size: 30rpx; font-weight: 800; pointer-events: none; }.business-topbar .topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 22rpx; min-width: 180rpx; }.business-topbar .topbar-link, .business-topbar .topbar-refresh { color: #2f80ed; font-size: 22rpx; font-weight: 800; }.business-topbar .topbar-refresh.disabled { opacity: .5; }
 .login-hint { display: flex; flex-direction: column; align-items: center; margin: 180rpx -32rpx 0; padding: 0; }.login-hint-icon { display: grid; place-items: center; width: 132rpx; height: 132rpx; border: 2rpx solid #cfe0f5; border-radius: 50%; color: #2f80ed; background: #eaf3ff; font-size: 64rpx; font-weight: 900; line-height: 1; }.login-hint-text { display: block; width: 60%; margin-top: 46rpx; color: #8492a7; font-size: 30rpx; line-height: 1.7; text-align: center; }.login-hint-btn { width: 60%; height: 88rpx; margin-top: 60rpx; border: 0; border-radius: $radius-pill; color: #17366d; background: $yellow; font-size: 28rpx; line-height: 88rpx; font-weight: 800; }.login-hint-btn::after { border: 0; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20rpx; }.page-header-actions { display: flex; align-items: center; gap: 20rpx; }.refresh-link { color: $blue; font-size: 23rpx; }.refresh-link.disabled { opacity: .55; }
 .eyebrow { display: block; color: #8b98aa; font-size: 18rpx; letter-spacing: 2rpx; }
@@ -440,7 +454,7 @@ onShow(showBusinessPage)
 
 .modal-mask { position: fixed; inset: 0; z-index: 1000; z-index: var(--client-business-modal-layer, 1000); display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 32rpx 24rpx calc(32rpx + env(safe-area-inset-bottom)); background: rgba(20, 43, 74, .48); }
 .modal-mask { z-index: var(--client-business-modal-layer, 1000) !important; }
-.payment-proof-modal { display: flex; flex-direction: column; box-sizing: border-box; width: 100%; max-width: 680rpx; height: min(calc(100vh - 64rpx - env(safe-area-inset-bottom)), 1180rpx); max-height: calc(100vh - 64rpx - env(safe-area-inset-bottom)); overflow: hidden; border-radius: 28rpx; background: #fff; }
+.payment-proof-modal { display: flex; flex-direction: column; box-sizing: border-box; width: 100%; max-width: 680rpx; height: min(calc(100vh - 64rpx - env(safe-area-inset-bottom)), 1180rpx); max-height: calc(100vh - 64rpx - env(safe-area-inset-bottom)); margin-top: 120rpx; overflow: hidden; border-radius: 28rpx; background: #fff; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20rpx; padding: 30rpx 30rpx 22rpx; border-bottom: 1rpx solid #edf0f4; }
 .modal-title { display: block; color: $navy; font-size: 30rpx; font-weight: 900; }
 .modal-subtitle { display: block; margin-top: 8rpx; color: $muted; font-size: 19rpx; }
@@ -473,9 +487,9 @@ onShow(showBusinessPage)
 .cancel-button { border: 1rpx solid #dfe5ed; color: $navy; background: #fff; }
 .submit-button { border: 0; color: $navy; background: $yellow; font-weight: 800; }
 .submit-button[disabled] { opacity: .45; }
-.invoice-dialog { box-sizing: border-box; display: flex; flex-direction: column; width: calc(100% - 64rpx); max-width: 680rpx; max-height: calc(100vh - 120rpx); overflow: hidden; padding: 0; }
+.invoice-dialog { box-sizing: border-box; display: flex; flex-direction: column; width: calc(100% - 64rpx); max-width: 680rpx; max-height: calc(100vh - 120rpx); margin-top: 120rpx; overflow: hidden; padding: 0; }
 .invoice-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 8rpx; }
-.invoice-detail-modal { box-sizing: border-box; display: flex; flex-direction: column; width: calc(100% - 64rpx); max-width: 680rpx; max-height: calc(100vh - 120rpx); overflow: hidden; border-radius: 28rpx; background: #fff; }
+.invoice-detail-modal { box-sizing: border-box; display: flex; flex-direction: column; width: calc(100% - 64rpx); max-width: 680rpx; max-height: calc(100vh - 120rpx); margin-top: 120rpx; overflow: hidden; border-radius: 28rpx; background: #fff; }
 .invoice-detail-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 30rpx 12rpx; }
 .invoice-detail-section { margin-top: 22rpx; padding: 4rpx 22rpx; border: 1rpx solid #e4eaf2; border-radius: 18rpx; background: #fbfcfe; }
 .invoice-detail-row { display: flex; align-items: flex-start; gap: 18rpx; padding: 18rpx 0; border-bottom: 1rpx solid #edf0f4; }

@@ -1,9 +1,8 @@
 <template>
   <view class="home-page">
-    <view class="topbar">
-      <view class="topbar-brand"><text class="brand-mark">六边形</text><text class="brand-name">培训</text></view>
-      <text class="topbar-title">活动 · 培训</text>
-      <view class="topbar-actions"><text class="action-icon">⌕</text><text class="action-grid">□</text></view>
+    <view class="topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }">
+      <text class="topbar-title">课程</text>
+      <view class="topbar-actions"></view>
     </view>
 
     <swiper v-if="bannerSlides.length" class="banner-swiper" circular autoplay :interval="4600" :duration="500" indicator-dots indicator-color="rgba(255,255,255,.45)" indicator-active-color="#FFD21F">
@@ -57,16 +56,18 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShareAppMessage, onShow } from '@dcloudio/uni-app'
 import bannerImage from '../../assets/courses/banner-training.svg'
 import talentImage from '../../assets/courses/course-talent.svg'
 import managementImage from '../../assets/courses/course-management.svg'
 import leanImage from '../../assets/courses/course-lean.svg'
 import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
+import { useNavLayout } from '../../common/nav-layout'
 
 type DisplayCourse = ApiCourse & { image: string }
 
 const category = ref('全部')
+const nav = useNavLayout()
 const keyword = ref('')
 const courses = ref<DisplayCourse[]>([])
 const bannerIds = ref<string[]>([])
@@ -99,7 +100,7 @@ const bannerSlides = computed(() => {
 })
 
 const toDisplayCourse = (course: ApiCourse): DisplayCourse => ({ ...course, image: apiAssetUrl(course.image) || imageByCourseId[course.id] || bannerImage })
-const shortDate = (date: string) => date.split(' ')[0].replace(/^\d{4}-/, '')
+const shortDate = (date: string) => String(date || '').split(' ')[0].replace(/^\d{4}-/, '')
 const openDetail = (id: string) => uni.navigateTo({ url: `/pages/detail/detail?id=${id}` })
 const handleBannerTouchStart = (event: any) => {
   const touch = event.touches?.[0]
@@ -141,12 +142,15 @@ const loadHome = async () => {
 }
 
 onShow(loadHome)
+onShareAppMessage(() => ({ title: '六边形培训 · 课程活动', path: '/pages/index/index' }))
 </script>
 
 <style scoped lang="scss">
 .home-page { min-height: 100vh; padding-bottom: 64rpx; background: #f6f8fb; }
-.topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; height: 92rpx; padding: 0 30rpx; color: #fff; background: linear-gradient(108deg, #55cfe9 0%, #2f80ed 52%, #234dbb 100%); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .2); }
-.topbar-brand { display: flex; align-items: baseline; min-width: 150rpx; }.brand-mark { font-size: 31rpx; font-weight: 900; letter-spacing: 2rpx; }.brand-name { margin-left: 4rpx; font-size: 22rpx; opacity: .92; }.topbar-title { font-size: 31rpx; font-weight: 800; letter-spacing: 2rpx; }.topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 22rpx; min-width: 150rpx; }.action-icon { font-size: 48rpx; line-height: 1; font-weight: 300; }.action-grid { display: block; width: 38rpx; height: 38rpx; border: 3rpx solid #fff; border-radius: 8rpx; color: transparent; background: linear-gradient(90deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%), linear-gradient(0deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%); }
+.topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: calc(92rpx + var(--status-bar-height)); padding: var(--status-bar-height) 30rpx 0; color: #142b4a; background: rgba(255, 255, 255, .82); backdrop-filter: blur(18px); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .08); }
+.topbar-brand { display: flex; align-items: baseline; min-width: 150rpx; }.brand-mark { font-size: 31rpx; font-weight: 900; letter-spacing: 2rpx; }.brand-name { margin-left: 4rpx; font-size: 22rpx; opacity: .92; }.topbar-title { position: absolute; left: 0; right: 0; top: calc(var(--status-bar-height) + 12rpx); bottom: -12rpx; display: flex; align-items: center; justify-content: center; overflow: hidden; color: #243956; font-size: 30rpx; font-weight: 800; letter-spacing: 2rpx; pointer-events: none; }.topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 22rpx; min-width: 150rpx; }.action-icon { font-size: 48rpx; line-height: 1; font-weight: 300; }.action-grid { display: block; width: 38rpx; height: 38rpx; border: 3rpx solid #fff; border-radius: 8rpx; color: transparent; background: linear-gradient(90deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%), linear-gradient(0deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%); }
+.topbar-share { margin: 0; padding: 0 8rpx; border: 0; border-radius: 999rpx; color: #1742a5; background: rgba(47, 128, 237, .1); font-size: 22rpx; line-height: 52rpx; font-weight: 800; }
+.topbar-share::after { border: 0; }
 .banner-swiper, .banner-slide { width: 100%; height: 390rpx; }.banner-slide { position: relative; overflow: hidden; }.banner-image { position: absolute; inset: 0; width: 100%; height: 100%; }.banner-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(14, 44, 142, .74) 0%, rgba(20, 80, 194, .24) 58%, rgba(20, 80, 194, 0) 100%); }.banner-copy { position: absolute; left: 42rpx; top: 62rpx; right: 38rpx; color: #fff; }.banner-kicker, .banner-title, .banner-subtitle { display: block; }.banner-kicker { font-size: 22rpx; opacity: .88; letter-spacing: 1rpx; }.banner-title { margin-top: 22rpx; font-size: 40rpx; line-height: 1.2; font-weight: 900; letter-spacing: 1rpx; }.banner-subtitle { margin-top: 8rpx; font-size: 27rpx; font-weight: 800; color: #ffdf3d; }.banner-btn { margin: 24rpx 0 0; padding: 0 28rpx; width: 224rpx; height: 66rpx; line-height: 66rpx; border: 0; border-radius: 999rpx; color: #1742a5; background: #fff; font-size: 24rpx; font-weight: 800; }.banner-btn::after { border: 0; }.banner-btn text { margin-left: 6rpx; color: #1550ca; font-size: 30rpx; }
 .search-box { display:flex; align-items:center; gap:14rpx; margin:44rpx 28rpx 0; padding:0 24rpx; height:76rpx; border-radius:18rpx; color:#92a0b2; background:#fff; box-shadow:0 6rpx 18rpx rgba(32,62,113,.06); font-size:28rpx; }.search-box input { flex:1; height:76rpx; color:#243956; font-size:24rpx; }.section-head { display: flex; align-items: center; justify-content: space-between; margin:42rpx 20rpx 0; padding: 34rpx 32rpx 20rpx; border-radius:24rpx 24rpx 0 0; background: #fff; }.section-title { display: block; font-size: 38rpx; font-weight: 900; letter-spacing: 1rpx; }.section-caption { display: block; margin-top: 8rpx; color: #8a98aa; font-size: 21rpx; }.section-more { color: #e58419; font-size: 25rpx; }
 .chips { box-sizing: border-box; width: calc(100% - 40rpx); margin:0 20rpx; padding: 0 32rpx 30rpx; white-space: nowrap; border-radius:0 0 24rpx 24rpx; background: #fff; }.chip { display: inline-block; margin-right: 16rpx; padding: 16rpx 28rpx; border-radius: 999rpx; color: #7d8da5; background: #f0f3f7; font-size: 23rpx; }.chip.active { color: #163a84; background: #ffd21f; font-weight: 800; }

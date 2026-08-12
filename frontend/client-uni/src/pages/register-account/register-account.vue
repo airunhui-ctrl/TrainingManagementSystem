@@ -16,6 +16,7 @@
 
 <script setup lang="ts">
 import { onUnmounted, reactive, ref } from 'vue'
+import { onShareAppMessage } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
 import { redirectAfterLogin } from '../../common/invoice-notice'
 import { useAuthStore } from '../../stores/auth'
@@ -26,6 +27,7 @@ const sendingCode = ref(false)
 const countdown = ref(0)
 const challengeId = ref('')
 let countdownTimer: ReturnType<typeof setInterval> | null = null
+let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 const requestCode = async () => {
   const phone = form.phone.trim()
@@ -53,13 +55,19 @@ const submit = async () => {
     const result = await api.registerByPhoneSms({ challengeId: challengeId.value, phone, code: form.code.trim(), password: form.password, confirmPassword: form.confirmPassword, ...(form.name.trim() ? { name: form.name.trim() } : {}) })
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
     uni.showToast({ title: '注册成功', icon: 'none' })
-    setTimeout(() => void redirectAfterLogin(), 250)
+    redirectTimer = setTimeout(() => void redirectAfterLogin(), 250)
   } catch (error: any) {
     uni.showToast({ title: error?.message || '注册失败', icon: 'none' })
   } finally { loading.value = false }
 }
 const backToLogin = () => uni.navigateBack()
-onUnmounted(() => { if (countdownTimer) clearInterval(countdownTimer) })
+onUnmounted(() => {
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = null
+  if (redirectTimer) clearTimeout(redirectTimer)
+  redirectTimer = null
+})
+onShareAppMessage(() => ({ title: '注册账号', path: '/pages/register-account/register-account' }))
 </script>
 
 <style scoped lang="scss">

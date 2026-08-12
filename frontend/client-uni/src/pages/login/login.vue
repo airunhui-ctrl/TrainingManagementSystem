@@ -27,6 +27,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { onShareAppMessage } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
 import { redirectAfterLogin } from '../../common/invoice-notice'
 import { navigateAfterLogin } from '../../common/login-redirect'
@@ -80,6 +81,7 @@ const wechatLogin = async () => {
 }
 const goRegister = () => uni.navigateTo({ url: '/pages/register-account/register-account' })
 const goForgotPassword = () => uni.navigateTo({ url: '/pages/forgot-password/forgot-password' })
+onShareAppMessage(() => ({ title: '六边形培训登录', path: '/pages/login/login' }))
 </script>
 
 <style scoped lang="scss">
