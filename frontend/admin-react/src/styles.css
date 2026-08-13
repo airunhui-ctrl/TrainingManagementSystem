@@ -671,3 +671,12 @@ tbody tr:hover .action-cell { background: #fbfcfe; }
   .detail-grid { grid-template-columns: 1fr; }
   .modal-backdrop { padding: 10px; }.course-modal, .template-modal { padding:20px 20px 0; border-radius:18px; }.detail-modal { padding:20px; }.detail-modal.modal-with-footer { padding:20px 20px 0; }.course-form-grid { grid-template-columns:1fr; gap:13px; }.course-schedule-grid { grid-template-columns:1fr; }.wide-field { grid-column:auto; }.modal-actions { margin:20px -20px 0; padding:12px 20px 20px; flex-wrap:wrap; }.modal-actions button { flex:1; }.app-dialog-actions { margin:22px -20px 0; padding:12px 20px 20px; }.rich-image-row { align-items:stretch; flex-direction:column; }.rich-image-row span { white-space:normal; }.template-layout { grid-template-columns:1fr; }.template-field-row { grid-template-columns:1fr 1fr; }.template-field-row select, .template-required, .template-remove { grid-column:span 1; }.template-options { grid-column:1 / -1; }
 }
+
+.invoice-file-selected { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; padding:12px 14px; border:1px solid #dce4ee; border-radius:12px; background:#f8fbff; }
+.invoice-file-selected b { overflow:hidden; color:#142b4a; font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
+.invoice-file-selected span { flex:0 0 auto; color:#7d8da5; font-size:12px; }
+.invoice-preview-modal { width:min(860px, 92vw); }
+.invoice-preview-scroll { min-height:480px; padding:0 !important; background:#f5f7fa; }
+.invoice-preview-scroll iframe { display:block; width:100%; height:100%; min-height:480px; border:0; background:#fff; }
+.invoice-download-link { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:0 18px; border-radius:12px; color:#17366d; text-decoration:none; }
+.invoice-download-link:hover { filter:brightness(.97); }

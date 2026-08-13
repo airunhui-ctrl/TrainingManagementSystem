@@ -940,14 +940,15 @@ export class MvpService {
     return this.getProfile(userId)
   }
 
-  async resetUserPassword(userId: string, actor = 'admin') {
+  async resetUserPassword(userId: string, actor = 'admin', newPassword?: string) {
     const item = await this.db.user.findUnique({ where: { id: userId } })
     if (!item) throw new NotFoundException('用户不存在')
-    const temporaryPassword = `Temp-${randomBytes(6).toString('hex')}`
-    await this.db.setPassword(userId, temporaryPassword)
+    const password = newPassword && String(newPassword).trim().length > 0 ? String(newPassword) : `Temp-${randomBytes(6).toString('hex')}`
+    if (newPassword && String(newPassword).length < 8) throw new BadRequestException('新密码至少 8 位')
+    await this.db.setPassword(userId, password)
     await this.db.revokeRefreshTokens(userId)
-    await this.audit(actor, '重置用户密码', `${item.username} -> temporary password`)
-    return { id: userId, username: item.username, resetPassword: temporaryPassword }
+    await this.audit(actor, '重置用户密码', `${item.username} -> ${newPassword ? 'custom password' : 'temporary password'}`)
+    return { id: userId, username: item.username, resetPassword: newPassword ? '' : password }
   }
 
   async listStudents() { return this.listEnrollments() }

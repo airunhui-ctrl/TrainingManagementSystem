@@ -203,7 +203,7 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/users/:id/enabled') enabled(@Req() request: any, @Param('id') id: string, @Body('enabled') enabled: boolean) { if (typeof enabled !== 'boolean') throw new BadRequestException('用户启用状态必须是布尔值'); return this.mvp.setUserEnabled(id, enabled, request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
-  @Post('admin/users/:id/reset-password') resetPassword(@Req() request: any, @Param('id') id: string) { return this.mvp.resetUserPassword(id, request.user.username) }
+  @Post('admin/users/:id/reset-password') resetPassword(@Req() request: any, @Param('id') id: string, @Body('newPassword') newPassword?: string) { return this.mvp.resetUserPassword(id, request.user.username, newPassword) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/payment-settings') paymentSettings() { return this.mvp.getPaymentSettings() }
   @UseGuards(JwtGuard, AdminGuard)

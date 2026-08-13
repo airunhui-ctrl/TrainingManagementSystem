@@ -339,6 +339,15 @@ function App() {
   const [reviewState, setReviewState] = useState<ReviewState | null>(null)
   const [reviewRemark, setReviewRemark] = useState('')
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [invoiceUploadOpen, setInvoiceUploadOpen] = useState(false)
+  const [invoiceUploadItem, setInvoiceUploadItem] = useState<TableItem | null>(null)
+  const [invoiceUploadFile, setInvoiceUploadFile] = useState<File | null>(null)
+  const [invoiceUploading, setInvoiceUploading] = useState(false)
+  const [invoicePreview, setInvoicePreview] = useState<{ item: TableItem; url: string } | null>(null)
+  const [resetPasswordUser, setResetPasswordUser] = useState<TableItem | null>(null)
+  const [resetPasswordValue, setResetPasswordValue] = useState('')
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState('')
+  const [resetPasswordSubmitting, setResetPasswordSubmitting] = useState(false)
   const [courseForm, setCourseForm] = useState<CourseForm>(emptyCourseForm)
   const [courseSubmitting, setCourseSubmitting] = useState(false)
   const courseInitialFormRef = useRef<CourseForm>(emptyCourseForm())
@@ -418,6 +427,7 @@ function App() {
   const resetTabState = () => {
     loadVersion.current += 1
     setData(null); setListLoading(false); setListError(''); setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setStudentEditModalOpen(false)
+    setInvoiceUploadOpen(false); setInvoiceUploadItem(null); setInvoiceUploadFile(null); setInvoiceUploading(false); setInvoicePreview((current: any) => { if (current) URL.revokeObjectURL(current.url); return null }); setResetPasswordUser(null); setResetPasswordValue(''); setResetPasswordConfirm(''); setResetPasswordSubmitting(false)
     setCourseForm(emptyCourseForm()); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setStudentProfileForm(emptyStudentProfileForm())
     setSelectedDetail(null); setEnrollmentSummaryDetail(null); setPointLedgerDetail(null); setReviewState(null); setReviewRemark(''); setSelectedRows([]); setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setAuditActionFilter(''); setAuditActorFilter(''); setAuditFrom(''); setAuditTo(''); setPage(1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
@@ -810,19 +820,35 @@ function App() {
     if (deleted) { setCourseModalOpen(false); setCourseForm(emptyCourseForm()) }
   }
 
-  const uploadInvoiceFile = async (item: TableItem) => {
+  const uploadInvoiceFile = (item: TableItem) => {
     if (item.status !== '已开票' || item.invoiceFileStatus === '已上传') return flash('当前开票记录不需要上传文件')
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'application/pdf,image/png,image/jpeg'
-    input.onchange = () => {
-      const file = input.files?.[0]
-      if (!file) return
-      // runOperation already reloads the active list after a successful write;
-      // avoid a second uncoordinated request that could race the first one.
-      void runOperation(`invoice-file:${item.id}`, () => apiUpload(`/admin/invoices/${encodeURIComponent(String(item.id))}/file`, file), '电子发票文件已上传')
+    setInvoiceUploadItem(item)
+    setInvoiceUploadFile(null)
+    setInvoiceUploadOpen(true)
+  }
+
+  const submitInvoiceUpload = async () => {
+    const item = invoiceUploadItem
+    const file = invoiceUploadFile
+    if (!item || !file) return flash('请先选择电子发票文件')
+    if (invoiceUploading) return
+    setInvoiceUploading(true)
+    try {
+      await apiUpload(`/admin/invoices/${encodeURIComponent(String(item.id))}/file`, file)
+      // 只更新当前行状态，避免整表重新加载导致其他行按钮一起刷新。
+      setData((current: any) => {
+        if (!current || !Array.isArray(current.items)) return current
+        return { ...current, items: current.items.map((row: any) => String(row.id) === String(item.id) ? { ...row, invoiceFileStatus: '已上传', invoiceFileName: file.name } : row) }
+      })
+      setInvoiceUploadOpen(false)
+      setInvoiceUploadItem(null)
+      setInvoiceUploadFile(null)
+      flash('电子发票文件已上传')
+    } catch (error) {
+      flash(error instanceof Error ? error.message : '电子发票上传失败')
+    } finally {
+      setInvoiceUploading(false)
     }
-    input.click()
   }
 
   const openInvoiceFile = async (item: TableItem) => {
@@ -830,13 +856,15 @@ function App() {
     try {
       const blob = await apiFetchBlob(`/admin/invoices/${encodeURIComponent(String(item.id))}/file`)
       const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.target = '_blank'
-      anchor.rel = 'noopener'
-      anchor.click()
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      setInvoicePreview({ item, url })
     } catch (error) { flash(error instanceof Error ? error.message : '电子发票读取失败') }
+  }
+
+  const closeInvoicePreview = () => {
+    setInvoicePreview((current: any) => {
+      if (current) URL.revokeObjectURL(current.url)
+      return null
+    })
   }
 
   const operate = async (item: TableItem) => {
@@ -864,8 +892,9 @@ function App() {
       await runOperation(`invoice:${item.id}`, () => apiFetch(`/admin/invoices/${encodeURIComponent(item.id)}/process`, { method: 'POST', body: JSON.stringify({ approved: true, invoiceNo: invoiceNo.trim() }) }), '开票申请已通过')
       return
     } else if (active === 'users') {
-      if (!await confirmAction(`确定重置用户 ${item.username || item.id} 的密码吗？重置后旧登录令牌会失效。`, '重置用户密码', true)) return
-      await runOperation(`reset-password:${item.id}`, () => apiFetch<{ username?: string; resetPassword?: string }>(`/admin/users/${encodeURIComponent(item.id)}/reset-password`, { method: 'POST' }), result => `用户 ${result.username || item.username || item.id} 密码已重置为 ${result.resetPassword || '临时密码'}`)
+      setResetPasswordUser(item)
+      setResetPasswordValue('')
+      setResetPasswordConfirm('')
       return
     }
     else if (active === 'banners') return openBannerEditor(item)
@@ -881,6 +910,26 @@ function App() {
     else if (active === 'points') return openPointsEditor(item)
     else return flash('已打开详情视图')
     flash('操作成功'); load()
+  }
+
+  const submitResetPassword = async () => {
+    const item = resetPasswordUser
+    if (!item) return
+    const password = resetPasswordValue
+    if (password.length < 8) return flash('新密码至少 8 位')
+    if (password !== resetPasswordConfirm) return flash('两次输入的密码不一致')
+    if (resetPasswordSubmitting) return
+    setResetPasswordSubmitting(true)
+    try {
+      const done = await runOperation(`reset-password:${item.id}`, () => apiFetch<{ username?: string }>(`/admin/users/${encodeURIComponent(item.id)}/reset-password`, { method: 'POST', body: JSON.stringify({ newPassword: password }) }), result => `用户 ${result.username || item.username || item.id} 密码已重置`)
+      if (done) {
+        setResetPasswordUser(null)
+        setResetPasswordValue('')
+        setResetPasswordConfirm('')
+      }
+    } finally {
+      setResetPasswordSubmitting(false)
+    }
   }
 
   const secondaryOperate = async (item: TableItem) => {
@@ -1233,6 +1282,9 @@ function App() {
       </div>}
       {studentRelationStudentId && <StudentRelationDialog studentId={studentRelationStudentId} busy={Boolean(operationKey)} onClose={() => finishStudentRelationSelection(null)} onSubmit={finishStudentRelationSelection} />}
       {studentMergeSourceId && <StudentMergeDialog sourceId={studentMergeSourceId} busy={Boolean(operationKey)} onClose={() => finishStudentMergeSelection(null)} onSubmit={finishStudentMergeSelection} />}
+      {invoiceUploadOpen && invoiceUploadItem && <InvoiceUploadModal item={invoiceUploadItem} file={invoiceUploadFile} busy={invoiceUploading} onChangeFile={setInvoiceUploadFile} onClose={() => { if (!invoiceUploading) { setInvoiceUploadOpen(false); setInvoiceUploadItem(null); setInvoiceUploadFile(null) } }} onSubmit={submitInvoiceUpload} />}
+      {invoicePreview && <InvoicePreviewModal preview={invoicePreview} onClose={closeInvoicePreview} />}
+      {resetPasswordUser && <ResetPasswordModal user={resetPasswordUser} password={resetPasswordValue} confirm={resetPasswordConfirm} busy={resetPasswordSubmitting || Boolean(operationKey)} onChangePassword={setResetPasswordValue} onChangeConfirm={setResetPasswordConfirm} onClose={() => { if (!resetPasswordSubmitting) { setResetPasswordUser(null); setResetPasswordValue(''); setResetPasswordConfirm('') } }} onSubmit={submitResetPassword} />}
       {dialogRequest && <AdminDialog request={dialogRequest} onClose={finishDialog} onSubmit={finishDialog} />}
       {notice && <div className="notice">{notice}</div>}
     </main>
@@ -1502,6 +1554,32 @@ function StudentProfileModal({ form, onChange, onClose, onSave, busy = false }: 
       {field('position', '职务', '可选')}
     </div>
     <div className="modal-actions"><button type="button" onClick={onClose} disabled={busy}>取消</button><button type="button" className="primary" onClick={onSave} disabled={busy}>{busy ? '保存中…' : '保存档案'}</button></div>
+  </SimpleModal>
+}
+
+function InvoiceUploadModal({ item, file, busy, onChangeFile, onClose, onSubmit }: { item: TableItem; file: File | null; busy: boolean; onChangeFile: (file: File | null) => void; onClose: () => void; onSubmit: () => void }) {
+  return <SimpleModal title="上传电子发票" description={`开票记录 ${item.id} · 公司 ${item.title || '-'}`} onClose={onClose} busy={busy}>
+    <label className="wide-field invoice-file-field">选择发票文件<input type="file" accept="application/pdf,image/png,image/jpeg" disabled={busy} onChange={event => { onChangeFile(event.target.files?.[0] || null); event.target.value = '' }} /><small className="field-hint">支持 PDF、PNG、JPEG；选择文件后点击“确认上传”提交。</small></label>
+    {file && <div className="invoice-file-selected"><b>{file.name}</b><span>{Math.ceil(file.size / 1024)} KB</span></div>}
+    <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary" disabled={busy || !file} onClick={onSubmit}>{busy ? '上传中…' : '确认上传'}</button></div>
+  </SimpleModal>
+}
+
+function InvoicePreviewModal({ preview, onClose }: { preview: { item: TableItem; url: string }; onClose: () => void }) {
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="detail-modal invoice-preview-modal modal-with-footer" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">
+      <div className="detail-head"><div><h3 id="invoice-preview-title">电子发票预览</h3><p>{preview.item.id} · {preview.item.invoiceFileName || '发票文件'}</p></div><ModalCloseButton onClick={onClose} label="关闭发票预览" /></div>
+      <div className="modal-scroll invoice-preview-scroll"><iframe title="电子发票预览" src={preview.url} /></div>
+      <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button><a className="primary invoice-download-link" href={preview.url} download={preview.item.invoiceFileName || 'invoice'}>下载发票</a></div>
+    </section>
+  </div>
+}
+
+function ResetPasswordModal({ user, password, confirm, busy, onChangePassword, onChangeConfirm, onClose, onSubmit }: { user: TableItem; password: string; confirm: string; busy: boolean; onChangePassword: (value: string) => void; onChangeConfirm: (value: string) => void; onClose: () => void; onSubmit: () => void }) {
+  return <SimpleModal title="重置用户密码" description={`用户 ${user.username || user.id} · 设置新密码后旧登录令牌立即失效`} onClose={onClose} busy={busy}>
+    <label className="wide-field">新密码<input type="password" value={password} disabled={busy} onChange={event => onChangePassword(event.target.value)} placeholder="至少 8 位" autoComplete="new-password" /></label>
+    <label className="wide-field">确认新密码<input type="password" value={confirm} disabled={busy} onChange={event => onChangeConfirm(event.target.value)} placeholder="再次输入新密码" autoComplete="new-password" /></label>
+    <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary" disabled={busy || !password || !confirm} onClick={onSubmit}>{busy ? '提交中…' : '确认重置'}</button></div>
   </SimpleModal>
 }
 
