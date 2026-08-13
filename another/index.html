@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AICoding 能力成熟度评估调研工具</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --navy: #0f172a; --navy2: #1a2332; --blue: #2563eb; --blue-light: #60a5fa;
+  --teal: #0d9488; --purple: #7c3aed; --ink: #1a2332; --muted: #5a6c83;
+  --bg: #f5f7fa; --white: #fff; --rule: #dce3ed; --green: #10b981;
+  --red: #ef4444; --amber: #f59e0b;
+  --radius: 12px; --shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+body { font-family: 'Microsoft YaHei','PingFang SC',sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; }
+
+/* ===== Header ===== */
+.header { background: linear-gradient(135deg,var(--navy),#1e3a5f); color: #fff; padding: 0; position: sticky; top: 0; z-index: 100; }
+.header-inner { max-width: 1100px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+.header .badge { background: var(--blue); font-size: 11px; padding: 2px 10px; border-radius: 20px; font-weight: 600; }
+.header .step-indicator { margin-left: auto; font-size: 13px; color: #94a3b8; }
+.header .step-indicator span { color: #fff; font-weight: 600; }
+
+/* ===== Pages ===== */
+.page { display: none; max-width: 900px; margin: 30px auto; padding: 0 20px; }
+.page.active { display: block; }
+
+/* ===== Cards ===== */
+.card { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 32px; margin-bottom: 20px; }
+.card-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+.card-title .num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: #fff; font-size: 14px; }
+
+/* ===== Home ===== */
+.hero { text-align: center; padding: 48px 32px 32px; }
+.hero h2 { font-size: 28px; font-weight: 800; margin-bottom: 12px; }
+.hero p { color: var(--muted); font-size: 15px; line-height: 1.7; max-width: 600px; margin: 0 auto; }
+.hero .features { display: flex; justify-content: center; gap: 24px; margin-top: 24px; flex-wrap: wrap; }
+.hero .features .item { text-align: center; padding: 16px 20px; background: #f8fafc; border-radius: 10px; min-width: 120px; }
+.hero .features .item .num { font-size: 24px; font-weight: 800; color: var(--blue); }
+.hero .features .item .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+.form-group label .req { color: var(--red); }
+.form-group input, .form-group select { width: 100%; padding: 10px 14px; border: 1.5px solid var(--rule); border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s; font-family: inherit; }
+.form-group input:focus, .form-group select:focus { border-color: var(--blue); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 32px; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+.btn-outline { background: transparent; color: var(--blue); border: 1.5px solid var(--blue); }
+.btn-outline:hover { background: #eff6ff; }
+.btn-success { background: var(--teal); color: #fff; }
+.btn-success:hover { background: #0f766e; }
+.btn-amber { background: var(--amber); color: #fff; }
+.btn-amber:hover { background: #d97706; }
+.text-center { text-align: center; }
+.mt-24 { margin-top: 24px; }
+
+/* ===== Survey ===== */
+.survey-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.progress-bar { flex: 1; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+.progress-bar .fill { height: 100%; background: linear-gradient(90deg,var(--blue),var(--teal)); border-radius: 3px; transition: width 0.4s ease; }
+.survey-progress .pct { font-size: 13px; font-weight: 600; color: var(--muted); min-width: 45px; text-align: right; }
+
+.category-label { font-size: 13px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.question-text { font-size: 16px; font-weight: 600; line-height: 1.5; margin-bottom: 20px; }
+
+.options { display: flex; flex-direction: column; gap: 10px; }
+.option { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1.5px solid var(--rule); border-radius: 10px; cursor: pointer; transition: all 0.2s; }
+.option:hover { border-color: var(--blue-light); background: #f8faff; }
+.option.selected { border-color: var(--blue); background: #eff6ff; }
+.option input[type="radio"] { display: none; }
+.option .radio-circle { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; margin-top: 1px; transition: all 0.2s; }
+.option.selected .radio-circle { border-color: var(--blue); background: var(--blue); }
+.option.selected .radio-circle::after { content: '✓'; color: #fff; font-size: 12px; font-weight: 700; }
+.option .opt-content { flex: 1; }
+.option .opt-label { font-size: 14px; font-weight: 600; }
+.option .opt-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.nav-buttons { display: flex; justify-content: space-between; margin-top: 24px; }
+
+/* ===== Report ===== */
+.report-header { text-align: center; padding: 32px; }
+.report-header .ml-badge { display: inline-flex; align-items: center; gap: 10px; padding: 12px 28px; border-radius: 50px; font-size: 24px; font-weight: 800; color: #fff; margin: 16px 0; }
+.report-header .ml-badge.ml1 { background: #94a3b8; }
+.report-header .ml-badge.ml2 { background: #60a5fa; }
+.report-header .ml-badge.ml3 { background: #2563eb; }
+.report-header .ml-badge.ml4 { background: #0d9488; }
+.report-header .ml-badge.ml5 { background: #7c3aed; }
+.report-header .ml-name { font-size: 16px; color: var(--muted); }
+.report-header .ml-desc { font-size: 14px; color: var(--muted); margin-top: 8px; max-width: 500px; margin-left: auto; margin-right: auto; }
+
+.score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+.score-card { padding: 16px; border-radius: 10px; border: 1.5px solid var(--rule); }
+.score-card .cat-name { font-size: 14px; font-weight: 700; }
+.score-card .cat-score { font-size: 28px; font-weight: 800; margin-top: 8px; }
+.score-card .cat-level { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.score-card .cat-bar { height: 4px; border-radius: 2px; background: #e2e8f0; margin-top: 10px; overflow: hidden; }
+.score-card .cat-bar .fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+
+.chart-container { max-width: 400px; margin: 0 auto; }
+
+.weakness-list { margin-top: 12px; }
+.weakness-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--rule); }
+.weakness-item .w-icon { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; }
+.weakness-item .w-icon.low { background: var(--red); }
+.weakness-item .w-icon.medium { background: var(--amber); }
+.weakness-item .w-text { flex: 1; }
+.weakness-item .w-text .w-title { font-size: 14px; font-weight: 600; }
+.weakness-item .w-text .w-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.weakness-item .w-score { font-size: 18px; font-weight: 700; }
+
+/* Gap analysis styles */
+.gap-section { margin-bottom: 20px; }
+.gap-section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid var(--rule); }
+.gap-section-header .gap-target { font-size: 15px; font-weight: 700; color: var(--ink); }
+.gap-section-header .gap-badge { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 4px; color: #fff; }
+.gap-section-header .gap-badge.urgent { background: var(--red); }
+.gap-section-header .gap-badge.prepare { background: var(--blue); }
+.gap-section-header .gap-summary { font-size: 12px; color: var(--muted); margin-left: auto; }
+.gap-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; background: #f8fafc; border: 1px solid var(--rule); }
+.gap-item .gap-arrow { flex-shrink: 0; display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; }
+.gap-item .gap-arrow .from { color: var(--red); }
+.gap-item .gap-arrow .to { color: var(--green); }
+.gap-item .gap-content { flex: 1; }
+.gap-item .gap-title { font-size: 13px; font-weight: 600; }
+.gap-item .gap-desc { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+.gap-item .gap-pa { font-size: 11px; color: var(--blue); margin-top: 3px; font-weight: 600; }
+.gap-met { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; margin-bottom: 6px; background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; font-size: 13px; }
+
+.recommend-list { margin-top: 12px; }
+.rec-item { padding: 12px 16px; border-left: 3px solid var(--blue); background: #f8faff; border-radius: 0 8px 8px 0; margin-bottom: 10px; }
+.rec-item .rec-priority { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; color: #fff; margin-bottom: 6px; }
+.rec-item .rec-priority.high { background: var(--red); }
+.rec-item .rec-priority.medium { background: var(--amber); }
+.rec-item .rec-priority.low { background: var(--blue); }
+.rec-item .rec-text { font-size: 14px; line-height: 1.5; }
+.rec-group-title { font-size: 15px; font-weight: 700; color: var(--ink); margin: 16px 0 8px; padding-left: 10px; border-left: 3px solid var(--blue); }
+
+.report-actions { display: flex; justify-content: center; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+
+/* ===== Export ===== */
+.export-content { display: none; }
+
+/* ===== Print Styles ===== */
+@media print {
+  body { background: #fff; }
+  .header, .nav-buttons, .report-actions, .btn { display: none !important; }
+  #feedbackCard textarea { border: 1px solid #ccc !important; }
+  #feedbackCard .btn { display: none !important; }
+  .page { max-width: 100%; margin: 0; padding: 0; }
+  .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+  .chart-container { max-width: 300px; }
+  .score-grid { break-inside: avoid; }
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .form-row, .form-row-3 { grid-template-columns: 1fr; }
+  .score-grid { grid-template-columns: 1fr; }
+  .hero h2 { font-size: 22px; }
+  .card { padding: 20px; }
+  .header-inner { padding: 10px 16px; }
+  .header h1 { font-size: 16px; }
+}
+
+/* ===== Animations ===== */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.page.active { animation: fadeIn 0.3s ease; }
+</style>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<div class="header">
+  <div class="header-inner">
+    <h1>AICoding 能力成熟度评估</h1>
+    <span class="badge">调研工具 v1.0</span>
+    <div class="step-indicator" id="stepIndicator">步骤 <span id="stepNum">1</span> / 3</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 1: HOME -->
+<!-- ============================================================ -->
+<div class="page active" id="pageHome">
+  <div class="card hero">
+    <h2>AICoding 能力成熟度评估调研</h2>
+    <p>本工具基于 AICoding 能力成熟度模型，通过 20 道结构化题目，从执行、管理、支撑、改进四个能力域及六维度度量指标，全面评估企业 AI 编码能力成熟度，自动生成评估报告与改进建议。</p>
+    <div class="features">
+      <div class="item"><div class="num">20</div><div class="label">评估题目</div></div>
+      <div class="item"><div class="num">5</div><div class="label">成熟度等级</div></div>
+      <div class="item"><div class="num">4</div><div class="label">能力域</div></div>
+      <div class="item"><div class="num">15</div><div class="label">实践域</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">企业信息</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>企业名称 <span class="req">*</span></label>
+        <input type="text" id="companyName" placeholder="请输入企业名称">
+      </div>
+      <div class="form-group">
+        <label>所属行业</label>
+        <select id="companyIndustry">
+          <option value="">请选择行业</option>
+          <option>互联网/软件</option>
+          <option>金融科技</option>
+          <option>智能制造</option>
+          <option>通信/电子</option>
+          <option>医疗健康</option>
+          <option>教育/科研</option>
+          <option>其他</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group">
+        <label>联系人 <span class="req">*</span></label>
+        <input type="text" id="contactName" placeholder="姓名">
+      </div>
+      <div class="form-group">
+        <label>联系方式 <span class="req">*</span></label>
+        <input type="text" id="contactPhone" placeholder="手机/邮箱">
+      </div>
+      <div class="form-group">
+        <label>职位</label>
+        <input type="text" id="contactTitle" placeholder="如：技术总监">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>研发团队规模 <span class="req">*</span></label>
+        <select id="teamSize">
+          <option value="">请选择团队规模</option>
+          <option value="<10">&lt; 10 人</option>
+          <option value="10-50">10 - 50 人</option>
+          <option value="50-200">50 - 200 人</option>
+          <option value="200-1000">200 - 1000 人</option>
+          <option value=">1000">&gt; 1000 人</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>AI 编码工具使用时长</label>
+        <select id="aiUsage">
+          <option value="">请选择</option>
+          <option value="<3">&lt; 3 个月</option>
+          <option value="3-12">3 - 12 个月</option>
+          <option value="12-24">1 - 2 年</option>
+          <option value=">24">&gt; 2 年</option>
+        </select>
+      </div>
+    </div>
+    <div class="text-center mt-24">
+      <button class="btn btn-primary" onclick="startSurvey()" id="btnStart">开始评估 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 2: SURVEY -->
+<!-- ============================================================ -->
+<div class="page" id="pageSurvey">
+  <div class="card">
+    <div class="survey-progress">
+      <span style="font-size:13px;font-weight:600;color:var(--muted)">进度</span>
+      <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
+      <span class="pct" id="progressPct">0%</span>
+    </div>
+
+    <div id="questionContainer">
+      <!-- Dynamically rendered -->
+    </div>
+
+    <div class="nav-buttons">
+      <button class="btn btn-outline" onclick="prevQuestion()" id="btnPrev">← 上一题</button>
+      <button class="btn btn-primary" onclick="nextQuestion()" id="btnNext">下一题 →</button>
+      <button class="btn btn-success" onclick="submitSurvey()" id="btnSubmit" style="display:none">提交评估</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PAGE 3: REPORT -->
+<!-- ============================================================ -->
+<div class="page" id="pageReport">
+  <div class="card report-header">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">评估结果报告</div>
+    <div style="font-size:14px;color:var(--muted)" id="reportCompany"></div>
+    <div class="ml-badge" id="mlBadge">ML3</div>
+    <div class="ml-name" id="mlName">已管理级</div>
+    <div class="ml-desc" id="mlDesc">组织制定了标准化的 AI 编码实践流程…</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">企业信息</div>
+    <div id="enterpriseInfo" style="display:grid;grid-template-columns:1fr 1fr;gap:12px 24px;font-size:14px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">能力域评分</div>
+    <div class="score-grid" id="scoreGrid"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">能力雷达图</div>
+    <div class="chart-container">
+      <canvas id="radarChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">短板分析</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">以下能力域为当前短板，是提升成熟度等级的关键突破口</p>
+    <div class="weakness-list" id="weaknessList"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">改进建议</div>
+    <div class="recommend-list" id="recommendList"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">答题详情</div>
+    <div id="answerDetail"></div>
+  </div>
+
+  <div class="card" id="feedbackCard">
+    <div class="card-title">评估结果问题反馈</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">如果您对评估结果有疑问或补充说明，请在此填写。反馈内容将包含在导出和复制的报告中。</p>
+    <textarea id="feedbackText" rows="5" placeholder="请填写您对评估结果的反馈，例如：某些题目选项不能准确反映实际情况、评估等级偏高/偏低、有未被覆盖的能力维度等…" style="width:100%;padding:12px 14px;border:1.5px solid var(--rule);border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;outline:none;transition:border-color 0.2s"></textarea>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button class="btn btn-outline" onclick="copyFeedback()" id="btnCopyFeedback">📋 复制反馈</button>
+      <button class="btn btn-outline" onclick="clearFeedback()">清空反馈</button>
+    </div>
+  </div>
+
+  <div class="report-actions">
+    <button class="btn btn-primary" onclick="window.print()">🖨 打印 / 导出 PDF</button>
+    <button class="btn btn-amber" onclick="copyReport()" id="btnCopyReport">📋 复制报告摘要</button>
+    <button class="btn btn-outline" onclick="resetAll()">🔄 重新评估</button>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- EXPORT HIDDEN -->
+<!-- ============================================================ -->
+<div class="export-content" id="exportContent"></div>
+
+<script>
+// ============================================================
+// QUESTION BANK (20 questions)
+// ============================================================
+const QUESTIONS = [
+  // ---- 执行类 ----
+  {
+    id: 1, cat: 'execution', pa: 'ACG',
+    text: '团队使用 AI 写代码时，有没有明确的规矩？AI 生成的代码会不会有人检查？',
+    options: [
+      { score: 1, label: '各写各的，没人管', desc: '大家随便用 AI 写代码，没有统一要求' },
+      { score: 2, label: '项目组有口头约定', desc: '项目组内部说好了要怎么看 AI 代码，但没写成文档' },
+      { score: 3, label: '公司有明文规定，代码必须人工审查', desc: '公司发布了 AI 编码规范，AI 写的代码 100% 都有人看过才合并' },
+      { score: 4, label: '有自动检查工具卡关', desc: 'AI 代码的 bug 数量会被自动统计，质量不达标会被工具拦下来' },
+      { score: 5, label: '能自动越用越好', desc: '系统会根据历史数据自动调整 AI 生成策略，越用越准' },
+    ]
+  },
+  {
+    id: 2, cat: 'execution', pa: 'ACG',
+    text: '团队有没有统一管理"怎么跟 AI 说话"的资料？（比如提示词、规则、技能、规范）',
+    options: [
+      { score: 1, label: '没有，各人自己摸索', desc: '大家直接用 AI 默认功能，没有人整理过提示词' },
+      { score: 2, label: '个别团队有整理', desc: '有些团队自己攒了一些提示词模板，至少管了 1 类资料' },
+      { score: 3, label: '公司级提示词库，管了至少 3 类', desc: '公司建了统一的提示词库，覆盖提示词/规则/技能/规范中至少 3 类' },
+      { score: 4, label: '4 类资料全部纳管', desc: '提示词、规则、技能、规范全部统一管理，有版本记录' },
+      { score: 5, label: '能对比效果，持续优化', desc: '会对比不同提示词的效果，挑最好用的，不断改进' },
+    ]
+  },
+  {
+    id: 3, cat: 'execution', pa: 'ACR',
+    text: 'AI 写的代码，有没有一套固定的审查流程？',
+    options: [
+      { score: 1, label: '没有审查，直接用', desc: 'AI 生成的代码直接就用了，没人检查' },
+      { score: 2, label: '项目组内部要求看一眼', desc: '项目组内部约定了要审查 AI 代码，但各项目做法不同' },
+      { score: 3, label: '公司有统一的审查标准', desc: '公司发布了统一的 AI 代码审查清单，所有团队按同一标准执行' },
+      { score: 4, label: '审查效果有数据追踪', desc: '审查覆盖率、通过率等都有数据统计，能看出审查效率' },
+      { score: 5, label: '根据数据不断优化审查', desc: '根据审查数据持续改进流程，让审查越来越快越来越好' },
+    ]
+  },
+  {
+    id: 4, cat: 'execution', pa: 'ATF',
+    text: 'AI 生成的代码有没有配套的自动化测试？',
+    options: [
+      { score: 1, label: '基本没有测试', desc: 'AI 写的代码没有配套的测试' },
+      { score: 2, label: '项目组有要求写测试', desc: '项目组要求 AI 代码要附带测试，但做法不统一' },
+      { score: 3, label: '公司有统一的测试标准', desc: '公司发布了 AI 代码测试规范，覆盖单元测试、集成测试等' },
+      { score: 4, label: '测试覆盖率有数据管控', desc: '测试覆盖率、bug 密度等都有量化指标，不达标不能上线' },
+      { score: 5, label: '测试策略持续优化', desc: '根据测试数据自动调整测试策略，越测越准' },
+    ]
+  },
+  {
+    id: 5, cat: 'execution', pa: 'ADM',
+    text: '做架构设计时，有没有考虑 AI 编码的影响？',
+    options: [
+      { score: 1, label: '没考虑过', desc: '架构设计和 AI 编码完全分开，各搞各的' },
+      { score: 2, label: '项目组偶尔讨论', desc: '项目组私下聊过 AI 对设计的影响，但没有正式文档' },
+      { score: 3, label: '公司有 AI 设计指南', desc: '公司发布了 AI 编码相关的架构设计指南和参考模式' },
+      { score: 4, label: '设计质量有数据衡量', desc: '设计合规性、可维护性等都有量化指标追踪' },
+      { score: 5, label: '设计模式持续创新', desc: '根据反馈持续更新设计标准，引入新的 AI 友好设计模式' },
+    ]
+  },
+  {
+    id: 6, cat: 'execution', pa: 'AQM',
+    text: 'AI 代码的质量有没有一套量化的管理方法？',
+    options: [
+      { score: 1, label: '没有质量标准', desc: 'AI 代码质量好坏全凭感觉，没有统一评估标准' },
+      { score: 2, label: '项目组有质量检查', desc: '项目组内部会检查代码质量，但各项目做法不同' },
+      { score: 3, label: '公司有统一质量标准', desc: '公司制定了 AI 代码质量标准，所有团队统一执行' },
+      { score: 4, label: '质量不达标自动拦截', desc: '质量指标量化，不达标的代码会被工具自动拦下来' },
+      { score: 5, label: '质量标准持续升级', desc: '根据质量数据不断调整标准，持续提升代码质量' },
+    ]
+  },
+  {
+    id: 7, cat: 'execution', pa: 'RDM',
+    text: 'AI 编码相关的需求是怎么管理的？',
+    options: [
+      { score: 1, label: '没有需求管理', desc: 'AI 编码需求随口一说就开干，没有正式记录' },
+      { score: 2, label: '项目组内记录', desc: '项目组内部有记录 AI 编码需求，但不成体系' },
+      { score: 3, label: '公司有统一需求流程', desc: '公司有标准的需求管理流程，覆盖 AI 编码场景' },
+      { score: 4, label: '需求完成率有数据追踪', desc: '需求完成率、偏差率等都有量化统计' },
+      { score: 5, label: '需求流程持续改进', desc: '根据需求数据不断优化管理流程' },
+    ]
+  },
+  // ---- 管理类 ----
+  {
+    id: 8, cat: 'management', pa: 'PJM',
+    text: 'AI 编码相关的项目是怎么管的？',
+    options: [
+      { score: 1, label: '没有项目管理', desc: 'AI 编码任务没有计划，也没有人跟踪进度' },
+      { score: 2, label: '项目组有计划和跟踪', desc: '项目组内部有计划，也会跟踪 AI 编码任务的进度' },
+      { score: 3, label: '公司有统一管理标准', desc: '公司有标准的项目管理流程，覆盖 AI 编码相关任务' },
+      { score: 4, label: '项目绩效有数据衡量', desc: '项目进度、质量等都有量化指标' },
+      { score: 5, label: '管理流程持续改进', desc: '根据项目数据不断优化管理方法' },
+    ]
+  },
+  {
+    id: 9, cat: 'management', pa: 'CMN',
+    text: 'AI 生成的代码和文档是怎么做版本管理的？改动代码有没有规范？',
+    options: [
+      { score: 1, label: '没有版本管理', desc: 'AI 代码没有版本控制，改了就改了' },
+      { score: 2, label: '项目组有版本控制', desc: 'AI 代码纳入了版本控制工具（如 Git）' },
+      { score: 3, label: '公司有统一管理标准', desc: '公司有标准的配置管理流程，覆盖 AI 产出的代码和文档' },
+      { score: 4, label: '改动影响有量化评估', desc: '代码改动的影响范围会被量化评估' },
+      { score: 5, label: '管理流程持续改进', desc: '根据版本管理数据不断优化流程' },
+    ]
+  },
+  {
+    id: 10, cat: 'management', pa: 'SPM',
+    text: 'AI 编码工具是怎么选的？供应商怎么管的？',
+    options: [
+      { score: 1, label: '随便选，没人管', desc: '各团队自己挑 AI 工具，没有统一管理' },
+      { score: 2, label: '项目组内部评估', desc: '项目组会评估一下 AI 工具好不好用' },
+      { score: 3, label: '公司有统一选型标准', desc: '公司有 AI 工具选型和评估的标准流程' },
+      { score: 4, label: '工具效果有数据评估', desc: '工具的使用效果会被量化评估' },
+      { score: 5, label: '选型持续优化', desc: '根据使用数据不断优化工具选型' },
+    ]
+  },
+  {
+    id: 11, cat: 'management', pa: 'ARS',
+    text: '用 AI 写代码时，安全合规方面管得怎么样？（比如防止敏感信息泄露、开源协议合规等）',
+    options: [
+      { score: 1, label: '没考虑过安全', desc: 'AI 编码完全不考虑安全问题' },
+      { score: 2, label: '项目组有防护规则', desc: '项目组内部有敏感信息防护规则' },
+      { score: 3, label: '公司有统一安全标准', desc: '公司有 AI 编码安全合规标准，包含开源协议检查' },
+      { score: 4, label: '安全事件有数据追踪', desc: '安全事件数、合规率等都有量化统计' },
+      { score: 5, label: '安全体系持续加固', desc: '根据安全数据不断优化防护策略' },
+    ]
+  },
+  // ---- 支撑类 ----
+  {
+    id: 12, cat: 'enabling', pa: 'OTR',
+    text: '公司有没有给团队培训怎么用 AI 写代码？',
+    options: [
+      { score: 1, label: '没有培训', desc: '团队没有 AI 编码相关的培训' },
+      { score: 2, label: '团队内部分享', desc: '偶尔有团队内部的交流分享，但不系统' },
+      { score: 3, label: '公司有正式培训课程', desc: '公司有系统的 AI 编码培训课程体系' },
+      { score: 4, label: '培训效果有数据评估', desc: '培训覆盖率、效果评估都有量化统计' },
+      { score: 5, label: '培训体系持续优化', desc: '根据培训数据不断优化课程内容' },
+    ]
+  },
+  {
+    id: 13, cat: 'enabling', pa: 'DAR',
+    text: 'AI 编码相关的决策（比如选什么工具、定什么标准）是凭感觉还是靠数据？',
+    options: [
+      { score: 1, label: '凭经验拍板', desc: 'AI 工具选型、标准制定全凭领导或骨干的经验' },
+      { score: 2, label: '项目组有数据参考', desc: '项目组会收集一些基础数据来辅助决策' },
+      { score: 3, label: '公司靠数据做决策', desc: '公司有系统的数据采集和分析来支撑决策' },
+      { score: 4, label: '决策效果有数据追踪', desc: '决策后的效果会被量化评估，形成反馈闭环' },
+      { score: 5, label: '有算法模型辅助决策', desc: '用算法模型辅助决策，持续优化决策模型' },
+    ]
+  },
+  {
+    id: 14, cat: 'enabling', pa: 'ORG',
+    text: '公司有没有把 AI 编码的经验和知识积累下来？',
+    options: [
+      { score: 1, label: '经验在个人脑子里', desc: '谁会用 AI 谁就会，走了就没了，没有沉淀' },
+      { score: 2, label: '项目组有文档积累', desc: '项目组内部有一些文档积累' },
+      { score: 3, label: '公司有知识库和最佳实践', desc: '公司建了 AI 编码知识库，有最佳实践指南' },
+      { score: 4, label: '知识库使用率有数据', desc: '知识资产的使用率会被量化追踪' },
+      { score: 5, label: '知识资产持续更新创新', desc: '知识库持续更新，推动团队创新' },
+    ]
+  },
+  {
+    id: 15, cat: 'enabling', pa: 'TCI',
+    text: 'AI 编码工具有没有统一集成到开发环境里？',
+    options: [
+      { score: 1, label: '各用各的，没集成', desc: 'AI 工具是独立使用的，没有集成到开发工具里' },
+      { score: 2, label: '项目组自己搭工具链', desc: '项目组自己搞了一套工具集成' },
+      { score: 3, label: '公司统一集成到 IDE 插件', desc: 'AI 编码能力统一集成到了 IDE 插件中，全员可用' },
+      { score: 4, label: '工具使用效果有数据', desc: '工具使用率、效能提升等都有量化统计' },
+      { score: 5, label: '工具链持续优化升级', desc: '根据使用数据不断优化工具链' },
+    ]
+  },
+  // ---- 改进类 ----
+  {
+    id: 16, cat: 'improving', pa: 'AMP',
+    text: '公司有没有一套方法来量化衡量 AI 编码的效果？',
+    options: [
+      { score: 1, label: '没有度量', desc: 'AI 编码到底好不好用，完全没有数据' },
+      { score: 2, label: '项目组有基础数据', desc: '项目组会采集采纳率、工具使用率等基础数据' },
+      { score: 3, label: '公司有度量体系', desc: '公司建了 AI 编码度量体系，覆盖多个维度' },
+      { score: 4, label: '有基线，偏差可监控', desc: '建立了效能基线，有量化质量门禁，偏差能被发现' },
+      { score: 5, label: '度量体系持续迭代', desc: '根据度量数据持续改进，指标体系不断优化' },
+    ]
+  },
+  {
+    id: 17, cat: 'improving', pa: 'ACA',
+    text: 'AI 编码出了问题，会不会追溯根本原因？',
+    options: [
+      { score: 1, label: '出了问题修完就好', desc: '问题修了就完了，不追溯为什么出问题' },
+      { score: 2, label: '项目组会简单分析', desc: '项目组内部会讨论一下问题原因' },
+      { score: 3, label: '公司有标准分析流程', desc: '公司有标准的根因分析流程和问题分类标准' },
+      { score: 4, label: '预防措施效果有数据', desc: '预防措施的效果会被量化追踪，形成闭环' },
+      { score: 5, label: '根因分析常态化，经验对外输出', desc: '根因分析成为日常习惯，经验会对行业输出' },
+    ]
+  },
+  {
+    id: 18, cat: 'improving', pa: 'ACI',
+    text: '公司有没有持续改进 AI 编码能力的机制？',
+    options: [
+      { score: 1, label: '没有改进活动', desc: 'AI 编码流程用上了就完了，没有持续改进' },
+      { score: 2, label: '项目结束有回顾', desc: '项目做完后会开个回顾会总结一下' },
+      { score: 3, label: '公司有改进流程', desc: '公司有标准的改进流程，有创新提案机制' },
+      { score: 4, label: '改进效果有数据衡量', desc: '改进措施的效果会被量化评估，能算出投入产出比' },
+      { score: 5, label: '形成持续改进文化', desc: '持续改进深入人心，创新成果可量化' },
+    ]
+  },
+  // ---- 度量指标 ----
+  {
+    id: 19, cat: 'metrics', pa: 'MET',
+    text: '公司有没有在统计 AI 编码的使用情况和效果数据？',
+    options: [
+      { score: 1, label: '没有任何数据', desc: '没有建立任何 AI 编码相关指标' },
+      { score: 2, label: '有采纳率等基础数据', desc: '采集了 AI 代码采纳率等基础指标' },
+      { score: 3, label: '覆盖采纳率+效率+安全', desc: '已覆盖采纳度、效率、安全合规等多个维度' },
+      { score: 4, label: '六维度全面运行', desc: '采纳/效率/质量/安全/价值/协作六个维度全量采集' },
+      { score: 5, label: '数据驱动决策优化', desc: '指标数据驱动日常决策，体系持续迭代' },
+    ]
+  },
+  {
+    id: 20, cat: 'metrics', pa: 'MET',
+    text: 'AI 代码的质量和安全合规指标达标了吗？',
+    options: [
+      { score: 1, label: '没有相关指标', desc: '没有建立质量和安全合规的指标' },
+      { score: 2, label: '有基础安全规则', desc: '有敏感信息检测等基础安全规则' },
+      { score: 3, label: '安全合规指标已达标', desc: '安全合规维度的指标已经达标' },
+      { score: 4, label: '质量门禁自动运行', desc: '质量门禁自动拦截不达标代码，安全合规自动检查' },
+      { score: 5, label: '安全质量持续提升', desc: '根据安全质量数据持续升级标准' },
+    ]
+  },
+];
+
+// ============================================================
+// CATEGORY MAPPING
+// ============================================================
+const CATEGORIES = {
+  execution: { name: '执行类', color: '#2563eb', order: 0 },
+  management: { name: '管理类', color: '#0d9488', order: 1 },
+  enabling: { name: '支撑类', color: '#7c3aed', order: 2 },
+  improving: { name: '改进类', color: '#f59e0b', order: 3 },
+  metrics: { name: '度量指标', color: '#ef4444', order: 4 },
+};
+
+const CATEGORY_ORDER = ['execution','management','enabling','improving','metrics'];
+
+const ML_DEFS = [
+  { level: 1, name: '初始级', cls: 'ml1', color: '#94a3b8', desc: 'AI 编码处于无序或自发试用阶段，尚未建立组织级规范。各团队各自为政，缺乏统一标准和管理流程。' },
+  { level: 2, name: '已管理级', cls: 'ml2', color: '#60a5fa', desc: '组织已建立项目级 AI 编码规范与管理流程，AI 代码纳入审查和版本控制。基础度量指标（采纳度、协作与知识）开始采集。' },
+  { level: 3, name: '已定义级', cls: 'ml3', color: '#2563eb', desc: '组织级标准化 AI 编码体系全面运行，规范、流程、资产统一管理。采纳度、效能、安全合规、协作与知识维度指标达标。' },
+  { level: 4, name: '量化管理级', cls: 'ml4', color: '#0d9488', desc: '六维度量化指标体系全量运行，AI 编码效能基线建立，量化质量门禁自动拦截。改进类 PA（AMP/ACI/ACA）达到 L4 实践要求。' },
+  { level: 5, name: '优化创新级', cls: 'ml5', color: '#7c3aed', desc: '基于数据驱动持续优化与创新，根因分析常态化，改进效果可量化评估。ACA/ACI 达到 L5 实践要求，六维度指标达标率 ≥90%。' },
+];
+
+// ============================================================
+// STATE
+// ============================================================
+let currentQ = 0;
+let answers = {};
+
+// ============================================================
+// UTILITY
+// ============================================================
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const stepMap = { pageHome: 1, pageSurvey: 2, pageReport: 3 };
+  document.getElementById('stepNum').textContent = stepMap[id] || 1;
+}
+
+function getCatQuestions(cat) {
+  return QUESTIONS.filter(q => q.cat === cat);
+}
+
+// ============================================================
+// HOME
+// ============================================================
+function startSurvey() {
+  const required = ['companyName','contactName','contactPhone','teamSize'];
+  for (const id of required) {
+    const el = document.getElementById(id);
+    if (!el.value.trim()) {
+      el.focus(); el.style.borderColor = '#ef4444';
+      setTimeout(() => el.style.borderColor = '', 2000);
+      alert('请填写 ' + el.previousElementSibling.textContent.replace('*',''));
+      return;
+    }
+  }
+  showPage('pageSurvey');
+  renderQuestion(0);
+}
+
+// ============================================================
+// SURVEY
+// ============================================================
+function renderQuestion(idx) {
+  if (idx >= QUESTIONS.length) { submitSurvey(); return; }
+  currentQ = idx;
+  const q = QUESTIONS[idx];
+  const catInfo = CATEGORIES[q.cat];
+
+  // Update progress
+  const pct = Math.round((idx / QUESTIONS.length) * 100);
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+
+  // Build HTML
+  const container = document.getElementById('questionContainer');
+  let html = `
+    <div class="category-label">${catInfo.name} · ${q.pa}</div>
+    <div class="question-text">Q${idx+1}. ${q.text}</div>
+    <div class="options">
+  `;
+  q.options.forEach((opt, oi) => {
+    const selected = answers[idx] === oi ? 'selected' : '';
+    html += `
+      <div class="option ${selected}" onclick="selectOption(${idx},${oi})">
+        <input type="radio" name="q${idx}" value="${oi}" ${selected ? 'checked' : ''}>
+        <div class="radio-circle"></div>
+        <div class="opt-content">
+          <div class="opt-label">${opt.score}. ${opt.label}</div>
+          <div class="opt-desc">${opt.desc}</div>
+        </div>
+      </div>
+    `;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Nav buttons
+  document.getElementById('btnPrev').style.display = idx === 0 ? 'none' : 'inline-flex';
+  const isLast = idx === QUESTIONS.length - 1;
+  document.getElementById('btnNext').style.display = isLast ? 'none' : 'inline-flex';
+  document.getElementById('btnSubmit').style.display = isLast ? 'inline-flex' : 'none';
+}
+
+function selectOption(qIdx, oIdx) {
+  answers[qIdx] = oIdx;
+  // Re-render to update visual
+  renderQuestion(currentQ);
+}
+
+function nextQuestion() {
+  if (answers[currentQ] === undefined) { alert('请选择一个选项'); return; }
+  renderQuestion(currentQ + 1);
+}
+
+function prevQuestion() {
+  if (currentQ > 0) renderQuestion(currentQ - 1);
+}
+
+function submitSurvey() {
+  // Check all answered
+  for (let i = 0; i < QUESTIONS.length; i++) {
+    if (answers[i] === undefined) {
+      renderQuestion(i);
+      alert('请完成所有题目后再提交');
+      return;
+    }
+  }
+  generateReport();
+  showPage('pageReport');
+}
+
+// ============================================================
+// ASSESSMENT ENGINE — 最低项决定制
+// 每道题得分 = 对应 PA 的实践等级(1-5)
+// 能力域等级 = 域内所有题目最低分（最短板决定）
+// ML 等级严格按照评估标准判定，不做平均
+// ============================================================
+
+/**
+ * 计算各能力域的最低实践等级（即域内最弱 PA 的等级）。
+ * @return {Object} scores — { execution: 3, management: 2, ... } 值为 1-5 整数
+ */
+function calcScores() {
+  const scores = {};
+  for (const cat of CATEGORY_ORDER) {
+    const qs = getCatQuestions(cat);
+    let minScore = 5;
+    qs.forEach(q => {
+      const idx = QUESTIONS.indexOf(q);
+      if (answers[idx] !== undefined) {
+        minScore = Math.min(minScore, q.options[answers[idx]].score);
+      }
+    });
+    scores[cat] = minScore;
+  }
+  return scores;
+}
+
+/**
+ * 计算各能力域的详细信息（含最低分、平均分、短板 PA）。
+ * @return {Object} detailed — { execution: { min:3, avg:3.8, bottleneckPa:'ATF' }, ... }
+ */
+function calcDetailedScores() {
+  const detailed = {};
+  for (const cat of CATEGORY_ORDER) {
+    const qs = getCatQuestions(cat);
+    let minScore = 5, total = 0, count = 0;
+    let bottleneckPa = '', bottleneckQid = 0;
+    qs.forEach(q => {
+      const idx = QUESTIONS.indexOf(q);
+      if (answers[idx] !== undefined) {
+        const score = q.options[answers[idx]].score;
+        total += score;
+        count++;
+        if (score < minScore) {
+          minScore = score;
+          bottleneckPa = q.pa;
+          bottleneckQid = q.id;
+        }
+      }
+    });
+    detailed[cat] = {
+      min: count > 0 ? minScore : 0,
+      avg: count > 0 ? total / count : 0,
+      bottleneckPa: bottleneckPa,
+      bottleneckQid: bottleneckQid,
+    };
+  }
+  return detailed;
+}
+
+/**
+ * 根据各能力域最低实践等级严格判定成熟度等级。
+ * 判定标准：
+ *   ML1: 所有能力域 ≥ L1
+ *   ML2: 所有能力域 ≥ L2 + 度量指标 ≥ L2
+ *   ML3: 所有能力域 ≥ L3 + 度量指标 ≥ L3
+ *   ML4: 所有能力域 ≥ L3 + 改进类 ≥ L4 + 度量指标 ≥ L4
+ *   ML5: 改进类 ≥ L5 + 度量指标 ≥ L5
+ * @param {Object} scores — calcScores() 返回值，各域最低等级
+ * @return {number} 1-5
+ */
+function determineML(scores) {
+  // scores 中每个值即为该域最低 PA 等级（1-5 整数）
+  const minAll = Math.min(scores.execution, scores.management, scores.enabling, scores.improving);
+  const metrLevel = scores.metrics;
+  const imprLevel = scores.improving;
+
+  // ML1: 所有能力域 ≥ L1
+  if (minAll < 1) return 1;
+
+  // ML2: 所有能力域 ≥ L2 + 度量指标 ≥ L2
+  if (minAll < 2) return 1;
+  if (metrLevel < 2) return 1;
+
+  // ML3: 所有能力域 ≥ L3 + 度量指标 ≥ L3
+  if (minAll < 3) return 2;
+  if (metrLevel < 3) return 2;
+
+  // ML4: 所有能力域 ≥ L3 + 改进类 ≥ L4 + 度量指标 ≥ L4
+  if (imprLevel < 4) return 3;
+  if (metrLevel < 4) return 3;
+
+  // ML5: 改进类 ≥ L5 + 度量指标 ≥ L5
+  if (imprLevel < 5) return 4;
+  if (metrLevel < 5) return 4;
+
+  return 5;
+}
+
+// ============================================================
+// REPORT
+// ============================================================
+let radarChartInstance = null;
+
+function generateReport() {
+  const scores = calcScores();
+  const ml = determineML(scores);
+  const mlDef = ML_DEFS[ml - 1];
+
+  // Enterprise info
+  document.getElementById('reportCompany').textContent =
+    document.getElementById('companyName').value + ' · ' +
+    document.getElementById('teamSize').value + ' 人团队';
+
+  // Full enterprise info display
+  const entInfo = document.getElementById('enterpriseInfo');
+  const fields = [
+    ['企业名称', document.getElementById('companyName').value],
+    ['所属行业', document.getElementById('companyIndustry').value || '—'],
+    ['联系人', document.getElementById('contactName').value],
+    ['联系方式', document.getElementById('contactPhone').value],
+    ['职位', document.getElementById('contactTitle').value || '—'],
+    ['研发团队规模', document.getElementById('teamSize').value + ' 人'],
+    ['AI 编码工具使用时长', document.getElementById('aiUsage').value || '—'],
+    ['评估日期', new Date().toLocaleDateString('zh-CN')],
+  ];
+  entInfo.innerHTML = fields.map(f =>
+    `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--rule)"><span style="color:var(--muted);min-width:130px;font-size:13px">${f[0]}</span><span style="font-weight:600">${f[1]}</span></div>`
+  ).join('');
+
+  // ML badge
+  const badge = document.getElementById('mlBadge');
+  badge.textContent = 'ML' + ml + ' · ' + mlDef.name;
+  badge.className = 'ml-badge ' + mlDef.cls;
+  document.getElementById('mlName').textContent = mlDef.name;
+  document.getElementById('mlDesc').textContent = mlDef.desc;
+
+  // Score grid — 展示最低实践等级（决定性）+ 平均分（参考）+ 短板 PA
+  const detailed = calcDetailedScores();
+  const grid = document.getElementById('scoreGrid');
+  grid.innerHTML = '';
+  for (const cat of CATEGORY_ORDER) {
+    const minLevel = scores[cat];       // 最低等级（1-5 整数，决定性）
+    const avgScore = detailed[cat].avg;  // 平均分（参考）
+    const bottleneck = detailed[cat].bottleneckPa;
+    const catInfo = CATEGORIES[cat];
+    const pct = (minLevel / 5) * 100;
+    grid.innerHTML += `
+      <div class="score-card">
+        <div class="cat-name" style="color:${catInfo.color}">${catInfo.name}</div>
+        <div class="cat-score" style="color:${catInfo.color}">L${minLevel}</div>
+        <div class="cat-level">最低 L${minLevel} · 平均 ${avgScore.toFixed(1)} · 短板 ${bottleneck}</div>
+        <div class="cat-bar"><div class="fill" style="width:${pct}%;background:${catInfo.color}"></div></div>
+      </div>
+    `;
+  }
+
+  // Radar chart — 展示各域最低等级
+  drawRadar(scores, detailed);
+
+  // Weakness analysis
+  generateWeakness(scores, ml);
+
+  // Recommendations
+  generateRecommendations(scores, ml);
+
+  // Answer details
+  generateAnswerDetail();
+}
+
+function drawRadar(scores, detailed) {
+  const ctx = document.getElementById('radarChart').getContext('2d');
+  if (radarChartInstance) radarChartInstance.destroy();
+
+  const labels = CATEGORY_ORDER.map(c => CATEGORIES[c].name);
+  const minData = CATEGORY_ORDER.map(c => scores[c]);           // 最低等级
+  const avgData = CATEGORY_ORDER.map(c => detailed[c].avg);     // 平均分（参考）
+
+  radarChartInstance = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '最低等级（判定依据）',
+          data: minData,
+          backgroundColor: 'rgba(37,99,235,0.15)',
+          borderColor: '#2563eb',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#2563eb',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: 6,
+        },
+        {
+          label: '平均分（参考）',
+          data: avgData,
+          backgroundColor: 'rgba(245,158,11,0.06)',
+          borderColor: '#f59e0b',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointBackgroundColor: '#f59e0b',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 1.5,
+          pointRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: {
+        r: {
+          min: 0, max: 5,
+          ticks: { stepSize: 1, font: { size: 11, family: 'Microsoft YaHei' } },
+          pointLabels: { font: { size: 12, family: 'Microsoft YaHei', weight: '600' } },
+          grid: { color: 'rgba(0,0,0,0.08)' },
+          angleLines: { color: 'rgba(0,0,0,0.08)' },
+        }
+      },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 12, family: 'Microsoft YaHei' } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.r.toFixed(1) + ' / 5.0'
+          }
+        }
+      }
+    }
+  });
+}
+
+/**
+ * 短板分析：按目标等级分层展示差距。
+ * ML1 → 分析 ML2 + ML3 的目标差距
+ * ML2 → 分析 ML3 + ML4 的目标差距
+ * ML3 → 分析 ML4 + ML5 的目标差距
+ * ML4 → 分析 ML5 的目标差距
+ * ML5 → 持续优化方向
+ * @param {Object} scores — 各能力域最低等级
+ * @param {number} ml — 当前成熟度等级
+ */
+function generateWeakness(scores, ml) {
+  const list = document.getElementById('weaknessList');
+  list.innerHTML = '';
+  const detailed = calcDetailedScores();
+
+  // 各 ML 等级的要求定义
+  const mlReqs = {
+    2: [
+      { domain: 'execution',  req: 2, desc: '建立项目级 AI 编码规范，AI 代码纳入审查流程' },
+      { domain: 'management', req: 2, desc: '有项目计划与跟踪、版本控制、基础安全防护' },
+      { domain: 'enabling',   req: 2, desc: '团队有培训分享、基础数据辅助决策、文档积累' },
+      { domain: 'improving',  req: 2, desc: '有基础数据采集、简单问题分析、项目回顾' },
+      { domain: 'metrics',    req: 2, desc: '有 AI 代码采纳率等基础数据' },
+    ],
+    3: [
+      { domain: 'execution',  req: 3, desc: '公司级规范、统一审查标准、标准化测试体系、质量标准' },
+      { domain: 'management', req: 3, desc: '公司级管理标准、配置管理流程、统一选型、安全合规标准' },
+      { domain: 'enabling',   req: 3, desc: '正式培训体系、数据驱动决策、知识库、IDE 插件集成' },
+      { domain: 'improving',  req: 3, desc: '组织级度量体系、根因分析标准流程、改进流程' },
+      { domain: 'metrics',    req: 3, desc: '覆盖采纳度+效率+安全合规多维度' },
+    ],
+    4: [
+      { domain: 'improving',  req: 4, desc: 'AMP/ACI/ACA 三个 PA 达 L4：量化管理基线驱动、预防措施效果量化、改进 ROI 可计算' },
+      { domain: 'metrics',    req: 4, desc: '六维度全量运行，建立量化基线，质量门禁自动运行' },
+    ],
+    5: [
+      { domain: 'improving',  req: 5, desc: 'ACA/ACI 达 L5：根因分析常态化并对外输出、持续改进文化、创新驱动' },
+      { domain: 'metrics',    req: 5, desc: '数据驱动决策，达标率 ≥90%，指标体系持续迭代' },
+    ],
+  };
+
+  // 确定要展示的目标等级（下 1-2 级）
+  const targets = [];
+  if (ml < 5) targets.push({ level: ml + 1, type: 'urgent', label: '近期目标' });
+  if (ml < 4) targets.push({ level: ml + 2, type: 'prepare', label: '前瞻布局' });
+
+  // ML5 特殊处理
+  if (ml === 5) {
+    list.innerHTML = `
+      <div class="gap-met">✓ 已达到最高等级 ML5 优化创新级，建议持续保持数据驱动的优化创新机制，关注行业前沿趋势。</div>
+    `;
+    return;
+  }
+
+  // 逐个目标等级展示差距
+  targets.forEach(t => {
+    const reqs = mlReqs[t.level];
+    if (!reqs) return;
+    const mlDef = ML_DEFS[t.level - 1];
+    const gaps = [];
+    const met = [];
+
+    reqs.forEach(r => {
+      const current = scores[r.domain];
+      if (current < r.req) {
+        gaps.push({
+          domain: r.domain,
+          current: current,
+          required: r.req,
+          desc: r.desc,
+          bottleneckPa: detailed[r.domain].bottleneckPa,
+          info: CATEGORIES[r.domain],
+        });
+      } else {
+        met.push(r);
+      }
+    });
+
+    // Section header
+    list.innerHTML += `
+      <div class="gap-section">
+        <div class="gap-section-header">
+          <span class="gap-badge ${t.type}">${t.label}</span>
+          <span class="gap-target">迈向 ${mlDef.level === 2 ? 'ML2' : mlDef.level === 3 ? 'ML3' : mlDef.level === 4 ? 'ML4' : 'ML5'} ${mlDef.name}</span>
+          <span class="gap-summary">${gaps.length} 项差距 · ${met.length} 项已达标</span>
+        </div>
+    `;
+
+    // Gap items
+    if (gaps.length === 0) {
+      list.innerHTML += `<div class="gap-met">✓ 该等级所有要求已达标，可挑战下一等级</div>`;
+    } else {
+      gaps.forEach(g => {
+        list.innerHTML += `
+          <div class="gap-item">
+            <div class="gap-arrow">
+              <span class="from">L${g.current}</span>
+              <span>→</span>
+              <span class="to">L${g.required}</span>
+            </div>
+            <div class="gap-content">
+              <div class="gap-title">${g.info.name}</div>
+              <div class="gap-desc">${g.desc}</div>
+              <div class="gap-pa">短板 PA: ${g.bottleneckPa}（当前最低 L${g.current}，须提升至 L${g.required}）</div>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    list.innerHTML += `</div>`;
+  });
+}
+
+/**
+ * 改进建议：按目标等级分组，给出具体行动指引。
+ * 近期目标（下 1 级）→ 高优先级行动
+ * 前瞻布局（下 2 级）→ 中优先级准备
+ * @param {Object} scores — 各能力域最低等级
+ * @param {number} ml — 当前成熟度等级
+ */
+function generateRecommendations(scores, ml) {
+  const list = document.getElementById('recommendList');
+  list.innerHTML = '';
+  const detailed = calcDetailedScores();
+
+  // ML5 特殊处理
+  if (ml === 5) {
+    list.innerHTML = `
+      <div class="rec-item">
+        <div class="rec-priority low">持续优化</div>
+        <div class="rec-text">已达到最高等级 ML5，建议持续保持数据驱动的优化创新机制。关注行业前沿趋势，定期回顾指标体系有效性，确保持续领先。可考虑对外输出 AI 编码成熟度建设经验。</div>
+      </div>
+    `;
+    return;
+  }
+
+  // ===== 近期目标：迈向 ML{ml+1} =====
+  const nextLevel = ml + 1;
+  const nextDef = ML_DEFS[nextLevel - 1];
+  list.innerHTML += `<div class="rec-group-title">🎯 迈向 ${nextDef.level === 2 ? 'ML2' : nextDef.level === 3 ? 'ML3' : nextDef.level === 4 ? 'ML4' : 'ML5'} ${nextDef.name}的关键行动</div>`;
+
+  const urgentRecs = [];
+
+  // 按能力域检查差距，给出具体建议
+  if (scores.execution < nextLevel && nextLevel <= 3) {
+    urgentRecs.push({
+      priority: 'high',
+      text: `执行类当前最低 L${scores.execution}，${nextLevel === 2 ? 'ML2' : 'ML3'} 要求达到 L${nextLevel}。${nextLevel === 2 ? '立即建立项目级 AI 编码规范，要求 AI 代码必须经人工审查，在项目组内约定测试要求。' : '将项目级规范升级为公司级标准，发布统一的 AI 代码审查清单和测试规范，建立 AI 代码质量标准。'}短板 PA: ${detailed.execution.bottleneckPa}。`
+    });
+  }
+  if (scores.management < nextLevel && nextLevel <= 3) {
+    urgentRecs.push({
+      priority: 'high',
+      text: `管理类当前最低 L${scores.management}，${nextLevel === 2 ? 'ML2' : 'ML3'} 要求达到 L${nextLevel}。${nextLevel === 2 ? '建立项目计划和进度跟踪，将 AI 代码纳入版本控制，部署敏感信息防护规则。' : '将管理流程升级为公司级标准，建立配置管理流程、统一工具选型标准和安全合规标准。'}短板 PA: ${detailed.management.bottleneckPa}。`
+    });
+  }
+  if (scores.enabling < nextLevel && nextLevel <= 3) {
+    urgentRecs.push({
+      priority: 'high',
+      text: `支撑类当前最低 L${scores.enabling}，${nextLevel === 2 ? 'ML2' : 'ML3'} 要求达到 L${nextLevel}。${nextLevel === 2 ? '组织团队内部 AI 编码分享交流，开始收集基础数据辅助决策，积累项目文档。' : '建立正式培训课程体系，推动数据驱动决策，建设公司级知识库和最佳实践，将 AI 工具统一集成到 IDE 插件。'}短板 PA: ${detailed.enabling.bottleneckPa}。`
+    });
+  }
+  if (scores.improving < nextLevel && nextLevel <= 3) {
+    urgentRecs.push({
+      priority: 'high',
+      text: `改进类当前最低 L${scores.improving}，${nextLevel === 2 ? 'ML2' : 'ML3'} 要求达到 L${nextLevel}。${nextLevel === 2 ? '启动基础数据采集（采纳率、工具使用率），项目组内对 AI 编码问题做简单分析，项目结束后开回顾会。' : '建立组织级度量体系覆盖多维度，制定根因分析标准流程，建立改进流程和创新提案机制。'}短板 PA: ${detailed.improving.bottleneckPa}。`
+    });
+  }
+
+  // ML4 专项：改进类须达 L4 + 度量指标须达 L4
+  if (nextLevel === 4) {
+    if (scores.improving < 4) {
+      urgentRecs.push({
+        priority: 'high',
+        text: `改进类当前最低 L${scores.improving}，ML4 要求 AMP/ACI/ACA 三个 PA 均达到 L4。需建立效能基线和量化质量门禁，预防措施效果量化追踪形成闭环，改进措施 ROI 可计算。短板 PA: ${detailed.improving.bottleneckPa}。`
+      });
+    }
+    if (scores.metrics < 4) {
+      urgentRecs.push({
+        priority: 'high',
+        text: `度量指标当前 L${scores.metrics}，ML4 要求达到 L4。需将度量体系扩展至六维度全量运行（采纳/效率/质量/安全/价值/协作），建立量化基线，质量门禁自动运行拦截不达标代码。`
+      });
+    }
+  }
+
+  // ML5 专项：改进类须达 L5 + 度量指标须达 L5
+  if (nextLevel === 5) {
+    if (scores.improving < 5) {
+      urgentRecs.push({
+        priority: 'high',
+        text: `改进类当前最低 L${scores.improving}，ML5 要求 ACA/ACI 达到 L5。需推动根因分析常态化并对外输出经验，形成持续改进文化，创新成果可量化评估。短板 PA: ${detailed.improving.bottleneckPa}。`
+      });
+    }
+    if (scores.metrics < 5) {
+      urgentRecs.push({
+        priority: 'high',
+        text: `度量指标当前 L${scores.metrics}，ML5 要求达到 L5。需推动指标数据驱动日常决策，六维度达标率 ≥90%，指标体系持续迭代优化。`
+      });
+    }
+  }
+
+  // 度量指标（ML2/ML3 阶段）
+  if (scores.metrics < nextLevel && nextLevel <= 3) {
+    urgentRecs.push({
+      priority: 'high',
+      text: `度量指标当前 L${scores.metrics}，${nextLevel === 2 ? 'ML2' : 'ML3'} 要求达到 L${nextLevel}。${nextLevel === 2 ? '立即开始采集 AI 代码采纳率等基础数据。' : '将度量范围扩展至采纳度、效率、安全合规等多个维度，确保指标可采集可追踪。'}`
+    });
+  }
+
+  // 提示词工程专项（Q2）
+  const q2Idx = QUESTIONS.findIndex(q => q.id === 2);
+  if (q2Idx >= 0 && answers[q2Idx] !== undefined) {
+    const q2Score = QUESTIONS[q2Idx].options[answers[q2Idx]].score;
+    if (q2Score < 3 && nextLevel >= 3) {
+      urgentRecs.push({
+        priority: 'high',
+        text: `提示词工程当前 L${q2Score}，ML3 要求至少覆盖 3 类资产。建设组织级提示词库，覆盖提示词、规则、技能、规范中至少 3 类，推动版本化管理与复用。`
+      });
+    } else if (q2Score < 4 && nextLevel >= 4) {
+      urgentRecs.push({
+        priority: 'medium',
+        text: `提示词工程当前 L${q2Score}，建议覆盖全部 4 类资产（提示词、规则、技能、规范），实现统一纳管与版本化管理。`
+      });
+    }
+  }
+
+  // 渲染近期目标建议
+  urgentRecs.forEach(rec => {
+    const levelLabel = { high: '高优先级', medium: '中优先级', low: '持续优化' }[rec.priority];
+    list.innerHTML += `
+      <div class="rec-item">
+        <div class="rec-priority ${rec.priority}">${levelLabel}</div>
+        <div class="rec-text">${rec.text}</div>
+      </div>
+    `;
+  });
+
+  // ===== 前瞻布局：迈向 ML{ml+2} =====
+  if (ml + 2 <= 5) {
+    const futureLevel = ml + 2;
+    const futureDef = ML_DEFS[futureLevel - 1];
+    list.innerHTML += `<div class="rec-group-title">🔭 迈向 ${futureDef.level === 3 ? 'ML3' : futureDef.level === 4 ? 'ML4' : 'ML5'} ${futureDef.name}的前瞻布局</div>`;
+
+    const futureRecs = [];
+
+    if (futureLevel === 3) {
+      futureRecs.push({ priority: 'medium', text: '提前规划公司级标准化体系：在项目级规范运行稳定后，着手起草公司级 AI 编码规范、审查标准、测试规范和质量标准，为 ML3 做准备。' });
+      futureRecs.push({ priority: 'medium', text: '提前规划组织级知识库：在项目文档积累基础上，规划公司级 AI 编码知识库架构，设计最佳实践提炼机制。' });
+      futureRecs.push({ priority: 'medium', text: '提前规划工具链集成：评估 IDE 插件集成方案，为 ML3 阶段的全员统一工具链做准备。' });
+    }
+    if (futureLevel === 4) {
+      futureRecs.push({ priority: 'medium', text: '提前规划量化管理体系：在组织级度量体系运行基础上，研究六维度指标体系设计方案，规划效能基线和质量门禁机制。' });
+      futureRecs.push({ priority: 'medium', text: '提前培养根因分析能力：在改进流程运行基础上，训练团队的根因分析能力，为 ML4 的预防措施效果量化追踪做准备。' });
+      futureRecs.push({ priority: 'low', text: '关注行业量化管理实践：研究行业内在 AI 编码量化管理方面的先进实践，为 ML4 建设提供参考。' });
+    }
+    if (futureLevel === 5) {
+      futureRecs.push({ priority: 'medium', text: '提前培育持续改进文化：在量化管理基础上，鼓励创新提案，建立改进效果量化评估机制，为 ML5 的创新驱动做准备。' });
+      futureRecs.push({ priority: 'low', text: '关注行业前沿趋势：研究 AI 编码领域的最新技术和方法论，为 ML5 的对外经验输出积累素材。' });
+    }
+
+    futureRecs.forEach(rec => {
+      const levelLabel = { high: '高优先级', medium: '中优先级', low: '持续优化' }[rec.priority];
+      list.innerHTML += `
+        <div class="rec-item">
+          <div class="rec-priority ${rec.priority}">${levelLabel}</div>
+          <div class="rec-text">${rec.text}</div>
+        </div>
+      `;
+    });
+  }
+}
+
+function generateAnswerDetail() {
+  const container = document.getElementById('answerDetail');
+  let html = '';
+  QUESTIONS.forEach((q, i) => {
+    const ans = answers[i];
+    const score = ans !== undefined ? q.options[ans].score : '-';
+    const label = ans !== undefined ? q.options[ans].label : '未作答';
+    html += `
+      <div style="padding:10px 0;border-bottom:1px solid var(--rule);font-size:13px">
+        <div style="font-weight:600;color:var(--muted)">Q${i+1}. ${q.text}</div>
+        <div style="margin-top:4px;color:var(--ink)">得分 ${score}：${label}</div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+}
+
+// ============================================================
+// EXPORT
+// ============================================================
+function copyReport() {
+  const company = document.getElementById('companyName').value;
+  const contact = document.getElementById('contactName').value;
+  const phone = document.getElementById('contactPhone').value;
+  const title = document.getElementById('contactTitle').value || '—';
+  const team = document.getElementById('teamSize').value;
+  const industry = document.getElementById('companyIndustry').value || '—';
+  const aiUsage = document.getElementById('aiUsage').value || '—';
+
+  const scores = calcScores();
+  const detailed = calcDetailedScores();
+  const ml = determineML(scores);
+
+  let text = '=== AICoding 能力成熟度评估报告 ===\n\n';
+  text += `评估日期：${new Date().toLocaleDateString('zh-CN')}\n\n`;
+  text += '【企业信息】\n';
+  text += `企业名称：${company}\n联系人：${contact}\n联系方式：${phone}\n职位：${title}\n团队规模：${team}\n所属行业：${industry}\nAI 使用时长：${aiUsage}\n\n`;
+  text += `【评估结果】成熟度等级：ML${ml} · ${ML_DEFS[ml-1].name}\n\n`;
+  text += '【能力域评分】（最低项决定制：域内最低 PA 等级 = 域等级）\n';
+  for (const cat of CATEGORY_ORDER) {
+    const minLevel = scores[cat];
+    const avg = detailed[cat].avg;
+    const bottleneck = detailed[cat].bottleneckPa;
+    text += `${CATEGORIES[cat].name}：L${minLevel}（平均 ${avg.toFixed(1)}，短板 PA: ${bottleneck}）\n`;
+  }
+
+  // Extract weakness analysis text from rendered DOM
+  const weaknessText = document.getElementById('weaknessList').innerText.trim();
+  if (weaknessText) {
+    text += '\n【短板分析】\n' + weaknessText + '\n';
+  }
+
+  // Extract recommendations text from rendered DOM
+  const recText = document.getElementById('recommendList').innerText.trim();
+  if (recText) {
+    text += '\n【改进建议】\n' + recText + '\n';
+  }
+
+  text += '\n【答题详情】\n';
+  QUESTIONS.forEach((q, i) => {
+    const ans = answers[i];
+    const score = ans !== undefined ? q.options[ans].score : '-';
+    text += `Q${i+1} [得分${score}] ${q.text}\n`;
+  });
+
+  // Include feedback if present
+  const feedback = document.getElementById('feedbackText').value.trim();
+  if (feedback) {
+    text += '\n【评估结果问题反馈】\n' + feedback + '\n';
+  }
+
+  text += '\n—— 由 AICoding 能力成熟度评估工具生成 ——';
+
+  // Copy to clipboard
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('btnCopyReport');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✅ 已复制';
+      setTimeout(() => btn.innerHTML = orig, 2000);
+    }).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); alert('内容已复制到剪贴板'); }
+  catch(e) { alert('复制失败，请手动截图保存'); }
+  document.body.removeChild(ta);
+}
+
+// ============================================================
+// FEEDBACK
+// ============================================================
+
+/**
+ * 复制反馈内容到剪贴板，同时附带评估摘要信息，便于用户单独分享反馈。
+ */
+function copyFeedback() {
+  const feedback = document.getElementById('feedbackText').value.trim();
+  if (!feedback) { alert('请先填写反馈内容'); return; }
+
+  const company = document.getElementById('companyName').value;
+  const scores = calcScores();
+  const ml = determineML(scores);
+
+  let text = '=== AICoding 评估结果问题反馈 ===\n\n';
+  text += `企业名称：${company}\n`;
+  text += `评估等级：ML${ml} · ${ML_DEFS[ml-1].name}\n`;
+  text += `反馈日期：${new Date().toLocaleDateString('zh-CN')}\n\n`;
+  text += '【反馈内容】\n' + feedback + '\n';
+
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('btnCopyFeedback');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✅ 已复制';
+      setTimeout(() => btn.innerHTML = orig, 2000);
+    }).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+/**
+ * 清空反馈输入框。
+ */
+function clearFeedback() {
+  document.getElementById('feedbackText').value = '';
+  document.getElementById('feedbackText').focus();
+}
+
+// ============================================================
+// RESET
+// ============================================================
+function resetAll() {
+  if (!confirm('确认重新评估？当前数据将丢失。')) return;
+  answers = {};
+  currentQ = 0;
+  document.getElementById('companyName').value = '';
+  document.getElementById('contactName').value = '';
+  document.getElementById('contactPhone').value = '';
+  document.getElementById('contactTitle').value = '';
+  document.getElementById('teamSize').value = '';
+  document.getElementById('companyIndustry').value = '';
+  document.getElementById('aiUsage').value = '';
+  document.getElementById('feedbackText').value = '';
+  if (radarChartInstance) { radarChartInstance.destroy(); radarChartInstance = null; }
+  showPage('pageHome');
+}
+
+// ============================================================
+// KEYBOARD NAVIGATION
+// ============================================================
+document.addEventListener('keydown', function(e) {
+  const surveyPage = document.getElementById('pageSurvey');
+  if (!surveyPage.classList.contains('active')) return;
+  if (e.key === 'ArrowRight' || e.key === 'Enter') {
+    const nextBtn = document.getElementById('btnNext');
+    if (nextBtn.style.display !== 'none') nextQuestion();
+  }
+  if (e.key === 'ArrowLeft') prevQuestion();
+});
+</script>
+</body>
+</html>

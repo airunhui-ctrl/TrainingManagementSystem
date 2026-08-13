@@ -1,4 +1,4 @@
-name: training-management
+﻿name: training-management
 
 services:
   postgres:
@@ -72,6 +72,15 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  assessment:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      target: assessment
+    restart: unless-stopped
+    ports:
+      - "18082:80"
 
 volumes:
   postgres_data:
