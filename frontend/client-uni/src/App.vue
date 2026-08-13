@@ -740,19 +740,61 @@ html body [class*='uni-picker'] {
   z-index: var(--client-system-modal-mask-layer) !important;
 }
 
-// #u-a-t is primarily the Toast host. Keep the host itself above page
-// content but below confirmations. If a uni-h5 version places a confirmation
+// #u-a-t is primarily the Toast host. Keep it a full-viewport fixed layer
+// above page content but below confirmations, with pointer-events disabled so
+// it never blocks page clicks. If a uni-h5 version places a confirmation
 // child here, the child remains in this Vue mount tree and receives the same
 // system-modal root/mask/content layers through the runtime normalizer.
 html body > #u-a-t,
 html body #u-a-t {
   position: fixed !important;
-  inset: auto 0 0 !important;
+  inset: 0 !important;
   width: 100vw !important;
-  height: auto !important;
+  height: 100vh !important;
   z-index: var(--client-toast-layer) !important;
   isolation: isolate !important;
   pointer-events: none !important;
+}
+
+// Explicit toast layout so the hint never collapses to the bottom edge when
+// the framework toast stylesheet is stale, cached, or not yet applied.
+html body #u-a-t uni-toast {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  pointer-events: none !important;
+}
+
+html body #u-a-t .uni-sample-toast,
+html body #u-a-t .uni-toast {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 2001 !important;
+  pointer-events: none !important;
+}
+
+html body #u-a-t .uni-sample-toast {
+  max-width: 80% !important;
+  text-align: center !important;
+}
+
+html body #u-a-t .uni-simple-toast__text {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+  padding: 10px 20px !important;
+  border-radius: 5px !important;
+  color: #fff !important;
+  background: rgba(17, 17, 17, .7) !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  text-align: center !important;
+  white-space: normal !important;
+  word-break: break-word !important;
 }
 
 // Important C-end confirmations use an app-level body portal on H5. This
