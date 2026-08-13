@@ -1097,7 +1097,7 @@ function App() {
   const selectedKeys = useMemo(() => new Set(selectedRows.map(selectionKey)), [selectedRows])
 
   if (!loggedIn) return <Login done={() => setLoggedIn(true)} />
-  const items = Array.isArray(data?.items) ? data.items : data ? [data] : []
+  const items = Array.isArray(data?.items) ? data.items : data && !(active === 'payment' && typeof data === 'object' && data !== null && Object.keys(data).length === 0) ? [data] : []
   const filterDefinition = getListFilterDefinition(active, items, courseOptions)
   const filteredItems = serverPagedModules.has(active)
     ? items
