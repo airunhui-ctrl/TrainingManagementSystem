@@ -1,0 +1,1 @@
+export const AGREEMENT_VERSION = '2026-08-17-v1'

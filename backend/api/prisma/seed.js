@@ -50,7 +50,7 @@ async function main() {
       { id:'u-demo-06',username:'demo06',role:'user',name:'吴天成',company:'福州云栖数字科技有限公司',avatarText:'吴',points:91 },
     ]),
   ]
-  for (const user of users) await db.user.upsert({ where:{ username:user.username }, create:{ ...user,passwordHash,enabled:true }, update:{ passwordHash,role:user.role,name:user.name,company:user.company,avatarText:user.avatarText,enabled:true } })
+  for (const user of users) await db.user.upsert({ where:{ username:user.username }, create:{ ...user,usernameNormalized:user.username.toLowerCase(),passwordHash,enabled:true }, update:{ passwordHash,role:user.role,name:user.name,company:user.company,avatarText:user.avatarText,enabled:true,usernameNormalized:user.username.toLowerCase() } })
   for (const course of courses) await db.course.upsert({ where:{ id:course.id }, create:course, update:{} })
   const templateDefinitions = [
     { id:'tpl-basic', name:'通用基础报名模板', sourceCourseId:'course-1', courseIds:['course-1','course-3','course-5','course-6'] },

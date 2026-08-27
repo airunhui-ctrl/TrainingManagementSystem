@@ -19,8 +19,8 @@
       <view v-for="field in fields" :key="field.key" class="field"><text class="label">{{field.label}}<text v-if="field.required" class="required"> *</text></text>
         <picker v-if="field.type==='select'" mode="selector" :range="field.options || []" @change="participant[field.key]=(field.options || [])[Number($event.detail.value)]"><view class="picker">{{participant[field.key] || '请选择'}}⌄</view></picker>
         <radio-group v-else-if="field.type==='radio'" class="option-group" @change="participant[field.key]=$event.detail.value"><label v-for="option in field.options || []" :key="option" class="option"><radio :value="option" :checked="participant[field.key]===option" color="#2F80ED" />{{option}}</label></radio-group>
-        <checkbox-group v-else-if="field.type==='checkbox'" class="option-group" @change="participant[field.key]=$event.detail.value.join(',')"><label v-for="option in field.options || []" :key="option" class="option"><checkbox :value="option" :checked="participant[field.key]?.split(',').includes(option)" color="#2F80ED" />{{option}}</label></checkbox-group>
-        <input v-else v-model="participant[field.key]" :type="field.type==='phone'?'number':'text'" :maxlength="field.type==='phone' ? 11 : 140" :placeholder="`请输入${field.label}`" />
+        <checkbox-group v-else-if="field.type==='checkbox'" class="option-group" @change="onCheckboxChange(index, field, $event)"><label v-for="option in field.options || []" :key="option" class="option"><checkbox :value="option" :checked="participant[field.key]?.split(',').includes(option)" color="#2F80ED" />{{option}}</label></checkbox-group>
+        <input v-else v-model="participant[field.key]" :type="field.type==='phone'?'number':'text'" :maxlength="field.maxLength || (field.type==='phone' ? 11 : 140)" :placeholder="`请输入${field.label}`" />
       </view>
     </view>
     <view class="add card" @tap="add">＋ 添加报名人员</view>
@@ -68,9 +68,10 @@ import { api, apiAssetUrl } from '../../common/api'
 import { showClientConfirm } from '../../common/confirm'
 import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
-type Field={key:string;label:string;type:'text'|'phone'|'select'|'radio'|'checkbox';required:boolean;options?:string[]}
+type Field={key:string;label:string;type:'text'|'phone'|'select'|'radio'|'checkbox';required:boolean;options?:string[];maxLength?:number;maxSelect?:number}
 type StudentOption={id:string;name:string;phone?:string|null;gender?:string|null;email?:string|null;company?:string|null;department?:string|null;position?:string|null;isDefault?:boolean}
 const courseId=ref('course-1'), fields=ref<Field[]>([]), loading=ref(false), quote=reactive({amount:0,discount:0})
+const course=ref<Record<string, any>>({})
 const nav=useNavLayout()
 const loadError=ref(''), quoteError=ref(''), paymentInfoError=ref('')
 type PaymentMethod = 'wechat' | 'alipay' | 'offline'
@@ -96,14 +97,19 @@ const selectStudent=(index:number, optionIndex:number)=>{
   const student=students.value[optionIndex-1]; if(!student)return
   participant.studentId=student.id; setMappedStudentFields(participant,student)
 }
-const load=async()=>{loadError.value='';try{const result=await api.getRegistrationTemplate(courseId.value);fields.value=result.fields as Field[];try{students.value=(await api.listStudents()).items as StudentOption[]}catch(error:any){students.value=[];uni.showToast({title:error?.message||'学员档案加载失败，将使用临时填写',icon:'none'})};participants.splice(0,participants.length,blank());const defaultStudent=students.value.find((student)=>student.isDefault);if(defaultStudent){participants[0].studentId=defaultStudent.id;setMappedStudentFields(participants[0],defaultStudent)}await refreshQuote()}catch(error:any){fields.value=[];participants.splice(0,participants.length);loadError.value=error?.message||'网络异常，请检查网络后重试';uni.showToast({title:'报名模板加载失败，请点击重试',icon:'none'})}}
+const load=async()=>{loadError.value='';try{const [result, courseResult]=await Promise.all([api.getRegistrationTemplate(courseId.value), api.getCourse(courseId.value)]);fields.value=result.fields as Field[];course.value=courseResult as Record<string, any>;try{students.value=(await api.listStudents()).items as StudentOption[]}catch(error:any){students.value=[];uni.showToast({title:error?.message||'学员档案加载失败，将使用临时填写',icon:'none'})};participants.splice(0,participants.length,blank());const defaultStudent=students.value.find((student)=>student.isDefault);if(defaultStudent){participants[0].studentId=defaultStudent.id;setMappedStudentFields(participants[0],defaultStudent)}await refreshQuote()}catch(error:any){fields.value=[];participants.splice(0,participants.length);loadError.value=error?.message||'网络异常，请检查网络后重试';uni.showToast({title:'报名模板加载失败，请点击重试',icon:'none'})}}
 const refreshQuote=async()=>{if(!participants.length)return;quoteError.value='';try{const result=await api.quoteOrder(courseId.value,participants.length);quote.amount=result.amount;quote.discount=result.discount}catch(error:any){quoteError.value=error?.message||'报价暂时无法获取，请重试'}}
 const confirmRegisterAction=async(options:{title:string;content:string})=>{try{return await showClientConfirm(options)}catch{uni.showToast({title:'确认弹窗打开失败，请重试',icon:'none'});return false}}
-const add=()=>{participants.push(blank());refreshQuote()};const remove=async(index:number)=>{const result=await confirmRegisterAction({title:'确认删除报名人员',content:'删除后该报名人员的填写内容将丢失，确定继续吗？'});if(!result)return;participants.splice(index,1);refreshQuote()}
+const add=()=>{const max=Number(course.value?.maxParticipantsPerOrder||0);if(max&&participants.length>=max){uni.showToast({title:`该课程单次最多报名 ${max} 人`,icon:'none'});return}participants.push(blank());refreshQuote()};const remove=async(index:number)=>{const result=await confirmRegisterAction({title:'确认删除报名人员',content:'删除后该报名人员的填写内容将丢失，确定继续吗？'});if(!result)return;participants.splice(index,1);refreshQuote()}
+const onCheckboxChange=(index:number,field:Field,event:any)=>{const selected=Array.isArray(event?.detail?.value)?event.detail.value.map(String):[];const max=Number(field.maxSelect||0);if(max&&selected.length>max){uni.showToast({title:`${field.label}最多选择 ${max} 项`,icon:'none'});const previous=String(participants[index][field.key]||'').split(',').filter(Boolean);participants[index][field.key]=previous.join(',');return}participants[index][field.key]=selected.join(',')}
 const validateParticipants=()=>{
   for(const [index, participant] of participants.entries()){
     const missing=fields.value.find(field=>field.required&&!String(participant[field.key]||'').trim())
     if(missing){uni.showToast({title:`第 ${index+1} 位报名人的${missing.label}不能为空`,icon:'none'});return false}
+    const overLength=fields.value.find(field=>field.maxLength&&String(participant[field.key]||'').length>field.maxLength)
+    if(overLength){uni.showToast({title:`第 ${index+1} 位报名人的${overLength.label}不能超过 ${overLength.maxLength} 个字符`,icon:'none'});return false}
+    const overSelect=fields.value.find(field=>field.type==='checkbox'&&field.maxSelect&&String(participant[field.key]||'').split(',').filter(Boolean).length>(field.maxSelect||0))
+    if(overSelect){uni.showToast({title:`第 ${index+1} 位报名人的${overSelect.label}最多选择 ${overSelect.maxSelect} 项`,icon:'none'});return false}
     const phoneField=fields.value.find(field=>field.type==='phone')
     if(phoneField&&participant[phoneField.key]&&!/^1\d{10}$/.test(String(participant[phoneField.key]).trim())){uni.showToast({title:`第 ${index+1} 位报名人的手机号格式不正确`,icon:'none'});return false}
   }

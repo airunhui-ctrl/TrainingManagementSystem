@@ -680,3 +680,20 @@ tbody tr:hover .action-cell { background: #fbfcfe; }
 .invoice-preview-scroll iframe { display:block; width:100%; height:100%; min-height:480px; border:0; background:#fff; }
 .invoice-download-link { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:0 18px; border-radius:12px; color:#17366d; text-decoration:none; }
 .invoice-download-link:hover { filter:brightness(.97); }
+
+.template-name-row { display:flex; align-items:flex-end; gap:14px; }
+.template-name-row .template-course-field { flex:1; min-width:0; }
+.template-limit { width:92px; }
+.template-order-actions { display:inline-flex; align-items:center; gap:4px; }
+.template-order-actions button { width:28px; height:28px; padding:0; border:1px solid #d9e2ec; border-radius:8px; color:#2f6fc7; background:#f5f9ff; line-height:26px; }
+.template-order-actions button:disabled { color:#aab6c4; background:#f2f4f7; }
+.feedback-admin-attachments { margin-bottom:14px; padding:12px; border:1px solid #dce4ee; border-radius:12px; background:#f8fbff; }
+.feedback-admin-attachments b { display:block; margin-bottom:8px; color:#142b4a; font-size:14px; }
+.feedback-admin-attachment-list { display:flex; flex-wrap:wrap; gap:8px; }
+.feedback-admin-attachment-list button { padding:7px 12px; border:1px solid #b9d2f5; border-radius:999px; color:#2f6fc7; background:#fff; font-size:12px; }
+.feedback-admin-preview { margin-top:12px; }
+.feedback-admin-preview img { display:block; max-width:100%; max-height:320px; border-radius:10px; }
+.feedback-admin-preview button { margin-top:8px; }
+.user-detail-scroll { max-height:62vh; overflow:auto; }
+.payment-transaction-list { display:grid; gap:8px; margin-top:12px; }
+.transaction-row { display:flex; flex-wrap:wrap; gap:8px 16px; padding:10px 12px; border:1px solid #e4e9f0; border-radius:10px; color:#52627a; font-size:12px; background:#f8fafc; }

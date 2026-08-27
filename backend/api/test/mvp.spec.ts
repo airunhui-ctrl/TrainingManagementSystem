@@ -225,9 +225,14 @@ describe('Prisma 业务仓储', () => {
   })
 
   test('用户修改密码不允许空请求回退到默认密码', async () => {
-    await expect(mvp.changePassword('u-demo', undefined)).rejects.toThrow('请提供至少 6 位的新密码')
-    await expect(mvp.changePassword('u-demo', '')).rejects.toThrow('请提供至少 6 位的新密码')
-    await expect(mvp.changePassword('u-demo', '12345')).rejects.toThrow('请提供至少 6 位的新密码')
+    await db.user.create({ data: { id: 'u-pw-test', username: 'pwtest', passwordHash: 'x', role: 'user' } })
+    await db.setPassword('u-pw-test', '123456')
+    await expect(mvp.changePassword('u-pw-test', undefined, '123456')).rejects.toThrow('原密码不正确')
+    await expect(mvp.changePassword('u-pw-test', 'wrong-password', '123456')).rejects.toThrow('原密码不正确')
+    await expect(mvp.changePassword('u-pw-test', '123456', '')).rejects.toThrow('至少 8 位')
+    await expect(mvp.changePassword('u-pw-test', '123456', '1234567')).rejects.toThrow('至少 8 位')
+    await expect(mvp.changePassword('u-pw-test', '123456', '123456')).rejects.toThrow('新密码不能与原密码一致')
+    await expect(mvp.changePassword('u-pw-test', '123456', 'Newpass123!')).resolves.toMatchObject({ success: true })
   })
 
   test('消息通知未接入短信和邮件时不会伪装成已发送', async () => {
@@ -334,5 +339,72 @@ describe('Prisma 业务仓储', () => {
     expect(file.buffer.toString()).toBe('%PDF')
     await expect(mvp.uploadInvoiceFile('invoice-file-test', { originalname: 'invoice-2.pdf', mimetype: 'application/pdf', size: 4, buffer: Buffer.from('%PDF') }, 'operator')).rejects.toThrow('已有发票文件')
     await expect(mvp.readInvoiceFile('invoice-file-test', 'u-admin')).rejects.toThrow('无权访问')
+  })
+
+  test('P0 课程报名时间窗、单次人数上限和特价有效期由后端统一拦截', async () => {
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    const past = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    await mvp.saveCourse({ id: 'course-time-window', status: '报名中', registrationStartAt: future, registrationEndAt: null, maxParticipantsPerOrder: 2, specialPrice: 100, specialPriceEndsAt: past, price: 200, registrationTemplateId: 'tpl-basic' }, 'admin')
+    await expect(mvp.quote('course-time-window', 1)).rejects.toThrow('尚未开始')
+    await mvp.saveCourse({ id: 'course-time-window', registrationStartAt: past, registrationEndAt: future }, 'admin')
+    await expect(mvp.quote('course-time-window', 1)).resolves.toMatchObject({ unitPrice: 200 })
+    await expect(mvp.quote('course-time-window', 3)).rejects.toThrow('最多报名')
+    await expect(mvp.createOrder('u-demo', 'course-time-window', [{ name: 'A', phone: '13900000051', company: '测试企业' }, { name: 'B', phone: '13900000052', company: '测试企业' }, { name: 'C', phone: '13900000053', company: '测试企业' }], 'online')).rejects.toThrow('最多报名')
+    await mvp.saveCourse({ id: 'course-time-window', registrationEndAt: past }, 'admin')
+    await expect(mvp.quote('course-time-window', 1)).rejects.toThrow('已截止')
+    await mvp.saveCourse({ id: 'course-time-window', registrationEndAt: future }, 'admin')
+  })
+
+  test('报名模板支持启停、字段长度/选择数量规则，并在报名时生效', async () => {
+    const fields = [
+      { key: 'name', label: '姓名', type: 'text' as const, required: true, maxLength: 4 },
+      { key: 'hobby', label: '爱好', type: 'checkbox' as const, required: false, options: ['a', 'b', 'c'], maxSelect: 1 },
+    ]
+    await mvp.saveTemplate('tpl-p0-rules', { name: 'P0规则模板', fields, enabled: true }, 'admin')
+    await mvp.saveCourse({ id: 'course-template-rules', title: '模板规则课程', category: '综合管理', date: '2026-12-01 09:00', location: '厦门', instructor: '讲师', price: 100, capacity: 30, status: '报名中', registrationTemplateId: 'tpl-p0-rules' }, 'admin')
+    await expect(mvp.createOrder('u-demo', 'course-template-rules', [{ name: '太长的姓名', phone: '13900000061' }], 'online')).rejects.toThrow('不能超过 4 个字符')
+    await expect(mvp.createOrder('u-demo', 'course-template-rules', [{ name: '小明', phone: '13900000062', hobby: 'a,b' }], 'online')).rejects.toThrow('最多选择 1 项')
+    await expect(mvp.setTemplateEnabled('tpl-p0-rules', false, 'admin')).resolves.toMatchObject({ enabled: false })
+    await expect(mvp.getTemplate('course-template-rules')).rejects.toThrow('已停用')
+    await expect(mvp.createOrder('u-demo', 'course-template-rules', [{ name: '小明', phone: '13900000063' }], 'online')).rejects.toThrow('已停用')
+    await expect(mvp.setTemplateEnabled('tpl-p0-rules', true, 'admin')).resolves.toMatchObject({ enabled: true })
+  })
+
+  test('协议同意、用户状态筛选和用户订单支付详情可用', async () => {
+    expect((await mvp.getProfile('u-demo')).agreementRequired).toBe(true)
+    await expect(mvp.acceptAgreement('u-demo')).resolves.toMatchObject({ agreementRequired: false, agreementVersion: '2026-08-17-v1' })
+    expect((await mvp.getProfile('u-demo')).agreementRequired).toBe(false)
+
+    await db.user.create({ data: { id: 'u-disabled-test', username: 'disabledtest', passwordHash: 'x', role: 'user', enabled: false } })
+    expect((await mvp.listUsersPage(undefined, 1, 20, undefined, 'disabled')).items.some((user) => user.id === 'u-disabled-test')).toBe(true)
+    expect((await mvp.listUsersPage(undefined, 1, 20, undefined, 'enabled')).items.some((user) => user.id === 'u-disabled-test')).toBe(false)
+    await db.user.create({ data: { id: 'u-phone-mask', username: 'PhoneMask', usernameNormalized: 'phonemask', passwordHash: 'x', role: 'user', phone: '13900000099' } })
+    const maskedUser = (await mvp.listUsersPage('PhoneMask')).items.find((user) => user.id === 'u-phone-mask')
+    expect(maskedUser?.phone).toBe('139****0099')
+    expect((await mvp.getProfile('u-phone-mask')).phone).toBe('13900000099')
+
+    const detail = await mvp.getUserDetail('u-demo')
+    expect(detail.orders.length).toBeGreaterThan(0)
+    expect(detail.orders[0]).toHaveProperty('courseTitle')
+    expect(detail.orders[0]).toHaveProperty('paymentTransactions')
+  })
+
+  test('反馈支持图片附件上传、管理端读取和审计变更前后快照', async () => {
+    const uploaded = await mvp.uploadFeedbackAttachment('u-demo', { originalname: 'attachment.png', mimetype: 'image/png', size: 4, buffer: Buffer.from('png') })
+    const feedback = await mvp.submitFeedback('u-demo', { category: '附件反馈', content: '带附件内容', attachments: [uploaded] })
+    expect(feedback.attachments).toHaveLength(1)
+    const listed = await mvp.listFeedbacksPage(feedback.id)
+    expect(listed.items[0].attachments[0].storedName).toBe(uploaded.storedName)
+    const file = await mvp.readFeedbackAttachment(feedback.id, uploaded.storedName)
+    expect(file).toMatchObject({ mimeType: 'image/png', originalName: 'attachment.png' })
+    expect(file.buffer.toString()).toBe('png')
+    await expect(mvp.submitFeedback('u-demo', { category: '附件超限', content: '附件过多', attachments: [uploaded, uploaded, uploaded, uploaded] })).rejects.toThrow('不能超过 3 个')
+
+    await mvp.saveCourse({ id: 'course-audit-before', title: '审计前标题', registrationTemplateId: 'tpl-basic' }, 'admin')
+    await mvp.saveCourse({ id: 'course-audit-before', title: '审计后标题', registrationTemplateId: 'tpl-basic' }, 'admin')
+    const auditRows = await mvp.getAdminResource('audits', { keyword: '审计后标题' })
+    const courseAudit = auditRows.find((row) => String(row.action) === '课程维护' && row.after?.title === '审计后标题')
+    expect(courseAudit).toBeTruthy()
+    if (courseAudit) expect(courseAudit.before?.title).toBe('审计前标题')
   })
 })

@@ -28,7 +28,8 @@ function hashPassword(password) {
 }
 
 async function main() {
-  const username = String(process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin').trim().toLowerCase()
+  const usernameInput = String(process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin').trim()
+  const username = usernameInput.toLowerCase()
   const password = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || '').trim()
   const displayName = String(process.env.BOOTSTRAP_ADMIN_NAME || '系统管理员').trim()
 
@@ -55,7 +56,7 @@ async function main() {
     }
 
     // 检查用户名是否已被占用
-    const existing = await db.user.findUnique({ where: { username } })
+    const existing = await db.user.findFirst({ where: { username: usernameInput } })
     if (existing) {
       if (existing.role === 'admin' || existing.role === 'operator') {
         console.log(`[bootstrap] 用户 ${username} 已是管理员（当前 enabled=${existing.enabled}），已启用并重置密码`)
@@ -66,6 +67,7 @@ async function main() {
             role: 'admin',
             enabled: true,
             sessionVersion: { increment: 1 },
+            usernameNormalized: username,
           },
         })
       } else {
@@ -78,7 +80,8 @@ async function main() {
       await db.user.create({
         data: {
           id,
-          username,
+          username: usernameInput,
+          usernameNormalized: username,
           passwordHash: hashPassword(password),
           role: 'admin',
           name: displayName,

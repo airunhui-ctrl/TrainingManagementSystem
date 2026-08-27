@@ -10,7 +10,7 @@
       <text class="desc">登录后即可报名、支付、开票和管理个人学习记录</text>
 
       <view class="field">
-        <input v-model="username" class="field-input" placeholder="请输入账号" />
+        <input v-model="username" class="field-input" placeholder="请输入用户名/手机号" />
       </view>
       <view class="field password-field">
         <input v-model="password" class="field-input" :password="!showPassword" placeholder="请输入密码" />
@@ -29,6 +29,7 @@
 import { ref } from 'vue'
 import { onShareAppMessage } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
+import { ensureAgreement } from '../../common/agreement'
 import { redirectAfterLogin } from '../../common/invoice-notice'
 import { navigateAfterLogin } from '../../common/login-redirect'
 import { useAuthStore } from '../../stores/auth'
@@ -43,13 +44,14 @@ try { isWeixinMp.value = String((uni.getSystemInfoSync() as any).uniPlatform || 
 
 const login = async () => {
   if (!username.value.trim() || !password.value) {
-    uni.showToast({ title: '请输入账号和密码', icon: 'none' })
+    uni.showToast({ title: '请输入用户名/手机号和密码', icon: 'none' })
     return
   }
   loading.value = true
   try {
     const result = await api.login(username.value.trim(), password.value)
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
+    if (!await ensureAgreement()) return
     navigateAfterLogin(() => void redirectAfterLogin())
   } catch {
     uni.showToast({ title: '账号或密码错误', icon: 'none' })
@@ -72,6 +74,7 @@ const wechatLogin = async () => {
     } catch { /* 用户拒绝头像昵称授权时仍可完成登录 */ }
     const result = await api.wechatLogin(code, profile, 'mini_program')
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
+    if (!await ensureAgreement()) return
     navigateAfterLogin(() => void redirectAfterLogin())
   } catch (error: any) {
     uni.showToast({ title: error?.message || '微信登录失败，请重试', icon: 'none' })

@@ -39,3 +39,22 @@ pnpm --dir backend/api build
 ```
 
 测试使用系统临时目录中的独立 SQLite 数据库，不会污染正式 `data/training.db`。
+
+## 阿里云短信
+
+注册验证码与找回密码验证码可分别使用阿里云短信模板。开发环境保持 `fake`，生产环境将两个适配器设为 `aliyun`：
+
+```dotenv
+PHONE_REGISTRATION_ADAPTER=aliyun
+PASSWORD_RESET_ADAPTER=aliyun
+```
+
+阿里云短信必需配置：
+
+- `ALIYUN_SMS_ACCESS_KEY_ID`
+- `ALIYUN_SMS_ACCESS_KEY_SECRET`
+- `ALIYUN_SMS_SIGN_NAME`
+- `ALIYUN_SMS_TEMPLATE_CODE_REGISTRATION`
+- `ALIYUN_SMS_TEMPLATE_CODE_PASSWORD_RESET`
+
+发送接口由 `src/sms/aliyun-sms.ts` 使用内置 HMAC-SHA1 签名调用，无需额外安装 SDK。配置检查接口：`GET /api/admin/integration-readiness`。AccessKeySecret 只放服务器环境变量或本地 `.env`，不要提交到 Git。

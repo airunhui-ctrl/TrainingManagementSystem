@@ -2,7 +2,7 @@
   <view class="page">
     <view class="business-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }">
       <text class="topbar-title">订单</text>
-      <view class="topbar-actions"></view>
+      <view class="topbar-actions"><text class="refresh-link" :class="{ disabled: loadInFlight }" @tap="loadAll">刷新</text></view>
     </view>
     <view v-if="isLoggedIn" class="tabs">
       <text v-for="item in tabs" :key="item.key" :class="['tab', { active: tab === item.key }]" @tap="tab = item.key">{{ item.label }}</text>
@@ -46,6 +46,7 @@
               <text v-if="order.status === '待支付' && paymentInfoLoaded && !paymentInfo.onlineWechatEnabled && !paymentInfo.onlineAlipayEnabled" class="status-hint">在线支付暂未启用，请使用线下对公转账并上传凭证。</text>
               <button v-if="order.status === '待支付'" class="offline-button" @tap="openPaymentProofModal(order.id)">提交线下支付凭证</button>
               <text v-if="order.status === '待审核'" class="status-hint">支付凭证审核中，暂不能重复提交。</text>
+              <button class="outline-button" @tap="openPaymentDetail(order.id)">支付详情</button>
             </view>
             <button v-if="order.status === '待支付' || order.status === '待审核'" class="text-button cancel-order-button" :disabled="Boolean(cancellingOrderId || cancelConfirming)" @tap="cancelOrder(order.id)">{{ cancellingOrderId === order.id || cancelConfirming ? '取消中...' : '取消报名' }}</button>
           </view>
@@ -54,6 +55,26 @@
         </view>
       </template>
       <view v-else-if="!loadError" class="card empty-state"><text>暂无支付记录</text></view>
+    </template>
+
+    <template v-else-if="tab === 'records'">
+      <view class="toolbar card">
+        <view class="filter-group">
+          <text :class="['filter', { active: recordFilter === 'all' }]" @tap="recordFilter = 'all'">全部</text>
+          <text :class="['filter', { active: recordFilter === 'registered' }]" @tap="recordFilter = 'registered'">已报名</text>
+          <text :class="['filter', { active: recordFilter === 'cancelled' }]" @tap="recordFilter = 'cancelled'">已取消</text>
+        </view>
+      </view>
+      <template v-if="recordOrders.length">
+        <view v-for="order in recordOrders" :key="order.id" class="card order-card" @tap="openOrderDetail(order.id)">
+          <view class="order-heading">
+            <view class="order-heading-copy"><text class="order-title">{{ courseName(order.courseId) }}</text><text class="order-id">订单号：{{ order.id }}</text></view>
+            <text :class="['status', statusClass(order.status)]">{{ order.status }}</text>
+          </view>
+          <view class="order-meta"><text>{{ order.participantCount }} 位报名人</text><text class="amount">¥{{ order.amount }}</text><text>{{ paymentMethodLabel(order) }}</text><text>{{ formatDate(order.createdAt) }}</text></view>
+        </view>
+      </template>
+      <view v-else-if="!loadError" class="card empty-state"><text>暂无课程记录</text></view>
     </template>
 
     <template v-else-if="tab === 'orders'">
@@ -143,6 +164,58 @@
         <view class="dialog-actions invoice-detail-actions"><button class="cancel-button" @tap="closeInvoiceDetail">关闭</button><button v-if="actionableRejectedIds.has(invoiceDetail.id)" class="submit-button" @tap="openReapplyFromDetail(invoiceDetail)">修改后重新申请</button><button v-if="invoiceDetail.invoiceFileStatus === '已上传'" class="outline-button" @tap="openFileFromDetail(invoiceDetail)">查看电子发票</button></view>
       </view>
     </view>
+
+    <view v-if="orderDetail" class="modal-mask" @tap.self="orderDetail = null">
+      <view class="invoice-detail-modal" @tap.stop>
+        <view class="modal-header"><view><text class="modal-title">订单详情</text><text class="modal-subtitle">{{ orderDetail.id }}</text></view><text class="close-button" @tap="orderDetail = null">×</text></view>
+        <view class="modal-scroll invoice-detail-scroll">
+          <view class="invoice-detail-section">
+            <view class="invoice-detail-row"><text class="invoice-detail-label">课程</text><text class="invoice-detail-value">{{ orderDetail.courseTitle || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">订单状态</text><text class="invoice-detail-value">{{ orderDetail.status || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">报名人数</text><text class="invoice-detail-value">{{ orderDetail.participantCount }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">原始金额</text><text class="invoice-detail-value">¥{{ orderDetail.originalAmount }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">优惠金额</text><text class="invoice-detail-value">¥{{ orderDetail.discount }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">应付金额</text><text class="invoice-detail-value">¥{{ orderDetail.amount }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">支付方式</text><text class="invoice-detail-value">{{ orderDetail.paymentMethod || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">创建时间</text><text class="invoice-detail-value">{{ formatDate(orderDetail.createdAt) }}</text></view>
+          </view>
+          <view class="invoice-detail-section">
+            <view class="section-heading"><text class="section-title">报名人员</text></view>
+            <view v-for="(participant, index) in orderDetail.participants" :key="index" class="invoice-detail-row">
+              <text class="invoice-detail-label">{{ index + 1 }}. {{ participant.name || '未命名' }}</text>
+              <text class="invoice-detail-value">{{ participant.phone || participant.company || '-' }}</text>
+            </view>
+          </view>
+        </view>
+        <view class="dialog-actions invoice-detail-actions"><button class="cancel-button" @tap="orderDetail = null">关闭</button></view>
+      </view>
+    </view>
+
+    <view v-if="paymentDetail" class="modal-mask" @tap.self="paymentDetail = null">
+      <view class="invoice-detail-modal" @tap.stop>
+        <view class="modal-header"><view><text class="modal-title">支付详情</text><text class="modal-subtitle">{{ paymentDetail.id }}</text></view><text class="close-button" @tap="paymentDetail = null">×</text></view>
+        <view class="modal-scroll invoice-detail-scroll">
+          <view class="invoice-detail-section">
+            <view class="invoice-detail-row"><text class="invoice-detail-label">课程</text><text class="invoice-detail-value">{{ paymentDetail.courseTitle || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">订单状态</text><text class="invoice-detail-value">{{ paymentDetail.status || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">支付方式</text><text class="invoice-detail-value">{{ paymentDetail.paymentMethod || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">支付渠道</text><text class="invoice-detail-value">{{ paymentDetail.paymentChannel || '-' }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">凭证状态</text><text class="invoice-detail-value">{{ paymentDetail.paymentProofStatus || '-' }}</text></view>
+            <view v-if="paymentDetail.paymentProofRemark" class="invoice-detail-row"><text class="invoice-detail-label">凭证说明</text><text class="invoice-detail-value">{{ paymentDetail.paymentProofRemark }}</text></view>
+            <view class="invoice-detail-row"><text class="invoice-detail-label">金额</text><text class="invoice-detail-value">¥{{ paymentDetail.amount }}</text></view>
+          </view>
+          <view class="invoice-detail-section">
+            <view class="section-heading"><text class="section-title">支付流水</text></view>
+            <view v-for="transaction in paymentDetail.paymentTransactions" :key="transaction.id" class="invoice-detail-row">
+              <text class="invoice-detail-label">{{ transaction.channel }} · {{ transaction.status }}</text>
+              <text class="invoice-detail-value">{{ transaction.providerTradeNo || transaction.outTradeNo }}</text>
+            </view>
+            <view v-if="!paymentDetail.paymentTransactions.length" class="invoice-detail-row"><text class="invoice-detail-label">暂无支付流水</text><text class="invoice-detail-value">-</text></view>
+          </view>
+        </view>
+        <view class="dialog-actions invoice-detail-actions"><button class="cancel-button" @tap="paymentDetail = null">关闭</button></view>
+      </view>
+    </view>
     </template>
   </view>
 </template>
@@ -158,15 +231,17 @@ import { goLogin } from '../../common/login-redirect'
 import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
 
-type TabKey = 'payments' | 'orders' | 'invoices'
+type TabKey = 'payments' | 'records' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
 type Invoice = { id: string; status: string; title?: string; taxNo?: string; email?: string; remark?: string; invoiceNo?: string; rejectReason?: string | null; retryOfInvoiceId?: string | null; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; createdAt: string; processedAt?: string }
 type Preview = { id: string; courseId: string; courseTitle: string; viewedAt: string }
 type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string; qrCodeText?: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled?: boolean; onlineAlipayEnabled?: boolean }
+type OrderDetail = { id: string; courseId: string; courseTitle?: string; participantCount: number; originalAmount: number; discount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; participants: Array<Record<string, string>>; createdAt: string; paymentTransactions: Array<{ id: string; channel: string; provider: string; outTradeNo: string; providerTradeNo?: string | null; amount: number; status: string; paidAt?: string | null; createdAt: string }> }
 
-const tabs: Array<{ key: TabKey; label: string }> = [{ key: 'payments', label: '支付记录' }, { key: 'orders', label: '浏览记录' }, { key: 'invoices', label: '开票记录' }]
+const tabs: Array<{ key: TabKey; label: string }> = [{ key: 'payments', label: '支付记录' }, { key: 'records', label: '课程记录' }, { key: 'orders', label: '浏览记录' }, { key: 'invoices', label: '开票记录' }]
 const tab = ref<TabKey>('payments')
 const paymentFilter = ref<'all' | 'paid'>('all')
+const recordFilter = ref<'all' | 'registered' | 'cancelled'>('all')
 const loading = ref(false)
 const loadInFlight = ref(false)
 const orders = ref<Order[]>([])
@@ -194,11 +269,15 @@ const paymentInfo = reactive<PaymentInfo>({})
 const paymentInfoLoaded = ref(false)
 const loadError = ref('')
 const isLoggedIn = ref(Boolean(tokenStorage.getAccessToken()))
+const orderDetail = ref<OrderDetail | null>(null)
+const paymentDetail = ref<OrderDetail | null>(null)
+const detailLoading = ref(false)
 const nav = useNavLayout()
 let pageUnloaded = false
 
 const paidOrders = computed(() => orders.value.filter((order) => order.status === '已支付'))
 const paymentOrders = computed(() => paymentFilter.value === 'paid' ? paidOrders.value : orders.value)
+const recordOrders = computed(() => orders.value.filter((order) => recordFilter.value === 'all' || (recordFilter.value === 'registered' ? order.status !== '已取消' : order.status === '已取消')))
 const invoicedOrderIds = computed(() => new Set(invoices.value.filter((invoice) => invoice.status !== '已驳回').flatMap((invoice) => invoice.orderIds || [])))
 const actionableRejectedIds = computed(() => new Set(actionableRejectedInvoices(invoices.value).map((invoice) => invoice.id)))
 const displayedPreviews = computed(() => showAllPreviews.value ? previews.value : previews.value.slice(0, 3))
@@ -312,6 +391,28 @@ const cancelOrder = async (id: string) => {
     cancellingOrderId.value = id
     try { await api.cancelOrder(id); uni.showToast({ title: '报名已取消', icon: 'none' }); await loadAll() } catch (error: any) { uni.showToast({ title: error?.message || '取消失败', icon: 'none' }) } finally { cancellingOrderId.value = '' }
   } finally { cancelConfirming.value = false }
+}
+const openOrderDetail = async (id: string) => {
+  if (detailLoading.value) return
+  detailLoading.value = true
+  try {
+    orderDetail.value = await api.getOrder(id)
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '订单详情加载失败', icon: 'none' })
+  } finally {
+    detailLoading.value = false
+  }
+}
+const openPaymentDetail = async (id: string) => {
+  if (detailLoading.value) return
+  detailLoading.value = true
+  try {
+    paymentDetail.value = await api.getOrder(id)
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '支付详情加载失败', icon: 'none' })
+  } finally {
+    detailLoading.value = false
+  }
 }
 const toggleInvoiceOrder = (id: string, checked: boolean) => {
   if (invoicedOrderIds.value.has(id)) return

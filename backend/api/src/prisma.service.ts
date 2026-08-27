@@ -60,8 +60,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     })
   }
 
-  async saveAudit(actor: string, action: string, detail: string) {
-    return this.auditLog.create({ data: { id: `LOG-${Date.now()}-${randomBytes(4).toString('hex')}`, actor, action, detail } })
+  async saveAudit(actor: string, action: string, detail: string, before?: unknown, after?: unknown) {
+    const snapshot = (value: unknown) => value === undefined || value === null ? null : typeof value === 'string' ? value : JSON.stringify(value)
+    return this.auditLog.create({ data: { id: `LOG-${Date.now()}-${randomBytes(4).toString('hex')}`, actor, action, detail, beforeJson: snapshot(before), afterJson: snapshot(after) } })
   }
 
   tokenHash(token: string) { return createHash('sha256').update(token).digest('hex') }

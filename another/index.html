@@ -160,15 +160,121 @@ body { font-family: 'Microsoft YaHei','PingFang SC',sans-serif; background: var(
   .score-grid { break-inside: avoid; }
 }
 
-/* ===== Responsive ===== */
+/* ===== Responsive — 平板 & 手机 ===== */
 @media (max-width: 768px) {
-  .form-row, .form-row-3 { grid-template-columns: 1fr; }
-  .score-grid { grid-template-columns: 1fr; }
-  .hero h2 { font-size: 22px; }
-  .card { padding: 20px; }
-  .header-inner { padding: 10px 16px; }
-  .header h1 { font-size: 16px; }
+  /* 页面布局 */
+  .page { margin: 16px auto; padding: 0 12px; }
+  .card { padding: 20px 16px; margin-bottom: 14px; }
+  .card-title { font-size: 16px; margin-bottom: 16px; }
+  .card-title .num { width: 24px; height: 24px; font-size: 12px; }
+
+  /* Header */
+  .header-inner { padding: 10px 14px; gap: 10px; }
+  .header h1 { font-size: 15px; }
+  .header .badge { font-size: 10px; padding: 2px 8px; }
+  .header .step-indicator { font-size: 12px; }
+
+  /* 表单（input 字号设为 16px 防止 iOS 自动缩放） */
+  .form-row, .form-row-3 { grid-template-columns: 1fr; gap: 0; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label { font-size: 13px; }
+  .form-group input, .form-group select { padding: 11px 12px; font-size: 16px; }
+  #feedbackText { font-size: 16px !important; }
+
+  /* 按钮 */
+  .btn { padding: 12px 20px; font-size: 14px; }
+  .text-center .btn { width: 100%; }
+  .nav-buttons { gap: 10px; }
+  .nav-buttons .btn { flex: 1; padding: 12px 14px; justify-content: center; }
+  .report-actions { gap: 10px; }
+  .report-actions .btn { width: 100%; }
+  #feedbackCard .btn { flex: 1; padding: 10px 14px; font-size: 13px; }
+
+  /* Hero 首页 */
+  .hero { padding: 32px 16px 24px; }
+  .hero h2 { font-size: 20px; }
+  .hero p { font-size: 14px; }
+  .hero .features { gap: 12px; margin-top: 20px; }
+  .hero .features .item { min-width: calc(50% - 6px); padding: 12px 8px; }
+
+  /* 问卷页 */
+  .survey-progress { gap: 8px; margin-bottom: 18px; }
+  .question-text { font-size: 15px; margin-bottom: 16px; }
+  .options { gap: 8px; }
+  .option { padding: 12px 14px; gap: 10px; }
+  .option .opt-label { font-size: 14px; }
+  .option .opt-desc { font-size: 12px; }
+
+  /* 报告头部 */
+  .report-header { padding: 24px 16px; }
+  .report-header .ml-badge { font-size: 20px; padding: 10px 22px; }
+  .report-header .ml-name { font-size: 15px; }
+  .report-header .ml-desc { font-size: 13px; }
+
+  /* 企业信息 — 覆盖内联 2 列网格 */
+  #enterpriseInfo { grid-template-columns: 1fr !important; gap: 0 !important; }
+
+  /* 评分卡片 */
+  .score-grid { grid-template-columns: 1fr; gap: 12px; }
+  .score-card { padding: 14px; }
+  .score-card .cat-score { font-size: 24px; }
+
+  /* 雷达图 */
+  .chart-container { max-width: 100%; }
+
+  /* 演进路径 — 手机端横向滚动 */
+  #evolutionBox > div:first-child {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 10px;
+  }
+  #evolutionBox > div:first-child > div {
+    min-width: 95px;
+    flex-shrink: 0;
+  }
+
+  /* 综合结论 — 纵向堆叠 */
+  #conclusionBox > div { flex-direction: column !important; gap: 12px !important; }
+
+  /* 短板 / 差距分析 */
+  .gap-section-header { flex-wrap: wrap; gap: 6px; }
+  .gap-section-header .gap-summary { margin-left: 0; width: 100%; }
+  .gap-item { padding: 10px 12px; gap: 8px; }
+  .gap-arrow { font-size: 12px; }
+
+  /* 改进建议 */
+  .rec-item { padding: 10px 12px; }
+  .rec-item .rec-text { font-size: 13px; }
+  .rec-group-title { font-size: 14px; }
+
+  /* 答题详情 */
+  #answerDetail { font-size: 12px; }
 }
+
+/* ===== 小屏手机 ===== */
+@media (max-width: 480px) {
+  .header .badge { display: none; }
+  .hero h2 { font-size: 18px; }
+  .hero .features .item .num { font-size: 20px; }
+  .report-header .ml-badge { font-size: 18px; padding: 8px 18px; }
+}
+
+/* ===== 微信引导遮罩 ===== */
+.wechat-tip { position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 9999; display: flex; flex-direction: column; }
+.wechat-tip-arrow { align-self: flex-end; margin: 16px 24px 0 0; text-align: center; color: #fff; font-size: 14px; }
+.wechat-tip-arrow .icon { font-size: 40px; display: block; animation: tipBounce 1s infinite; }
+.wechat-tip-card { background: #fff; border-radius: 16px 16px 0 0; margin-top: auto; padding: 24px 20px calc(24px + env(safe-area-inset-bottom)); }
+.wechat-tip-title { font-size: 17px; font-weight: 700; text-align: center; margin-bottom: 16px; }
+.wechat-tip-steps { font-size: 14px; color: #5a6c83; line-height: 2.2; padding: 0 8px; }
+.wechat-tip-divider { text-align: center; color: #94a3b8; font-size: 13px; margin: 16px 0; }
+@keyframes tipBounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+
+/* ===== 图片预览遮罩 ===== */
+.image-overlay { position: fixed; inset: 0; background: #1a1a1a; z-index: 10000; display: flex; flex-direction: column; }
+.image-overlay-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; color: #fff; font-size: 14px; background: rgba(0,0,0,0.95); flex-shrink: 0; }
+.image-overlay-bar button { background: none; border: none; color: #fff; font-size: 14px; cursor: pointer; padding: 4px 8px; }
+.image-overlay-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px; }
+.image-overlay-scroll img { width: 100%; display: block; border-radius: 8px; }
 
 /* ===== Animations ===== */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -298,6 +404,7 @@ body { font-family: 'Microsoft YaHei','PingFang SC',sans-serif; background: var(
     <div class="ml-badge" id="mlBadge">ML3</div>
     <div class="ml-name" id="mlName">已管理级</div>
     <div class="ml-desc" id="mlDesc">组织制定了标准化的 AI 编码实践流程…</div>
+    <div id="mlValue" style="font-size:14px;color:var(--blue);font-weight:600;margin-top:8px"></div>
   </div>
 
   <div class="card">
@@ -315,6 +422,16 @@ body { font-family: 'Microsoft YaHei','PingFang SC',sans-serif; background: var(
     <div class="chart-container">
       <canvas id="radarChart"></canvas>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">各阶段演进核心价值</div>
+    <div id="evolutionBox"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">综合分析结论</div>
+    <div id="conclusionBox"></div>
   </div>
 
   <div class="card">
@@ -344,7 +461,7 @@ body { font-family: 'Microsoft YaHei','PingFang SC',sans-serif; background: var(
   </div>
 
   <div class="report-actions">
-    <button class="btn btn-primary" onclick="window.print()">🖨 打印 / 导出 PDF</button>
+    <button class="btn btn-primary" onclick="exportPDF()" id="btnExportPDF">� 导出 PDF</button>
     <button class="btn btn-amber" onclick="copyReport()" id="btnCopyReport">📋 复制报告摘要</button>
     <button class="btn btn-outline" onclick="resetAll()">🔄 重新评估</button>
   </div>
@@ -354,6 +471,40 @@ body { font-family: 'Microsoft YaHei','PingFang SC',sans-serif; background: var(
 <!-- EXPORT HIDDEN -->
 <!-- ============================================================ -->
 <div class="export-content" id="exportContent"></div>
+
+<!-- ============================================================ -->
+<!-- 微信引导遮罩（微信内不支持文件下载，引导在外部浏览器打开或保存图片） -->
+<!-- ============================================================ -->
+<div id="wechatTip" class="wechat-tip" style="display:none;">
+  <div class="wechat-tip-arrow">
+    <span class="icon">👆</span>
+    <span>点击右上角 ···</span>
+  </div>
+  <div class="wechat-tip-card">
+    <div class="wechat-tip-title">微信内无法直接导出 PDF</div>
+    <div class="wechat-tip-steps">
+      <div>① 点击右上角 <strong>···</strong> 菜单</div>
+      <div>② 选择 <strong>在浏览器打开</strong></div>
+      <div>③ 在浏览器中点击 <strong>导出 PDF</strong></div>
+    </div>
+    <div class="wechat-tip-divider">— 或 —</div>
+    <button class="btn btn-success" id="btnSaveImage" onclick="saveAsImage()" style="width:100%;">📸 保存为图片（微信内可用）</button>
+    <button class="btn btn-outline" onclick="closeWeChatTip()" style="width:100%;margin-top:10px;">关闭</button>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 图片预览遮罩（长按保存到手机） -->
+<!-- ============================================================ -->
+<div id="imageOverlay" class="image-overlay" style="display:none;">
+  <div class="image-overlay-bar">
+    <span>长按图片保存到手机</span>
+    <button onclick="closeImageOverlay()">✕ 关闭</button>
+  </div>
+  <div class="image-overlay-scroll">
+    <img id="imageOverlayImg" src="" alt="评估报告">
+  </div>
+</div>
 
 <script>
 // ============================================================
@@ -601,11 +752,11 @@ const CATEGORIES = {
 const CATEGORY_ORDER = ['execution','management','enabling','improving','metrics'];
 
 const ML_DEFS = [
-  { level: 1, name: '初始级', cls: 'ml1', color: '#94a3b8', desc: 'AI 编码处于无序或自发试用阶段，尚未建立组织级规范。各团队各自为政，缺乏统一标准和管理流程。' },
-  { level: 2, name: '已管理级', cls: 'ml2', color: '#60a5fa', desc: '组织已建立项目级 AI 编码规范与管理流程，AI 代码纳入审查和版本控制。基础度量指标（采纳度、协作与知识）开始采集。' },
-  { level: 3, name: '已定义级', cls: 'ml3', color: '#2563eb', desc: '组织级标准化 AI 编码体系全面运行，规范、流程、资产统一管理。采纳度、效能、安全合规、协作与知识维度指标达标。' },
-  { level: 4, name: '量化管理级', cls: 'ml4', color: '#0d9488', desc: '六维度量化指标体系全量运行，AI 编码效能基线建立，量化质量门禁自动拦截。改进类 PA（AMP/ACI/ACA）达到 L4 实践要求。' },
-  { level: 5, name: '优化创新级', cls: 'ml5', color: '#7c3aed', desc: '基于数据驱动持续优化与创新，根因分析常态化，改进效果可量化评估。ACA/ACI 达到 L5 实践要求，六维度指标达标率 ≥90%。' },
+  { level: 1, name: '初始级', cls: 'ml1', color: '#94a3b8', value: '从零到有：让团队开始用起来，建立基本意识', desc: 'AI 编码处于无序或自发试用阶段，尚未建立组织级规范。各团队各自为政，缺乏统一标准和管理流程。' },
+  { level: 2, name: '已管理级', cls: 'ml2', color: '#60a5fa', value: '从乱到管：建立项目级规范，AI 代码有人管、有记录', desc: '组织已建立项目级 AI 编码规范与管理流程，AI 代码纳入审查和版本控制。基础度量指标（采纳度、协作与知识）开始采集。' },
+  { level: 3, name: '已定义级', cls: 'ml3', color: '#2563eb', value: '从管到标：全公司统一标准，经验沉淀可复用', desc: '组织级标准化 AI 编码体系全面运行，规范、流程、资产统一管理。采纳度、效能、安全合规、协作与知识维度指标达标。' },
+  { level: 4, name: '量化管理级', cls: 'ml4', color: '#0d9488', value: '从标到数：用数据说话，质量门禁自动卡关', desc: '六维度量化指标体系全量运行，AI 编码效能基线建立，量化质量门禁自动拦截。改进类 PA（AMP/ACI/ACA）达到 L4 实践要求。' },
+  { level: 5, name: '优化创新级', cls: 'ml5', color: '#7c3aed', value: '从数到智：数据驱动持续优化，创新成为习惯', desc: '基于数据驱动持续优化与创新，根因分析常态化，改进效果可量化评估。ACA/ACI 达到 L5 实践要求，六维度指标达标率 ≥90%。' },
 ];
 
 // ============================================================
@@ -855,6 +1006,10 @@ function generateReport() {
   document.getElementById('mlName').textContent = mlDef.name;
   document.getElementById('mlDesc').textContent = mlDef.desc;
 
+  // 演进核心价值
+  const valueEl = document.getElementById('mlValue');
+  if (valueEl) valueEl.textContent = '演进核心价值：' + mlDef.value;
+
   // Score grid — 展示最低实践等级（决定性）+ 平均分（参考）+ 短板 PA
   const detailed = calcDetailedScores();
   const grid = document.getElementById('scoreGrid');
@@ -877,6 +1032,12 @@ function generateReport() {
 
   // Radar chart — 展示各域最低等级
   drawRadar(scores, detailed);
+
+  // 各阶段演进核心价值
+  generateEvolution(ml);
+
+  // 综合分析结论
+  generateConclusion(scores, ml, detailed);
 
   // Weakness analysis
   generateWeakness(scores, ml);
@@ -951,6 +1112,133 @@ function drawRadar(scores, detailed) {
 }
 
 /**
+ * 综合分析结论：根据当前 ML 等级给出风险综述和目标解决方案。
+ * ML1/ML2 → 建议达成 ML3；ML3/ML4 → 建议达成 ML5。
+ * 结论控制在 150 字以内。
+ * @param {Object} scores — 各能力域最低等级
+ * @param {number} ml — 当前成熟度等级
+ * @param {Object} detailed — 各域详细信息（含短板 PA）
+ */
+function generateConclusion(scores, ml, detailed) {
+  const box = document.getElementById('conclusionBox');
+  const mlDef = ML_DEFS[ml - 1];
+
+  // 确定目标等级
+  let targetLevel;
+  if (ml <= 2) targetLevel = 3;
+  else targetLevel = 5;
+  const targetDef = ML_DEFS[targetLevel - 1];
+
+  // 找出所有未达标的域
+  const weakDomains = CATEGORY_ORDER
+    .filter(c => scores[c] < targetLevel)
+    .map(c => ({ cat: c, level: scores[c], info: CATEGORIES[c], bottleneck: detailed[c].bottleneckPa }));
+
+  // 根据当前等级生成风险综述和解决方案
+  let risk, solution;
+  if (ml === 1) {
+    risk = 'AI 编码完全无序，无规范无审查，存在代码质量失控和敏感信息泄露风险';
+    solution = '建议优先达成 ML3：先建项目级规范（ML2），再升级为公司级标准体系，确保 AI 代码全审查、有版本、有度量';
+  } else if (ml === 2) {
+    risk = '仅有项目级规范，各团队做法不一，经验无法复用，安全合规存在盲区';
+    solution = '建议达成 ML3：将规范升级为公司级标准，统一审查流程，建设知识库与培训体系，扩展度量至多维度';
+  } else if (ml === 3) {
+    risk = '有标准但缺量化，效能好坏靠感觉，无法精准定位瓶颈，改进缺乏数据支撑';
+    solution = '建议达成 ML5：先建六维度量化基线与质量门禁（ML4），再推动根因分析常态化与持续改进文化';
+  } else if (ml === 4) {
+    risk = '量化体系已运行但改进尚未形成文化，创新驱动不足，指标体系迭代依赖少数人';
+    solution = '建议达成 ML5：推动根因分析常态化并对外输出经验，形成全员持续改进文化，指标达标率 ≥90%';
+  } else {
+    risk = '已处于最高等级，需持续保持领先优势';
+    solution = '建议关注行业前沿趋势，持续迭代指标体系，对外输出成熟度建设经验';
+  }
+
+  // 生成结论文本（控制在 150 字以内）
+  const conclusionText = `当前 ML${ml} ${mlDef.name}。${risk}。${solution}。`;
+
+  box.innerHTML = `
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="flex-shrink:0;width:60px;height:60px;border-radius:12px;background:${mlDef.color};display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff">
+        <div style="font-size:18px;font-weight:800">ML${ml}</div>
+        <div style="font-size:10px">${mlDef.name}</div>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:14px;line-height:1.7;color:var(--ink)">${conclusionText}</div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <span style="font-size:12px;padding:3px 10px;border-radius:4px;background:#fef2f2;color:#dc2626;font-weight:600">风险：${risk.substring(0, 30)}…</span>
+          <span style="font-size:12px;padding:3px 10px;border-radius:4px;background:#eff6ff;color:#2563eb;font-weight:600">目标：ML${targetLevel} ${targetDef.name}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 各阶段演进核心价值：以阶梯式流程图展示 ML1-ML5 的演进路径和核心价值。
+ * 当前等级高亮，已达成等级标记为完成，未来等级标记为待达成。
+ * @param {number} ml — 当前成熟度等级
+ */
+function generateEvolution(ml) {
+  const box = document.getElementById('evolutionBox');
+
+  // 每个等级的图标和关键词
+  const stages = [
+    { icon: '🌱', keyword: '起步', focus: '让团队开始用起来' },
+    { icon: '📋', keyword: '规范', focus: '有人管、有记录' },
+    { icon: '🏢', keyword: '标准化', focus: '全公司统一' },
+    { icon: '📊', keyword: '量化', focus: '用数据说话' },
+    { icon: '🚀', keyword: '智能', focus: '持续优化创新' },
+  ];
+
+  let html = '<div style="display:flex;gap:0;align-items:stretch">';
+
+  ML_DEFS.forEach((m, i) => {
+    const stage = stages[i];
+    const isCurrent = m.level === ml;
+    const isPassed = m.level < ml;
+    const isFuture = m.level > ml;
+
+    // 阶梯高度递增，体现成长
+    const heights = [80, 95, 110, 125, 140];
+    const h = heights[i];
+
+    html += `
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative">
+        ${i < 4 ? `<div style="position:absolute;top:${(140 - h) / 2 + 30}px;right:-12px;width:24px;height:24px;background:${ML_DEFS[i+1].color};border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,0.15)">→</div>` : ''}
+        <div style="font-size:11px;color:${isCurrent ? m.color : 'var(--muted)'};font-weight:${isCurrent ? '700' : '400'};margin-bottom:6px">${isPassed ? '✓ 已达成' : isCurrent ? '● 当前' : '○ 待达成'}</div>
+        <div style="width:100%;height:${h}px;background:${isCurrent ? m.color : isPassed ? m.color + '20' : '#f1f5f9'};border:2px solid ${isCurrent ? m.color : isPassed ? m.color + '60' : 'var(--rule)'};border-radius:10px 10px 0 0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:10px 6px;transition:all 0.3s;${isCurrent ? 'box-shadow:0 4px 12px rgba(0,0,0,0.12)' : ''}">
+          <div style="font-size:28px;margin-bottom:4px">${stage.icon}</div>
+          <div style="font-size:16px;font-weight:800;color:${isCurrent ? '#fff' : isPassed ? m.color : 'var(--muted)'}">ML${m.level}</div>
+          <div style="font-size:11px;color:${isCurrent ? 'rgba(255,255,255,0.9)' : isPassed ? m.color + 'cc' : 'var(--muted)'};margin-top:2px">${m.name}</div>
+        </div>
+        <div style="margin-top:8px;text-align:center;padding:0 4px">
+          <div style="font-size:12px;font-weight:700;color:${isCurrent ? m.color : 'var(--ink)'}">${stage.keyword}阶段</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.4">${m.value}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += '</div>';
+
+  // 底部演进路径说明
+  html += `
+    <div style="margin-top:16px;padding:10px 14px;background:#f8fafc;border-radius:8px;border:1px solid var(--rule);display:flex;gap:16px;align-items:center">
+      <div style="font-size:12px;color:var(--muted);flex-shrink:0">演进路径</div>
+      <div style="font-size:12px;color:var(--ink);line-height:1.5">
+        ${ML_DEFS.map((m, i) => {
+          const stage = stages[i];
+          const cls = m.level === ml ? 'color:'+m.color+';font-weight:700' : m.level < ml ? 'color:'+m.color+'aa' : 'color:var(--muted)';
+          return `<span style="${cls}">${stage.icon} ${stage.keyword}</span>${i < 4 ? ' <span style="color:var(--rule)">→</span> ' : ''}`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
+  box.innerHTML = html;
+}
+
+/**
  * 短板分析：按目标等级分层展示差距。
  * ML1 → 分析 ML2 + ML3 的目标差距
  * ML2 → 分析 ML3 + ML4 的目标差距
@@ -965,29 +1253,29 @@ function generateWeakness(scores, ml) {
   list.innerHTML = '';
   const detailed = calcDetailedScores();
 
-  // 各 ML 等级的要求定义
+  // 各 ML 等级的要求定义（含风险描述）
   const mlReqs = {
     2: [
-      { domain: 'execution',  req: 2, desc: '建立项目级 AI 编码规范，AI 代码纳入审查流程' },
-      { domain: 'management', req: 2, desc: '有项目计划与跟踪、版本控制、基础安全防护' },
-      { domain: 'enabling',   req: 2, desc: '团队有培训分享、基础数据辅助决策、文档积累' },
-      { domain: 'improving',  req: 2, desc: '有基础数据采集、简单问题分析、项目回顾' },
-      { domain: 'metrics',    req: 2, desc: '有 AI 代码采纳率等基础数据' },
+      { domain: 'execution',  req: 2, desc: '建立项目级 AI 编码规范，AI 代码纳入审查流程', risk: 'AI 代码无人审查，质量不可控，存在安全漏洞和低质代码混入风险' },
+      { domain: 'management', req: 2, desc: '有项目计划与跟踪、版本控制、基础安全防护', risk: '无计划无跟踪，进度失控，代码无版本管理，变更不可追溯' },
+      { domain: 'enabling',   req: 2, desc: '团队有培训分享、基础数据辅助决策、文档积累', risk: '经验留在个人脑中，人员离职即丢失，新成员上手慢' },
+      { domain: 'improving',  req: 2, desc: '有基础数据采集、简单问题分析、项目回顾', risk: '无数据无改进，效果好坏全凭感觉，同类问题反复发生' },
+      { domain: 'metrics',    req: 2, desc: '有 AI 代码采纳率等基础数据', risk: '无任何数据，无法衡量 AI 编码效果，决策靠拍脑袋' },
     ],
     3: [
-      { domain: 'execution',  req: 3, desc: '公司级规范、统一审查标准、标准化测试体系、质量标准' },
-      { domain: 'management', req: 3, desc: '公司级管理标准、配置管理流程、统一选型、安全合规标准' },
-      { domain: 'enabling',   req: 3, desc: '正式培训体系、数据驱动决策、知识库、IDE 插件集成' },
-      { domain: 'improving',  req: 3, desc: '组织级度量体系、根因分析标准流程、改进流程' },
-      { domain: 'metrics',    req: 3, desc: '覆盖采纳度+效率+安全合规多维度' },
+      { domain: 'execution',  req: 3, desc: '公司级规范、统一审查标准、标准化测试体系、质量标准', risk: '各项目做法不一，审查标准不统一，经验无法复用，质量参差不齐' },
+      { domain: 'management', req: 3, desc: '公司级管理标准、配置管理流程、统一选型、安全合规标准', risk: '各项目各自管理，安全合规存在盲区，工具选型分散，存在合规风险' },
+      { domain: 'enabling',   req: 3, desc: '正式培训体系、数据驱动决策、知识库、IDE 插件集成', risk: '缺乏系统培训，知识未沉淀，工具分散使用，团队间能力差距大' },
+      { domain: 'improving',  req: 3, desc: '组织级度量体系、根因分析标准流程、改进流程', risk: '仅有基础数据，缺乏系统分析，问题根因不明确，改进措施效果无法衡量' },
+      { domain: 'metrics',    req: 3, desc: '覆盖采纳度+效率+安全合规多维度', risk: '仅有采纳率，无法衡量效率和质量，指标维度不全，安全合规无法追踪' },
     ],
     4: [
-      { domain: 'improving',  req: 4, desc: 'AMP/ACI/ACA 三个 PA 达 L4：量化管理基线驱动、预防措施效果量化、改进 ROI 可计算' },
-      { domain: 'metrics',    req: 4, desc: '六维度全量运行，建立量化基线，质量门禁自动运行' },
+      { domain: 'improving',  req: 4, desc: 'AMP/ACI/ACA 三个 PA 达 L4：量化管理基线驱动、预防措施效果量化、改进 ROI 可计算', risk: '有标准但缺量化，效能好坏靠感觉，无法精准定位瓶颈，改进缺乏数据支撑' },
+      { domain: 'metrics',    req: 4, desc: '六维度全量运行，建立量化基线，质量门禁自动运行', risk: '指标维度不全，无量化基线，质量门禁缺失，不达标代码可能流入生产' },
     ],
     5: [
-      { domain: 'improving',  req: 5, desc: 'ACA/ACI 达 L5：根因分析常态化并对外输出、持续改进文化、创新驱动' },
-      { domain: 'metrics',    req: 5, desc: '数据驱动决策，达标率 ≥90%，指标体系持续迭代' },
+      { domain: 'improving',  req: 5, desc: 'ACA/ACI 达 L5：根因分析常态化并对外输出、持续改进文化、创新驱动', risk: '量化体系已运行但改进未形成文化，创新驱动不足，指标迭代依赖少数人' },
+      { domain: 'metrics',    req: 5, desc: '数据驱动决策，达标率 ≥90%，指标体系持续迭代', risk: '指标体系未驱动日常决策，达标率不足，体系迭代缓慢' },
     ],
   };
 
@@ -1020,6 +1308,7 @@ function generateWeakness(scores, ml) {
           current: current,
           required: r.req,
           desc: r.desc,
+          risk: r.risk,
           bottleneckPa: detailed[r.domain].bottleneckPa,
           info: CATEGORIES[r.domain],
         });
@@ -1054,6 +1343,7 @@ function generateWeakness(scores, ml) {
               <div class="gap-title">${g.info.name}</div>
               <div class="gap-desc">${g.desc}</div>
               <div class="gap-pa">短板 PA: ${g.bottleneckPa}（当前最低 L${g.current}，须提升至 L${g.required}）</div>
+              <div class="gap-risk" style="font-size:12px;color:#dc2626;margin-top:4px;line-height:1.5">⚠ 风险：${g.risk}</div>
             </div>
           </div>
         `;
@@ -1269,7 +1559,18 @@ function copyReport() {
     text += `${CATEGORIES[cat].name}：L${minLevel}（平均 ${avg.toFixed(1)}，短板 PA: ${bottleneck}）\n`;
   }
 
+  // 演进核心价值（与界面展示顺序一致，置于综合分析结论之前）
+  const evolutionText = document.getElementById('evolutionBox').innerText.trim();
+  if (evolutionText) {
+    text += '\n【各阶段演进核心价值】\n' + evolutionText + '\n';
+  }
+
   // Extract weakness analysis text from rendered DOM
+  const conclusionText = document.getElementById('conclusionBox').innerText.trim();
+  if (conclusionText) {
+    text += '\n【综合分析结论】\n' + conclusionText + '\n';
+  }
+
   const weaknessText = document.getElementById('weaknessList').innerText.trim();
   if (weaknessText) {
     text += '\n【短板分析】\n' + weaknessText + '\n';
@@ -1318,6 +1619,219 @@ function fallbackCopy(text) {
   try { document.execCommand('copy'); alert('内容已复制到剪贴板'); }
   catch(e) { alert('复制失败，请手动截图保存'); }
   document.body.removeChild(ta);
+}
+
+/**
+ * 导出评估报告为 PDF。
+ * 首次调用时动态加载 html2pdf.js（不阻塞页面首屏），后续调用直接生成。
+ * 手机端 window.print() 无法可靠导出 PDF，改用 html2canvas + jsPDF 方案。
+ * 微信内置浏览器拦截 blob 下载，需引导用户在外部浏览器操作或改用保存图片。
+ */
+function exportPDF() {
+  // 微信内置浏览器不支持文件下载，显示引导遮罩
+  if (isWeChatBrowser()) {
+    document.getElementById('wechatTip').style.display = 'flex';
+    return;
+  }
+
+  const btn = document.getElementById('btnExportPDF');
+  const orig = btn.innerHTML;
+
+  // 首次调用时动态加载 html2pdf.js 库
+  if (typeof html2pdf === 'undefined') {
+    btn.innerHTML = '⏳ 加载中...';
+    btn.disabled = true;
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js';
+    script.onload = () => {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+      doExportPDF();
+    };
+    script.onerror = () => {
+      btn.innerHTML = orig;
+      btn.disabled = false;
+      alert('PDF 库加载失败，请检查网络后重试，或使用浏览器打印功能');
+    };
+    document.head.appendChild(script);
+    return;
+  }
+  doExportPDF();
+}
+
+/**
+ * 实际执行 PDF 生成逻辑。
+ * 克隆报告 DOM，将雷达图 canvas 转为图片（canvas cloneNode 不保留像素），
+ * 同步 textarea 值（cloneNode 不复制当前 value），在离屏容器中渲染后导出。
+ */
+function doExportPDF() {
+  const btn = document.getElementById('btnExportPDF');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '⏳ 正在生成...';
+  btn.disabled = true;
+
+  try {
+    // 雷达图 canvas 转为图片数据（cloneNode 后 canvas 内容为空）
+    const originalCanvas = document.getElementById('radarChart');
+    const canvasImg = originalCanvas ? originalCanvas.toDataURL('image/png') : null;
+
+    // 克隆报告节点，避免影响原始页面
+    const report = document.getElementById('pageReport');
+    const clone = report.cloneNode(true);
+    clone.classList.add('active');
+    clone.style.animation = 'none';
+    clone.style.display = 'block';
+    clone.style.maxWidth = '800px';
+    clone.style.margin = '0';
+    clone.style.padding = '0';
+
+    // 移除按钮和操作栏
+    clone.querySelectorAll('.report-actions, .btn').forEach(el => el.remove());
+
+    // 用图片替换克隆的空 canvas
+    const clonedCanvas = clone.querySelector('#radarChart');
+    if (clonedCanvas && canvasImg) {
+      const img = document.createElement('img');
+      img.src = canvasImg;
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      clonedCanvas.parentNode.replaceChild(img, clonedCanvas);
+    }
+
+    // 同步反馈 textarea 的当前值（cloneNode 不复制 DOM value）
+    const originalTextarea = document.getElementById('feedbackText');
+    const clonedTextarea = clone.querySelector('#feedbackText');
+    if (originalTextarea && clonedTextarea) {
+      clonedTextarea.value = originalTextarea.value;
+    }
+
+    // 离屏容器渲染克隆内容
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0';
+    tempContainer.style.width = '800px';
+    tempContainer.style.backgroundColor = '#ffffff';
+    tempContainer.appendChild(clone);
+    document.body.appendChild(tempContainer);
+
+    // 生成文件名
+    const company = document.getElementById('companyName').value || '企业';
+    const dateStr = new Date().toLocaleDateString('zh-CN').replace(/\//g, '-');
+    const filename = 'AICoding评估报告_' + company + '_' + dateStr + '.pdf';
+
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: filename,
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    html2pdf().set(opt).from(clone).save().then(() => {
+      document.body.removeChild(tempContainer);
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    }).catch(err => {
+      document.body.removeChild(tempContainer);
+      btn.innerHTML = orig;
+      btn.disabled = false;
+      console.error('PDF 导出失败:', err);
+      alert('PDF 导出失败，请尝试使用浏览器打印功能');
+    });
+  } catch (err) {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+    console.error('PDF 导出异常:', err);
+    alert('PDF 导出失败，请尝试使用浏览器打印功能');
+  }
+}
+
+/**
+ * 检测微信内置浏览器。
+ * 微信 UA 包含 "MicroMessenger"，其 WebView 拦截 blob URL 下载，
+ * 导致 html2pdf 生成的 PDF 无法保存。
+ * @return {boolean}
+ */
+function isWeChatBrowser() {
+  return /MicroMessenger/i.test(navigator.userAgent);
+}
+
+/** 关闭微信引导遮罩。 */
+function closeWeChatTip() {
+  document.getElementById('wechatTip').style.display = 'none';
+}
+
+/**
+ * 将报告保存为长图（微信内可长按保存，绕过下载限制）。
+ * 动态加载 html2canvas，临时隐藏按钮后截取整个报告区域。
+ */
+function saveAsImage() {
+  const btn = document.getElementById('btnSaveImage');
+  const orig = btn.innerHTML;
+
+  if (typeof html2canvas === 'undefined') {
+    btn.innerHTML = '⏳ 加载中...';
+    btn.disabled = true;
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    script.onload = () => { btn.innerHTML = orig; btn.disabled = false; doSaveAsImage(); };
+    script.onerror = () => { btn.innerHTML = orig; btn.disabled = false; alert('图片库加载失败，请检查网络'); };
+    document.head.appendChild(script);
+    return;
+  }
+  doSaveAsImage();
+}
+
+/**
+ * 执行截图：隐藏按钮 → html2canvas 捕获 → 展示图片供长按保存。
+ */
+function doSaveAsImage() {
+  const btn = document.getElementById('btnSaveImage');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '⏳ 生成中...';
+  btn.disabled = true;
+
+  const report = document.getElementById('pageReport');
+  const origMaxWidth = report.style.maxWidth;
+  report.style.maxWidth = '800px';
+
+  // 截图前隐藏按钮和操作栏，避免出现在图片中
+  const hiddenEls = [];
+  report.querySelectorAll('.report-actions, .btn').forEach(el => {
+    hiddenEls.push({ el, display: el.style.display });
+    el.style.display = 'none';
+  });
+
+  html2canvas(report, { scale: 2, useCORS: true, backgroundColor: '#ffffff' })
+    .then(canvas => {
+      // 恢复原始状态
+      report.style.maxWidth = origMaxWidth;
+      hiddenEls.forEach(h => { h.el.style.display = h.display; });
+
+      // 展示图片供长按保存（JPEG 减小体积）
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      document.getElementById('imageOverlayImg').src = imgData;
+      document.getElementById('imageOverlay').style.display = 'flex';
+      closeWeChatTip();
+      btn.innerHTML = orig;
+      btn.disabled = false;
+    })
+    .catch(err => {
+      report.style.maxWidth = origMaxWidth;
+      hiddenEls.forEach(h => { h.el.style.display = h.display; });
+      btn.innerHTML = orig;
+      btn.disabled = false;
+      console.error('图片生成失败:', err);
+      alert('图片生成失败，请尝试在浏览器中打开后导出');
+    });
+}
+
+/** 关闭图片预览遮罩。 */
+function closeImageOverlay() {
+  document.getElementById('imageOverlay').style.display = 'none';
+  document.getElementById('imageOverlayImg').src = '';
 }
 
 // ============================================================

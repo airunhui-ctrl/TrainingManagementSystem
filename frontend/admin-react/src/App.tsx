@@ -10,8 +10,8 @@ type TabSnapshot = Record<string, any>
 type RowActionLabel = string | ((item: TableItem) => string)
 type CourseOption = { id: string; title: string }
 type TemplateOption = { id: string; name: string; locked?: boolean }
-type TemplateField = { key: string; label: string; type: 'text' | 'phone' | 'select' | 'radio' | 'checkbox'; required: boolean; options?: string[] }
-type TemplateForm = { id?: string; name: string; fields: TemplateField[] }
+type TemplateField = { key: string; label: string; type: 'text' | 'phone' | 'select' | 'radio' | 'checkbox'; required: boolean; options?: string[]; maxLength?: number; maxSelect?: number }
+type TemplateForm = { id?: string; name: string; enabled: boolean; fields: TemplateField[] }
 type BannerForm = { id?: string; title: string; courseId: string; sort: string; enabled: boolean; startsAt: string; endsAt: string }
 type PaymentForm = { accountName: string; bankName: string; accountNo: string; qrCodeText: string; wechatQrImage: string; alipayQrImage: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }
 type RuleForm = { id?: string; minPeople: string; discountRate: string; courseIds: string; enabled: boolean }
@@ -43,6 +43,10 @@ type CourseForm = {
   enrolled: string
   status: string
   registrationDeadline: string
+  registrationStartAt: string
+  registrationEndAt: string
+  maxParticipantsPerOrder: string
+  specialPriceEndsAt: string
   registrationTemplateId: string
   allowMultiParticipant: boolean
   description: string
@@ -53,7 +57,7 @@ type CourseForm = {
 const emptyCourseForm = (): CourseForm => ({
   title: '', subtitle: '', category: '01', date: '', courseStartAt: '', courseEndAt: '', location: '', instructor: '',
   price: '', originalPrice: '', specialPrice: '', capacity: '30', enrolled: '0', status: '报名中',
-  registrationDeadline: '', registrationTemplateId: '', allowMultiParticipant: true, description: '', descriptionRichText: '', image: '',
+  registrationDeadline: '', registrationStartAt: '', registrationEndAt: '', maxParticipantsPerOrder: '', specialPriceEndsAt: '', registrationTemplateId: '', allowMultiParticipant: true, description: '', descriptionRichText: '', image: '',
 })
 
 const courseCategoryFallback: FilterOption[] = [
@@ -103,7 +107,7 @@ const defaultTemplateFields = [
   { key: 'department', label: '部门', type: 'radio', required: false, options: ['研发', '运营', '市场'] },
   { key: 'needs', label: '培训诉求', type: 'checkbox', required: false, options: ['技能提升', '管理提升', '组织发展'] },
 ]
-const emptyTemplateForm = (): TemplateForm => ({ name: '', fields: defaultTemplateFields.map(field => ({ ...field, options: field.options ? [...field.options] : undefined })) as TemplateField[] })
+const emptyTemplateForm = (): TemplateForm => ({ name: '', enabled: true, fields: defaultTemplateFields.map(field => ({ ...field, options: field.options ? [...field.options] : undefined })) as TemplateField[] })
 const emptyBannerForm = (sort = '1'): BannerForm => ({ title: '', courseId: '', sort, enabled: true, startsAt: '', endsAt: '' })
 const emptyPaymentForm = (): PaymentForm => ({ accountName: '', bankName: '', accountNo: '', qrCodeText: '', wechatQrImage: '', alipayQrImage: '', onlineWechatEnabled: true, onlineAlipayEnabled: true })
 const emptyRuleForm = (): RuleForm => ({ minPeople: '2', discountRate: '0.9', courseIds: '', enabled: true })
@@ -169,6 +173,7 @@ const columnLabels: Record<string, string> = {
   allowMultiParticipant: '支持多人报名', enabled: '启用状态', sort: '排序', fields: '表单字段', points: '积分',
   taxNo: '纳税人识别号', invoiceNo: '发票号码', invoiceFileStatus: '发票文件状态', remark: '备注', reply: '回复内容', channel: '通知渠道', sentCount: '发送数量', readCount: '已读人数', targetUserIds: '目标用户', targetCourseIds: '目标课程',
   key: '配置项', value: '配置值', actor: '操作人', action: '操作类型', detail: '操作详情',
+  before: '变更前', after: '变更后',
   accountName: '收款户名', bankName: '开户银行', accountNo: '银行账号', qrCodeText: '收款码',
   onlineWechatEnabled: '微信支付', onlineAlipayEnabled: '支付宝支付', conflicts: '冲突规则',
   paymentProofStatus: '凭证状态', originalName: '原始文件名', mimeType: '文件类型', size: '文件大小', path: '访问路径', reviewedAt: '审核时间', department: '部门', position: '职务', orderStatus: '订单状态', templateId: '模板编号', templateVersion: '模板版本', formPayload: '报名表单快照', cancelledAt: '取消时间',
@@ -183,7 +188,7 @@ const moduleColumns: Record<string, string[]> = {
   students: ['name', 'phone', 'company', 'department', 'position', 'status', 'enrollmentCount', 'updatedAt', 'id'],
   orders: ['id', 'userId', 'courseId', 'participantCount', 'amount', 'status', 'paymentMethod', 'createdAt'],
   invoices: ['id', 'userId', 'title', 'taxNo', 'email', 'status', 'invoiceNo', 'invoiceFileStatus', 'invoiceFileName', 'createdAt'],
-  users: ['id', 'username', 'name', 'role', 'enabled', 'registeredAt', 'lastActiveAt', 'courseCount', 'previewCount', 'points'],
+  users: ['id', 'username', 'name', 'phone', 'role', 'enabled', 'registeredAt', 'lastActiveAt', 'courseCount', 'previewCount', 'points'],
   rules: ['id', 'minPeople', 'discountRate', 'courseIds', 'conflicts', 'enabled'],
   feedbacks: ['id', 'userId', 'category', 'content', 'status', 'reply', 'createdAt'],
   payment: ['accountName', 'bankName', 'accountNo', 'qrCodeText', 'onlineWechatEnabled', 'onlineAlipayEnabled'],
@@ -191,7 +196,7 @@ const moduleColumns: Record<string, string[]> = {
   messages: ['id', 'title', 'channel', 'enabled', 'readCount', 'targetUserIds', 'targetCourseIds', 'startsAt', 'endsAt'],
   points: ['userId', 'userName', 'points'],
   configs: ['key', 'value', 'description'],
-  audits: ['id', 'actor', 'action', 'detail', 'createdAt'],
+  audits: ['id', 'actor', 'action', 'detail', 'before', 'after', 'createdAt'],
   dashboard: ['courseId', 'title', 'enrolled', 'paidOrders', 'previews'],
 }
 
@@ -225,6 +230,7 @@ const getListFilterDefinition = (active: string, items: TableItem[], courseOptio
 
 const filterMatches = (item: TableItem, field: string, expected: string) => {
   if (field === 'enabled') return String(item.enabled !== false) === expected
+  if (field === 'status' && (expected === 'enabled' || expected === 'disabled')) return (item.enabled !== false) === (expected === 'enabled')
   if (Array.isArray(item[field])) return item[field].map(String).includes(expected)
   return String(item[field] ?? '') === expected
 }
@@ -311,6 +317,7 @@ function App() {
   const [tableKeyword, setTableKeyword] = useState('')
   const [queryKeyword, setQueryKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [userStatusFilter, setUserStatusFilter] = useState('')
   const [auditActionFilter, setAuditActionFilter] = useState('')
   const [auditActorFilter, setAuditActorFilter] = useState('')
   const [auditFrom, setAuditFrom] = useState('')
@@ -334,6 +341,7 @@ function App() {
   const [pointsForm, setPointsForm] = useState<PointsForm>(emptyPointsForm)
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const [feedbackForm, setFeedbackForm] = useState<FeedbackForm>(emptyFeedbackForm)
+  const [feedbackItem, setFeedbackItem] = useState<TableItem | null>(null)
   const [studentEditModalOpen, setStudentEditModalOpen] = useState(false)
   const [studentProfileForm, setStudentProfileForm] = useState<StudentProfileForm>(emptyStudentProfileForm)
   const [reviewState, setReviewState] = useState<ReviewState | null>(null)
@@ -426,7 +434,7 @@ function App() {
   }
   const resetTabState = () => {
     loadVersion.current += 1
-    setData(null); setListLoading(false); setListError(''); setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setStudentEditModalOpen(false)
+    setData(null); setListLoading(false); setListError(''); setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setFeedbackItem(null); setStudentEditModalOpen(false)
     setInvoiceUploadOpen(false); setInvoiceUploadItem(null); setInvoiceUploadFile(null); setInvoiceUploading(false); setInvoicePreview((current: any) => { if (current) URL.revokeObjectURL(current.url); return null }); setResetPasswordUser(null); setResetPasswordValue(''); setResetPasswordConfirm(''); setResetPasswordSubmitting(false)
     setCourseForm(emptyCourseForm()); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setStudentProfileForm(emptyStudentProfileForm())
     setSelectedDetail(null); setEnrollmentSummaryDetail(null); setPointLedgerDetail(null); setReviewState(null); setReviewRemark(''); setSelectedRows([]); setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setAuditActionFilter(''); setAuditActorFilter(''); setAuditFrom(''); setAuditTo(''); setPage(1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
@@ -435,7 +443,7 @@ function App() {
     if (!snapshot) { resetTabState(); return }
     loadVersion.current += 1
     setData(snapshot.data ?? null); setListLoading(false); setListError(''); setCourseModalOpen(Boolean(snapshot.courseModalOpen)); setTemplateModalOpen(Boolean(snapshot.templateModalOpen)); setBannerModalOpen(Boolean(snapshot.bannerModalOpen)); setPaymentModalOpen(Boolean(snapshot.paymentModalOpen)); setRuleModalOpen(Boolean(snapshot.ruleModalOpen)); setMessageModalOpen(Boolean(snapshot.messageModalOpen)); setConfigModalOpen(Boolean(snapshot.configModalOpen)); setPointsModalOpen(Boolean(snapshot.pointsModalOpen)); setFeedbackModalOpen(Boolean(snapshot.feedbackModalOpen)); setStudentEditModalOpen(Boolean(snapshot.studentEditModalOpen))
-    setCourseForm(snapshot.courseForm || emptyCourseForm()); setTemplateForm(snapshot.templateForm || emptyTemplateForm()); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm(snapshot.messageForm || emptyMessageForm()); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm())
+    setCourseForm({ ...emptyCourseForm(), ...(snapshot.courseForm || {}) }); setTemplateForm({ ...emptyTemplateForm(), ...(snapshot.templateForm || {}) }); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm(snapshot.messageForm || emptyMessageForm()); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm())
     setSelectedDetail(snapshot.selectedDetail ?? null); setEnrollmentSummaryDetail(snapshot.enrollmentSummaryDetail ?? null); setPointLedgerDetail(snapshot.pointLedgerDetail ?? null); setReviewState(snapshot.reviewState ?? null); setReviewRemark(snapshot.reviewRemark || ''); setSelectedRows(Array.isArray(snapshot.selectedRows) ? snapshot.selectedRows : []); setTableKeyword(snapshot.tableKeyword || ''); setQueryKeyword(snapshot.queryKeyword || ''); setStatusFilter(snapshot.statusFilter || ''); setAuditActionFilter(snapshot.auditActionFilter || ''); setAuditActorFilter(snapshot.auditActorFilter || ''); setAuditFrom(snapshot.auditFrom || ''); setAuditTo(snapshot.auditTo || ''); setPage(Number(snapshot.page) || 1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
   const navigate = (moduleKey: string) => {
@@ -492,17 +500,18 @@ function App() {
       }
     }
   }
-  const load = async (targetPage = page, keyword = queryKeyword, status = statusFilter) => {
+  const load = async (targetPage = page, keyword = queryKeyword, status = statusFilter, userStatus = userStatusFilter) => {
     const version = ++loadVersion.current
     const commit = (value: any) => { if (version === loadVersion.current) setData(value) }
     if (version === loadVersion.current) { setListLoading(true); setListError('') }
     try {
       if (active === 'dashboard') { commit(await apiFetch('/admin/dashboard')); return }
       if (current.endpoint) {
-        const serverFilterParam = active === 'enrollment-details' ? 'courseId' : active === 'courses' || active === 'orders' || active === 'invoices' || active === 'feedbacks' || active === 'students' ? 'status' : active === 'users' ? 'role' : ''
+        const serverFilterParam = active === 'enrollment-details' ? 'courseId' : active === 'users' ? 'role' : active === 'courses' || active === 'orders' || active === 'invoices' || active === 'feedbacks' || active === 'students' ? 'status' : ''
         const filterQuery = serverFilterParam && status ? `&${serverFilterParam}=${encodeURIComponent(status)}` : ''
+        const userStatusQuery = active === 'users' && userStatus ? `&status=${encodeURIComponent(userStatus)}` : ''
         const params = serverPagedModules.has(active)
-          ? `?keyword=${encodeURIComponent(keyword)}${filterQuery}&page=${targetPage}&pageSize=${PAGE_SIZE}`
+          ? `?keyword=${encodeURIComponent(keyword)}${filterQuery}${userStatusQuery}&page=${targetPage}&pageSize=${PAGE_SIZE}`
           : active === 'audits' ? `?keyword=${encodeURIComponent(keyword)}${auditActionFilter ? `&action=${encodeURIComponent(auditActionFilter)}` : ''}${auditActorFilter ? `&actor=${encodeURIComponent(auditActorFilter)}` : ''}${auditFrom ? `&from=${encodeURIComponent(auditFrom)}` : ''}${auditTo ? `&to=${encodeURIComponent(auditTo)}` : ''}` : ''
         if (active === 'courses') {
           const [courseData, templateData] = await Promise.all([
@@ -534,8 +543,8 @@ function App() {
       if (version === loadVersion.current) setListLoading(false)
     }
   }
-  const requestLoad = (targetPage = page, keyword = queryKeyword, status = statusFilter) => {
-    void load(targetPage, keyword, status).catch(() => undefined)
+  const requestLoad = (targetPage = page, keyword = queryKeyword, status = statusFilter, userStatus = userStatusFilter) => {
+    void load(targetPage, keyword, status, userStatus).catch(() => undefined)
   }
 
   useEffect(() => {
@@ -544,7 +553,7 @@ function App() {
   useEffect(() => {
     try { window.sessionStorage.setItem(VISITED_TABS_STORAGE_KEY, JSON.stringify(visitedTabs)) } catch { /* 浏览器禁用存储时仍保留当前会话标签 */ }
   }, [visitedTabs])
-  useEffect(() => { if (loggedIn) load().catch((error) => flash(error instanceof Error ? error.message : '加载失败，请重新登录')) }, [active, loggedIn, page, queryKeyword, statusFilter, auditActionFilter, auditActorFilter, auditFrom, auditTo])
+  useEffect(() => { if (loggedIn) load().catch((error) => flash(error instanceof Error ? error.message : '加载失败，请重新登录')) }, [active, loggedIn, page, queryKeyword, statusFilter, userStatusFilter, auditActionFilter, auditActorFilter, auditFrom, auditTo])
   useEffect(() => {
     if (!loggedIn || courseCategoryOptions.length) return
     apiFetch<{ items?: Array<{ code: string; label: string }> }>('/admin/course-categories')
@@ -575,8 +584,9 @@ function App() {
       title: String(item.title || ''), subtitle: String(item.subtitle || ''), category: categoryCode(item.categoryCode || item.category || ''),
       date: String(item.date || ''), ...(() => { const schedule = parseCourseSchedule(item.date); return { courseStartAt: schedule.start, courseEndAt: schedule.end } })(), location: String(item.location || ''), instructor: String(item.instructor || ''),
       price: String(item.price ?? ''), originalPrice: String(item.originalPrice ?? item.price ?? ''), specialPrice: String(item.specialPrice ?? ''),
+      specialPriceEndsAt: dateToLocalInput(item.specialPriceEndsAt),
       capacity: String(item.capacity ?? 30), enrolled: String(item.enrolled ?? 0), status: String(item.status || '报名中'),
-      registrationDeadline: dateToLocalInput(item.registrationDeadline), registrationTemplateId: String(item.registrationTemplateId || templateOptions[0]?.id || ''), allowMultiParticipant: item.allowMultiParticipant !== false,
+      registrationDeadline: dateToLocalInput(item.registrationDeadline), registrationStartAt: dateToLocalInput(item.registrationStartAt), registrationEndAt: dateToLocalInput(item.registrationEndAt), maxParticipantsPerOrder: String(item.maxParticipantsPerOrder ?? ''), registrationTemplateId: String(item.registrationTemplateId || templateOptions[0]?.id || ''), allowMultiParticipant: item.allowMultiParticipant !== false,
       description: String(item.description || ''), descriptionRichText: String(item.descriptionRichText || plainTextToRichText(String(item.description || ''))), image: String(item.image || ''),
     } : (() => {
       const draft = readCourseDraft()
@@ -632,7 +642,7 @@ function App() {
 
   const openTemplateEditor = (item?: TableItem) => {
     const fields = Array.isArray(item?.fields) ? item.fields : defaultTemplateFields
-    setTemplateForm({ id: item?.id ? String(item.id) : undefined, name: String(item?.name || ''), fields: fields.map((field: any) => ({ key: String(field.key || ''), label: String(field.label || ''), type: field.type || 'text', required: field.required === true, options: Array.isArray(field.options) ? field.options.map(String) : [] })) })
+    setTemplateForm({ id: item?.id ? String(item.id) : undefined, name: String(item?.name || ''), enabled: item?.enabled !== false, fields: fields.map((field: any) => ({ key: String(field.key || ''), label: String(field.label || ''), type: field.type || 'text', required: field.required === true, options: Array.isArray(field.options) ? field.options.map(String) : [], maxLength: field.maxLength === undefined || field.maxLength === null ? undefined : Number(field.maxLength), maxSelect: field.maxSelect === undefined || field.maxSelect === null ? undefined : Number(field.maxSelect) })) })
     setTemplateLocked(item?.locked === true)
     setTemplateModalOpen(true)
   }
@@ -649,7 +659,7 @@ function App() {
       setPointLedgerDetail(result)
     } catch (error) { flash(error instanceof Error ? error.message : '积分流水加载失败') }
   }
-  const openFeedbackEditor = (item: TableItem) => { setFeedbackForm({ id: String(item.id || ''), reply: String(item.reply || '') }); setFeedbackModalOpen(true) }
+  const openFeedbackEditor = (item: TableItem) => { setFeedbackItem(item); setFeedbackForm({ id: String(item.id || ''), reply: String(item.reply || '') }); setFeedbackModalOpen(true) }
   const openStudentEditor = (item: TableItem) => {
     const phone = String(item.phone || '').trim()
     const email = String(item.email || '').trim()
@@ -687,7 +697,7 @@ function App() {
     if (new Set(fields.map(field => field.key)).size !== fields.length) return flash('字段标识不能重复')
     if (fields.some(field => ['select', 'radio', 'checkbox'].includes(field.type) && !field.options?.length)) return flash('选择类字段至少需要一个选项')
     if (!await confirmAction(`${templateForm.id ? '确认保存对报名模板的修改' : '确认创建报名模板'}“${templateForm.name.trim()}”吗？`)) return
-    const saved = await runOperation(`template-save:${templateForm.id || 'new'}`, () => apiFetch(templateForm.id ? `/admin/templates/${templateForm.id}` : '/admin/templates', { method: templateForm.id ? 'PATCH' : 'POST', body: JSON.stringify({ name: templateForm.name.trim(), fields }) }), '报名模板已保存')
+    const saved = await runOperation(`template-save:${templateForm.id || 'new'}`, () => apiFetch(templateForm.id ? `/admin/templates/${templateForm.id}` : '/admin/templates', { method: templateForm.id ? 'PATCH' : 'POST', body: JSON.stringify({ name: templateForm.name.trim(), enabled: templateForm.enabled, fields }) }), '报名模板已保存')
     if (saved) { setTemplateModalOpen(false); setTemplateForm(emptyTemplateForm()) }
   }
   const copyTemplate = async () => {
@@ -750,7 +760,7 @@ function App() {
     if (!feedbackForm.id || !feedbackForm.reply.trim()) return flash('请填写回复内容')
     if (!await confirmAction('确认提交这条反馈的处理回复吗？提交后将不能再次处理。')) return
     const saved = await runOperation(`feedback-resolve:${feedbackForm.id}`, () => apiFetch(`/admin/feedbacks/${encodeURIComponent(feedbackForm.id)}/resolve`, { method: 'POST', body: JSON.stringify({ reply: feedbackForm.reply.trim() }) }), '反馈已处理')
-    if (saved) { setFeedbackModalOpen(false); setFeedbackForm(emptyFeedbackForm()) }
+    if (saved) { setFeedbackModalOpen(false); setFeedbackItem(null); setFeedbackForm(emptyFeedbackForm()) }
   }
 
   const closeReview = () => {
@@ -799,11 +809,13 @@ function App() {
     if (!form.registrationTemplateId.trim()) return flash('请先选择报名模板；没有模板时请先到“报名模板”创建')
     if ([numericFields.price, numericFields.originalPrice, numericFields.capacity, numericFields.enrolled].some(value => !Number.isFinite(value)) || (numericFields.specialPrice !== null && !Number.isFinite(numericFields.specialPrice))) return flash('请填写有效的价格、名额和报名人数')
     if (numericFields.capacity < numericFields.enrolled) return flash('课程名额不能少于已报名人数')
+    if (form.maxParticipantsPerOrder.trim() && (!Number.isInteger(Number(form.maxParticipantsPerOrder)) || Number(form.maxParticipantsPerOrder) < 1)) return flash('单次报名人数上限必须是不小于 1 的整数')
+    if (form.registrationStartAt && form.registrationEndAt && new Date(form.registrationStartAt).getTime() >= new Date(form.registrationEndAt).getTime()) return flash('报名开始时间必须早于结束时间')
     if (!await confirmAction(`${form.id ? '确认保存对课程的修改' : '确认创建课程'}“${form.title.trim()}”吗？`)) return
     setCourseSubmitting(true)
     try {
       const descriptionRichText = form.descriptionRichText.trim() || plainTextToRichText(form.description)
-      const payload = { ...form, title: form.title.trim(), subtitle: form.subtitle.trim(), category: form.category.trim(), date: scheduleDate, location: form.location.trim(), instructor: form.instructor.trim(), registrationDeadline: form.registrationDeadline.trim() || null, description: richTextToPlainText(descriptionRichText), descriptionRichText, ...numericFields }
+      const payload = { ...form, title: form.title.trim(), subtitle: form.subtitle.trim(), category: form.category.trim(), date: scheduleDate, location: form.location.trim(), instructor: form.instructor.trim(), registrationDeadline: form.registrationDeadline.trim() || null, registrationStartAt: form.registrationStartAt.trim() || null, registrationEndAt: form.registrationEndAt.trim() || null, maxParticipantsPerOrder: form.maxParticipantsPerOrder.trim() ? Number(form.maxParticipantsPerOrder) : null, specialPriceEndsAt: form.specialPriceEndsAt.trim() || null, description: richTextToPlainText(descriptionRichText), descriptionRichText, ...numericFields }
       const saved = await runOperation(
         `course-save:${form.id || 'new'}`,
         () => apiFetch(form.id ? `/admin/courses/${form.id}` : '/admin/courses', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(payload) }),
@@ -916,7 +928,7 @@ function App() {
     const item = resetPasswordUser
     if (!item) return
     const password = resetPasswordValue
-    if (password.length < 8) return flash('新密码至少 8 位')
+    if (!/^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,64}$/.test(password)) return flash('密码至少 8 位，且需包含字母、数字和符号')
     if (password !== resetPasswordConfirm) return flash('两次输入的密码不一致')
     if (resetPasswordSubmitting) return
     setResetPasswordSubmitting(true)
@@ -941,6 +953,11 @@ function App() {
     } else if (active === 'banners') {
       if (!await confirmAction(`确定要${item.enabled === false ? '启用' : '停用'} Banner“${item.title || item.id}”吗？`, item.enabled === false ? '启用 Banner' : '停用 Banner', item.enabled !== false)) return
       await runOperation(`banner-enabled:${item.id}`, () => apiFetch('/admin/banners', { method: 'POST', body: JSON.stringify({ ...item, enabled: !item.enabled }) }), item.enabled === false ? 'Banner 已启用' : 'Banner 已停用')
+      return
+    } else if (active === 'templates') {
+      const enabled = item.enabled === false
+      if (!await confirmAction(`确定要${enabled ? '启用' : '停用'}报名模板“${item.name || item.id}”吗？${enabled ? '' : '停用后关联课程将不能继续报名。'}`, enabled ? '启用报名模板' : '停用报名模板', !enabled)) return
+      await runOperation(`template-enabled:${item.id}`, () => apiFetch(`/admin/templates/${encodeURIComponent(String(item.id))}/enabled`, { method: 'POST', body: JSON.stringify({ enabled }) }), enabled ? '报名模板已启用' : '报名模板已停用')
       return
     } else if (active === 'invoices') {
       if (item.status === '已开票' && item.invoiceFileStatus === '已上传') return openInvoiceFile(item)
@@ -968,6 +985,13 @@ function App() {
   }
 
   const openDetail = async (item: TableItem, intent: 'view' | 'process' = 'view') => {
+    if (active === 'users') {
+      try {
+        const detail = await apiFetch<TableItem>(`/admin/users/${encodeURIComponent(String(item.id))}`)
+        setSelectedDetail({ module: active, item: detail, intent })
+      } catch (error) { flash(error instanceof Error ? error.message : '用户详情加载失败') }
+      return
+    }
     if (active === 'students') {
       try {
         const [profile, enrollmentResult] = await Promise.all([
@@ -1111,9 +1135,10 @@ function App() {
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
   const auditActionOptions = active === 'audits' ? Array.from(new Set([...(Array.isArray(data?.actions) ? data.actions : []), auditActionFilter].filter(Boolean))).sort() : []
   const actionLabel: RowActionLabel = ['enrollments', 'enrollment-details', 'students'].includes(active) ? '查看详情' : active === 'invoices' ? ((item: TableItem) => item.status === '已开票' ? '上传发票' : '开票通过') : ['courses', 'templates', 'banners', 'payment', 'rules', 'messages', 'configs', 'points'].includes(active) ? (active === 'templates' ? '编辑模板' : active === 'points' ? '调整积分' : '编辑') : active === 'orders' ? ((item: TableItem) => item.status === '待审核' ? '审核凭证' : item.status === '已支付' ? '退款' : item.status === '待支付' ? '关闭订单' : '查看详情') : active === 'users' ? '重置密码' : active === 'feedbacks' ? '回复处理' : '处理'
-  const secondaryActionLabel: RowActionLabel | undefined = active === 'users' || active === 'banners' ? '启用 / 禁用' : active === 'invoices' ? ((item: TableItem) => item.status === '待处理' ? '驳回' : '查看发票') : active === 'rules' || active === 'messages' ? '启用 / 停用' : active === 'points' ? '查看流水' : undefined
+  const secondaryActionLabel: RowActionLabel | undefined = active === 'users' || active === 'banners' ? '启用 / 禁用' : active === 'templates' ? '启用 / 停用' : active === 'invoices' ? ((item: TableItem) => item.status === '待处理' ? '驳回' : '查看发票') : active === 'rules' || active === 'messages' ? '启用 / 停用' : active === 'points' ? '查看流水' : undefined
   const detailOnlyModule = active === 'enrollment-details' || active === 'students'
-  const detailHandler = ['orders', 'invoices', 'feedbacks', 'enrollment-details', 'students'].includes(active) ? openDetail : undefined
+  // ['orders', 'invoices', 'feedbacks', 'enrollment-details', 'students'].includes(active) ? openDetail : undefined
+  const detailHandler = ['orders', 'invoices', 'feedbacks', 'enrollment-details', 'students'].includes(active) || active === 'users' ? openDetail : undefined
   const canOperate = active === 'orders' ? (item: TableItem) => ['待支付', '待审核', '已支付'].includes(String(item.status)) : active === 'invoices' ? (item: TableItem) => item.status === '待处理' || (item.status === '已开票' && item.invoiceFileStatus === '待上传') : active === 'feedbacks' ? (item: TableItem) => item.status === '待处理' : detailOnlyModule || active === 'audits' ? () => false : undefined
   const canSecondary = active === 'invoices' ? (item: TableItem) => item.status === '待处理' || (item.status === '已开票' && item.invoiceFileStatus === '已上传') : undefined
   const selectable = active !== 'audits' && active !== 'readiness'
@@ -1161,18 +1186,19 @@ function App() {
       let truncated = false
       if (!selectedRows.length) {
         if (serverPagedModules.has(active)) {
-          const serverFilterParam = active === 'enrollment-details' ? 'courseId' : ['courses', 'orders', 'invoices', 'feedbacks', 'students'].includes(active) ? 'status' : active === 'users' ? 'role' : ''
+          const serverFilterParam = active === 'enrollment-details' ? 'courseId' : active === 'users' ? 'role' : ['courses', 'orders', 'invoices', 'feedbacks', 'students'].includes(active) ? 'status' : ''
           const filterQuery = serverFilterParam && statusFilter ? `&${serverFilterParam}=${encodeURIComponent(statusFilter)}` : ''
+          const userStatusQuery = active === 'users' && userStatusFilter ? `&status=${encodeURIComponent(userStatusFilter)}` : ''
           const exportPageSize = 100
           const exportLimit = 1000
-          const firstResult = await apiFetch<{ items?: TableItem[]; total?: number }>(`${current.endpoint}?keyword=${encodeURIComponent(queryKeyword)}${filterQuery}&page=1&pageSize=${exportPageSize}`)
+          const firstResult = await apiFetch<{ items?: TableItem[]; total?: number }>(`${current.endpoint}?keyword=${encodeURIComponent(queryKeyword)}${filterQuery}${userStatusQuery}&page=1&pageSize=${exportPageSize}`)
           exportItems = Array.isArray(firstResult?.items) ? [...firstResult.items] : []
           total = Number(firstResult?.total || exportItems.length)
           const targetCount = Math.min(total, exportLimit)
           let exportPage = 1
           while (exportItems.length < targetCount && exportPage < Math.ceil(exportLimit / exportPageSize)) {
             exportPage += 1
-            const pageResult = await apiFetch<{ items?: TableItem[]; total?: number }>(`${current.endpoint}?keyword=${encodeURIComponent(queryKeyword)}${filterQuery}&page=${exportPage}&pageSize=${exportPageSize}`)
+            const pageResult = await apiFetch<{ items?: TableItem[]; total?: number }>(`${current.endpoint}?keyword=${encodeURIComponent(queryKeyword)}${filterQuery}${userStatusQuery}&page=${exportPage}&pageSize=${exportPageSize}`)
             const pageItems = Array.isArray(pageResult?.items) ? pageResult.items : []
             if (!pageItems.length) break
             exportItems.push(...pageItems)
@@ -1239,11 +1265,12 @@ function App() {
         {active === 'readiness' ? <IntegrationReadinessPanel data={data} loading={listLoading} error={listError} onRefresh={() => { void load().catch(() => undefined) }} /> : <>
         <section className="list-section search-section" aria-label="搜索条件">
           <div className="search-toolbar">
-            <input value={tableKeyword} onChange={event => { setTableKeyword(event.target.value); setPage(1) }} onKeyDown={event => { if (event.key === 'Enter') { setPage(1); setQueryKeyword(tableKeyword.trim()); requestLoad(1, tableKeyword.trim(), statusFilter) } }} placeholder="搜索当前列表" />
+            <input value={tableKeyword} onChange={event => { setTableKeyword(event.target.value); setPage(1) }} onKeyDown={event => { if (event.key === 'Enter') { setPage(1); setQueryKeyword(tableKeyword.trim()); requestLoad(1, tableKeyword.trim(), statusFilter, userStatusFilter) } }} placeholder="搜索当前列表" />
             {filterDefinition && <select aria-label={`${filterDefinition.label}筛选`} value={statusFilter} onChange={event => { setPage(1); setStatusFilter(event.target.value) }}><option value="">{filterDefinition.label}：全部</option>{filterDefinition.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}
+            {active === 'users' && <select aria-label="用户状态筛选" value={userStatusFilter} onChange={event => { setPage(1); setUserStatusFilter(event.target.value); requestLoad(1, tableKeyword.trim(), statusFilter, event.target.value) }}><option value="">用户状态：全部</option><option value="enabled">已启用</option><option value="disabled">已停用</option></select>}
             {active === 'audits' && <select aria-label="审计操作类型筛选" value={auditActionFilter} onChange={event => { setAuditActionFilter(event.target.value); setPage(1) }}><option value="">操作类型：全部</option>{auditActionOptions.map(action => <option key={action} value={action}>{action}</option>)}</select>}
             {active === 'audits' && <><input aria-label="审计操作者筛选" value={auditActorFilter} onChange={event => setAuditActorFilter(event.target.value)} placeholder="操作者" /><input aria-label="审计开始时间" type="datetime-local" value={auditFrom} onChange={event => setAuditFrom(event.target.value)} /><input aria-label="审计结束时间" type="datetime-local" value={auditTo} onChange={event => setAuditTo(event.target.value)} /></>}
-            <div className="search-actions"><button className="reset-button" onClick={() => { setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setAuditActionFilter(''); setAuditActorFilter(''); setAuditFrom(''); setAuditTo(''); setPage(1); requestLoad(1, '', '') }}>重置</button><button className="query-button" onClick={() => { setPage(1); setQueryKeyword(tableKeyword.trim()); requestLoad(1, tableKeyword.trim(), statusFilter) }}>查询</button></div>
+            <div className="search-actions"><button className="reset-button" onClick={() => { setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setUserStatusFilter(''); setAuditActionFilter(''); setAuditActorFilter(''); setAuditFrom(''); setAuditTo(''); setPage(1); requestLoad(1, '', '', '') }}>重置</button><button className="query-button" onClick={() => { setPage(1); setQueryKeyword(tableKeyword.trim()); requestLoad(1, tableKeyword.trim(), statusFilter, userStatusFilter) }}>查询</button></div>
           </div>
         </section>
         <section className="list-section action-section" aria-label="功能操作">
@@ -1266,7 +1293,7 @@ function App() {
        {messageModalOpen && <MessageModal form={messageForm} onChange={setMessageForm} onClose={() => setMessageModalOpen(false)} onSave={saveMessage} onDelete={deleteMessage} busy={Boolean(operationKey)} />}
       {configModalOpen && <ConfigModal form={configForm} onChange={setConfigForm} onClose={() => setConfigModalOpen(false)} onSave={saveConfig} busy={Boolean(operationKey)} />}
       {pointsModalOpen && <PointsModal form={pointsForm} onChange={setPointsForm} onClose={() => setPointsModalOpen(false)} onSave={savePoints} busy={Boolean(operationKey)} />}
-      {feedbackModalOpen && <FeedbackModal form={feedbackForm} onChange={setFeedbackForm} onClose={() => setFeedbackModalOpen(false)} onSave={saveFeedback} busy={Boolean(operationKey)} />}
+      {feedbackModalOpen && <FeedbackModal form={feedbackForm} item={feedbackItem} onChange={setFeedbackForm} onClose={() => setFeedbackModalOpen(false)} onSave={saveFeedback} onNotify={flash} busy={Boolean(operationKey)} />}
       {studentEditModalOpen && <StudentProfileModal form={studentProfileForm} onChange={setStudentProfileForm} onClose={() => setStudentEditModalOpen(false)} onSave={saveStudentProfile} busy={Boolean(operationKey)} />}
       {enrollmentSummaryDetail && <EnrollmentSummaryDetailPanel detail={enrollmentSummaryDetail} onClose={() => setEnrollmentSummaryDetail(null)} />}
       {reviewState && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeReview() }}>
@@ -1433,6 +1460,10 @@ function CourseModal({ form, templates, categories, submitting, onChange, onUplo
         <label>课程名额<input type="number" min="0" value={form.capacity} onChange={event => onChange('capacity', event.target.value)} /></label>
         <label>已报名人数<input type="number" min="0" value={form.enrolled} readOnly aria-readonly="true" /><small className="field-hint">由报名、取消报名和退款自动维护，不可手动修改</small></label>
         <label>报名截止时间<input type="datetime-local" value={form.registrationDeadline} onChange={event => onChange('registrationDeadline', event.target.value)} /><small className="field-hint">可选；点击日历图标选择截止日期和时间</small></label>
+        <label>报名开始时间<input type="datetime-local" value={form.registrationStartAt} onChange={event => onChange('registrationStartAt', event.target.value)} /><small className="field-hint">可选；开始时间前不能报名</small></label>
+        <label>报名结束时间<input type="datetime-local" value={form.registrationEndAt} onChange={event => onChange('registrationEndAt', event.target.value)} /><small className="field-hint">可选；结束时间后自动截止报名</small></label>
+        <label>单次报名人数上限<input type="number" min="1" value={form.maxParticipantsPerOrder} onChange={event => onChange('maxParticipantsPerOrder', event.target.value)} placeholder="不限" /><small className="field-hint">可选；限制一笔订单最多报名人数</small></label>
+        <label>特价有效期<input type="datetime-local" value={form.specialPriceEndsAt} onChange={event => onChange('specialPriceEndsAt', event.target.value)} /><small className="field-hint">可选；过期后按课程售价计算</small></label>
         <label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.allowMultiParticipant} onChange={event => onChange('allowMultiParticipant', event.target.checked)} /><span>支持多人报名</span></label>
         <div className="wide-field rich-text-field"><label>课程简介</label><RichTextEditor value={form.descriptionRichText} onChange={value => onChange('descriptionRichText', value)} onPrompt={onPrompt} onNotify={onNotify} /></div>
       </div>
@@ -1535,8 +1566,18 @@ function PointLedgerModal({ detail, onClose }: { detail: PointLedgerDetailState;
   </div>
 }
 
-function FeedbackModal({ form, onChange, onClose, onSave, busy = false }: { form: FeedbackForm; onChange: (form: FeedbackForm) => void; onClose: () => void; onSave: () => void; busy?: boolean }) {
+function FeedbackModal({ form, item, onChange, onClose, onSave, onNotify, busy = false }: { form: FeedbackForm; item?: TableItem | null; onChange: (form: FeedbackForm) => void; onClose: () => void; onSave: () => void; onNotify: (message: string) => void; busy?: boolean }) {
+  const [previewUrl, setPreviewUrl] = useState('')
+  const attachments = Array.isArray(item?.attachments) ? item.attachments : []
+  const openAttachment = async (attachment: TableItem) => {
+    try {
+      const blob = await apiFetchBlob(`/admin/feedbacks/${encodeURIComponent(String(item?.id))}/file/${encodeURIComponent(String(attachment.storedName))}`)
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      setPreviewUrl(URL.createObjectURL(blob))
+    } catch (error) { onNotify(error instanceof Error ? error.message : '反馈附件读取失败') }
+  }
   return <SimpleModal title="回复反馈" description="填写处理结果后，反馈状态将更新为已处理" onClose={onClose} busy={busy}>
+    {attachments.length > 0 && <div className="feedback-admin-attachments"><b>反馈附件（{attachments.length}）</b><div className="feedback-admin-attachment-list">{attachments.map((attachment: TableItem) => <button type="button" key={attachment.storedName} disabled={busy} onClick={() => void openAttachment(attachment)}>{attachment.originalName || attachment.storedName}</button>)}</div>{previewUrl && <div className="feedback-admin-preview"><img src={previewUrl} alt="反馈附件预览" /><button type="button" onClick={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl('') }}>关闭预览</button></div>}</div>}
     <label className="wide-field">回复内容<textarea value={form.reply} onChange={event => onChange({ ...form, reply: event.target.value })} placeholder="请输入回复内容" /></label>
     <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary" disabled={busy} onClick={onSave}>{busy ? '保存中…' : '保存回复'}</button></div>
   </SimpleModal>
@@ -1577,7 +1618,7 @@ function InvoicePreviewModal({ preview, onClose }: { preview: { item: TableItem;
 
 function ResetPasswordModal({ user, password, confirm, busy, onChangePassword, onChangeConfirm, onClose, onSubmit }: { user: TableItem; password: string; confirm: string; busy: boolean; onChangePassword: (value: string) => void; onChangeConfirm: (value: string) => void; onClose: () => void; onSubmit: () => void }) {
   return <SimpleModal title="重置用户密码" description={`用户 ${user.username || user.id} · 设置新密码后旧登录令牌立即失效`} onClose={onClose} busy={busy}>
-    <label className="wide-field">新密码<input type="password" value={password} disabled={busy} onChange={event => onChangePassword(event.target.value)} placeholder="至少 8 位" autoComplete="new-password" /></label>
+    <label className="wide-field">新密码<input type="password" value={password} disabled={busy} onChange={event => onChangePassword(event.target.value)} placeholder="至少 8 位，含字母、数字、符号" autoComplete="new-password" /></label>
     <label className="wide-field">确认新密码<input type="password" value={confirm} disabled={busy} onChange={event => onChangeConfirm(event.target.value)} placeholder="再次输入新密码" autoComplete="new-password" /></label>
     <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary" disabled={busy || !password || !confirm} onClick={onSubmit}>{busy ? '提交中…' : '确认重置'}</button></div>
   </SimpleModal>
@@ -1593,13 +1634,22 @@ function TemplateModal({ form, onChange, onFieldChange, onFieldRemove, onClose, 
     const fields = [...form.fields, { key: `field${form.fields.length + 1}`, label: '新字段', type: 'text' as const, required: false, options: [] }]
     onChange({ ...form, fields })
   }
+  const moveField = (index: number, direction: -1 | 1) => {
+    if (busy || locked) return
+    const target = index + direction
+    if (target < 0 || target >= form.fields.length) return
+    const fields = [...form.fields]
+    const [field] = fields.splice(index, 1)
+    fields.splice(target, 0, field)
+    onChange({ ...form, fields })
+  }
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (!busy && event.target === event.currentTarget) onClose() }}>
     <section className="template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
       <div className="modal-head"><div><h2 id="template-modal-title">{form.id ? '编辑报名模板' : '新增报名模板'}</h2><p>模板可复用于多个课程，每个课程只能关联一个模板</p></div><button type="button" className="modal-close" disabled={busy} onClick={onClose} aria-label="关闭">×</button></div>
       <div className="modal-scroll template-modal-scroll">
       {locked && <div className="template-lock-notice" role="status">该模板已关联报名中的课程，暂不可修改；如需调整请先结束或下架相关课程。</div>}
-      <label className="template-course-field">模板名称<input disabled={busy || locked} value={form.name} onChange={event => onChange({ ...form, name: event.target.value })} placeholder="例如：通用基础报名模板" /></label>
-      <div className="template-layout"><div className="template-fields"><div className="template-section-head"><h3>字段配置</h3><button type="button" disabled={busy || locked} onClick={addField}>添加字段</button></div>{form.fields.map((field, index) => <div className="template-field-row" key={`${field.key}-${index}`}><input disabled={busy || locked} value={field.key} onChange={event => onFieldChange(index, { key: event.target.value })} placeholder="字段标识" /><input disabled={busy || locked} value={field.label} onChange={event => onFieldChange(index, { label: event.target.value })} placeholder="显示名称" /><select disabled={busy || locked} value={field.type} onChange={event => onFieldChange(index, { type: event.target.value as TemplateField['type'] })}><option value="text">文本</option><option value="phone">手机号</option><option value="select">下拉框</option><option value="radio">单选框</option><option value="checkbox">复选框</option></select><label className="template-required"><input type="checkbox" disabled={busy || locked} checked={field.required} onChange={event => onFieldChange(index, { required: event.target.checked })} />必填</label><button type="button" className="template-remove-text" onClick={() => void onFieldRemove(index)} disabled={busy || locked || form.fields.length <= 1}>删除</button>{['select', 'radio', 'checkbox'].includes(field.type) && <input className="template-options" disabled={busy || locked} value={(field.options || []).join(',')} onChange={event => onFieldChange(index, { options: event.target.value.split(',') })} placeholder="选项用逗号分隔" />}</div>)}</div><aside className="template-preview"><h3>报名页预览</h3><p>字段数量：{form.fields.length}</p>{form.fields.map((field, index) => <div className="template-preview-item" key={`${field.key}-preview-${index}`}><span>{field.label || '未命名字段'}</span><small>{field.type}{field.required ? ' · 必填' : ' · 选填'}</small></div>)}</aside></div>
+      <div className="template-name-row"><label className="template-course-field">模板名称<input disabled={busy || locked} value={form.name} onChange={event => onChange({ ...form, name: event.target.value })} placeholder="例如：通用基础报名模板" /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" disabled={busy || locked} checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用模板</span></label></div>
+      <div className="template-layout"><div className="template-fields"><div className="template-section-head"><h3>字段配置</h3><button type="button" disabled={busy || locked} onClick={addField}>添加字段</button></div>{form.fields.map((field, index) => <div className="template-field-row" key={`${field.key}-${index}`}><input disabled={busy || locked} value={field.key} onChange={event => onFieldChange(index, { key: event.target.value })} placeholder="字段标识" /><input disabled={busy || locked} value={field.label} onChange={event => onFieldChange(index, { label: event.target.value })} placeholder="显示名称" /><select disabled={busy || locked} value={field.type} onChange={event => onFieldChange(index, { type: event.target.value as TemplateField['type'] })}><option value="text">文本</option><option value="phone">手机号</option><option value="select">下拉框</option><option value="radio">单选框</option><option value="checkbox">复选框</option></select><label className="template-required"><input type="checkbox" disabled={busy || locked} checked={field.required} onChange={event => onFieldChange(index, { required: event.target.checked })} />必填</label><button type="button" className="template-remove-text" onClick={() => void onFieldRemove(index)} disabled={busy || locked || form.fields.length <= 1}>删除</button>{['select', 'radio', 'checkbox'].includes(field.type) && <input className="template-options" disabled={busy || locked} value={(field.options || []).join(',')} onChange={event => onFieldChange(index, { options: event.target.value.split(',') })} placeholder="选项用逗号分隔" />}{(field.type === 'text' || field.type === 'phone') && <input type="number" min="1" max="1000" className="template-limit" disabled={busy || locked} value={field.maxLength ?? ''} onChange={event => onFieldChange(index, { maxLength: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="长度上限" />}{field.type === 'checkbox' && <input type="number" min="1" className="template-limit" disabled={busy || locked} value={field.maxSelect ?? ''} onChange={event => onFieldChange(index, { maxSelect: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="最多选择" />}<span className="template-order-actions"><button type="button" disabled={busy || locked || index === 0} onClick={() => moveField(index, -1)} title="上移">↑</button><button type="button" disabled={busy || locked || index === form.fields.length - 1} onClick={() => moveField(index, 1)} title="下移">↓</button></span></div>)}</div><aside className="template-preview"><h3>报名页预览</h3><p>字段数量：{form.fields.length}</p>{form.fields.map((field, index) => <div className="template-preview-item" key={`${field.key}-preview-${index}`}><span>{field.label || '未命名字段'}</span><small>{field.type}{field.required ? ' · 必填' : ' · 选填'}{field.maxLength ? ` · 最长 ${field.maxLength}` : ''}{field.maxSelect ? ` · 最多 ${field.maxSelect} 项` : ''}</small></div>)}</aside></div>
       </div>
       <div className="modal-actions"><button type="button" disabled={busy || locked} onClick={onClose}>取消</button>{form.id && onCopy && <button type="button" disabled={busy} onClick={onCopy}>另存为副本</button>}{form.id && onDelete && <button type="button" className="danger-button" disabled={busy || locked} onClick={onDelete}>删除模板</button>}<button type="button" className="primary" disabled={busy || locked} onClick={onSave}>{busy ? '保存中…' : '保存模板'}</button></div>
     </section>
@@ -1817,6 +1867,7 @@ function DetailPanel({ detail, onClose, onStudentEdit, onStudentStatus, onStuden
   const item = detail.item
   if (detail.module === 'students') return <StudentProfileDetailPanel item={item} onClose={onClose} onEdit={onStudentEdit} onStatus={onStudentStatus} onGrant={onStudentGrant} onDefault={onStudentDefault} onRevoke={onStudentRevoke} onMerge={onStudentMerge} onReload={onStudentReload} busy={busy} />
   if (detail.module === 'enrollment-details') return <EnrollmentRecordDetailPanel item={item} onClose={onClose} />
+  if (detail.module === 'users') return <UserDetailPanel item={item} onClose={onClose} />
   const relatedOrder = detail.relatedOrder
   const participants = Array.isArray(relatedOrder?.participants) ? relatedOrder.participants : Array.isArray(item.participants) ? item.participants : []
   const title = detail.module === 'enrollment-details' || detail.module === 'students' ? '报名明细详情' : '详情核对'
@@ -1867,6 +1918,21 @@ function EnrollmentRecordDetailPanel({ item, onClose }: { item: TableItem; onClo
   </div>
 }
 
+function UserDetailPanel({ item, onClose }: { item: TableItem; onClose: () => void }) {
+  const orders = Array.isArray(item.orders) ? item.orders : []
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="detail-modal modal-with-footer" role="dialog" aria-modal="true" aria-labelledby="user-detail-title">
+      <div className="detail-head"><div><h3 id="user-detail-title">用户详情</h3><p>{item.username || item.id}</p></div><ModalCloseButton onClick={onClose} label="关闭用户详情" /></div>
+      <div className="modal-scroll user-detail-scroll">
+        <h4>基础资料</h4><div className="detail-grid">{['name', 'phone', 'email', 'company', 'role', 'enabled', 'points', 'registeredAt', 'lastActiveAt', 'lastLoginAt'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
+        <div className="section-action-row"><h4>订单与支付（{orders.length}）</h4></div>
+        {orders.length ? <div className="table-scroll"><table><thead><tr><th>订单号</th><th>课程</th><th>金额</th><th>状态</th><th>支付方式</th><th>支付渠道</th><th>创建时间</th></tr></thead><tbody>{orders.map(order => <tr key={order.id}><td>{order.id}</td><td>{order.courseTitle || order.courseId || '-'}</td><td>¥{order.amount ?? 0}</td><td>{order.status || '-'}</td><td>{order.paymentMethod || '-'}</td><td>{order.paymentChannel || '-'}</td><td>{formatValue(order.createdAt)}</td></tr>)}</tbody></table>{orders.some(order => (order.paymentTransactions || []).length) && <div className="payment-transaction-list">{orders.map(order => (order.paymentTransactions || []).map((transaction: TableItem) => <div className="transaction-row" key={transaction.id}><span>{order.id}</span><span>{transaction.channel || '-'} · {transaction.status || '-'}</span><span>{transaction.providerTradeNo || transaction.outTradeNo || '-'}</span><span>{formatValue(transaction.paidAt || transaction.createdAt)}</span></div>))}</div>}</div> : <p className="detail-muted">暂无订单记录</p>}
+      </div>
+      <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
+    </section>
+  </div>
+}
+
 function displayColumnLabel(key: string) {
   return columnLabels[key] || '其他字段'
 }
@@ -1893,6 +1959,7 @@ function formatValue(value: unknown): string {
 }
 
 function formatTableValue(moduleKey: string, key: string, value: unknown): string {
+  if (moduleKey === 'audits' && (key === 'before' || key === 'after')) return value === null || value === undefined ? '-' : JSON.stringify(value)
   if (moduleKey === 'templates' && key === 'fields' && Array.isArray(value)) {
     const fields = value as Array<Record<string, any>>
     return fields.length ? `${fields.length} 个字段：${fields.map(field => String(field.label || field.key || '')).filter(Boolean).join('、')}` : '暂无字段'

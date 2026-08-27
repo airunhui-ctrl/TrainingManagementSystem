@@ -4,7 +4,7 @@
     <view class="profile">
       <view class="avatar">{{ isLoggedIn ? (profile.avatarText || profile.name?.slice(0, 1) || '六') : '未' }}</view>
       <view class="profile-copy">
-        <text v-if="isLoggedIn" class="name">{{ profile.name || '微信用户' }}</text>
+        <text v-if="isLoggedIn" class="name">{{ (profile.name && profile.name !== '微信用户') ? profile.name : (profile.username || '未设置昵称') }}</text>
         <text v-else class="name login-name" @tap="goMineLogin">点击登录</text>
         <text class="account">{{ isLoggedIn ? '账号：' + profile.username : '登录后查看个人信息' }}</text>
         <text class="company">{{ profile.company || '完善企业资料，获得更精准服务' }}</text>
@@ -28,7 +28,7 @@
       <view class="menu-row" @tap="openInvoices"><view><text class="menu-title">我的开票申请</text><text class="menu-hint">查看已提交的开票申请及状态</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="openStudents"><view><text class="menu-title">我的学员</text><text class="menu-hint">维护本人或代报名学员档案</text></view><text class="arrow">›</text></view>
       <view class="menu-row" @tap="showPoints"><view><text class="menu-title">我的积分</text><text class="menu-hint">查看当前积分和运营奖励说明</text></view><text class="arrow">›</text></view>
-      <view class="menu-row" @tap="showFeedback"><view><text class="menu-title">问题反馈</text><text class="menu-hint">告诉我们你的使用建议</text></view><text class="arrow">›</text></view>
+      <view class="menu-row" @tap="openFeedback"><view><text class="menu-title">问题反馈</text><text class="menu-hint">告诉我们你的使用建议</text></view><text class="arrow">›</text></view>
     </view>
 
     <view v-if="isLoggedIn" class="logout-section"><button class="logout-btn" type="button" @tap="logout">退出登录</button></view>
@@ -50,7 +50,9 @@
         <view class="modal-head"><view><text class="modal-title">账号与安全</text><text class="modal-subtitle">账号：{{ profile.username }}</text></view><text class="close" :class="{ 'action-disabled': Boolean(mineOperationKey) }" @tap="closeSecurity">×</text></view>
         <view class="security-tip"><text>登录方式</text><text class="bound">账号密码登录</text></view>
         <view class="security-tip"><text>最近登录</text><text>{{ profile.lastLoginAt ? formatDate(profile.lastLoginAt) : '暂无记录' }}</text></view>
-        <view class="form-row"><text>新密码</text><input v-model="passwordForm.password" password maxlength="32" placeholder="至少 6 位" /></view>
+        <view class="security-tip"><text>绑定手机号</text><text>{{ profile.phone || '未绑定' }}</text></view>
+        <view class="form-row"><text>原密码</text><input v-model="passwordForm.oldPassword" password maxlength="32" placeholder="请输入原密码" /></view>
+        <view class="form-row"><text>新密码</text><input v-model="passwordForm.password" password maxlength="64" placeholder="至少 8 位，含字母、数字、符号" /></view>
         <view class="form-row"><text>确认密码</text><input v-model="passwordForm.confirm" password maxlength="32" placeholder="再次输入新密码" /></view>
         <button class="primary-btn" :loading="savingPassword || mineOperationKey === 'password-save'" :disabled="Boolean(mineOperationKey)" @tap="savePassword">保存新密码</button>
       </view>
@@ -69,6 +71,20 @@
       </view>
     </view>
 
+    <view v-if="feedbackModalOpen" class="modal-mask" @tap.self="closeFeedback">
+      <view class="modal-card" @tap.stop>
+        <view class="modal-head"><view><text class="modal-title">问题反馈</text><text class="modal-subtitle">反馈后将进入管理端处理</text></view><text class="close" @tap="closeFeedback">×</text></view>
+        <view class="form-row"><text>反馈类型</text><picker mode="selector" :range="['建议反馈', '课程内容', '页面体验', '支付问题', '发票服务', '其他']" :value="['建议反馈', '课程内容', '页面体验', '支付问题', '发票服务', '其他'].indexOf(feedbackCategory)" @change="feedbackCategory = ['建议反馈', '课程内容', '页面体验', '支付问题', '发票服务', '其他'][Number($event.detail.value)]"><view class="picker-value">{{ feedbackCategory }}⌄</view></picker></view>
+        <view class="form-row"><text>反馈内容</text><textarea class="feedback-textarea" v-model="feedbackContent" maxlength="5000" placeholder="请描述您遇到的问题或建议" /></view>
+        <view class="feedback-image-limit">最多只能添加 3 张图片</view>
+        <view class="feedback-attachments">
+          <view v-for="(image, index) in feedbackImages" :key="index" class="feedback-image-wrap"><image class="feedback-image" :src="image" mode="aspectFill" /><text class="feedback-image-remove" @tap="feedbackImages.splice(index, 1); feedbackAttachments.splice(index, 1)">×</text></view>
+          <view v-if="feedbackImages.length < 3" class="feedback-add" @tap="chooseFeedbackImage">{{ feedbackUploading ? '上传中...' : '+ 添加图片' }}</view>
+        </view>
+        <button class="primary-btn" :loading="feedbackSubmitting" :disabled="feedbackUploading" @tap="submitFeedback">{{ feedbackUploading ? '附件上传中...' : '提交反馈' }}</button>
+      </view>
+    </view>
+
   </view>
 </template>
 
@@ -76,14 +92,16 @@
 import { reactive, ref } from 'vue'
 import { onShareAppMessage, onShow } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
+import { ensureAgreement } from '../../common/agreement'
+import { uploadFeedbackAttachment } from '../../common/api'
 import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
 import { openBusinessInvoices } from '../../common/invoice-notice'
-import { goLogin } from '../../common/login-redirect'
+import { goLogin, setLoginReturn } from '../../common/login-redirect'
 import { useNavLayout } from '../../common/nav-layout'
 import { useAuthStore } from '../../stores/auth'
 
-type Profile = { name: string; username: string; company: string; phone: string; gender: string; email: string; avatarText: string; points: number; registeredAt: string; lastLoginAt?: string | null }
+type Profile = { name: string; username: string; company: string; phone: string; gender: string; email: string; avatarText: string; points: number; registeredAt: string; lastLoginAt?: string | null; agreementRequired?: boolean }
 type InvoiceItem = { id: string; title?: string; status: string; createdAt: string }
 const profile = reactive<Profile>({ name: '培训用户', username: 'demo', company: '', phone: '', gender: '', email: '', avatarText: '六', points: 0, registeredAt: '', lastLoginAt: null })
 const nav = useNavLayout()
@@ -101,15 +119,29 @@ const mineOperationKey = ref('')
 const feedbackSubmitting = ref(false)
 const genderOptions = ['未设置', '男', '女', '其他']
 const profileForm = reactive({ name: '', phone: '', gender: '', company: '', email: '' })
-const passwordForm = reactive({ password: '', confirm: '' })
+const passwordForm = reactive({ oldPassword: '', password: '', confirm: '' })
+const maskPhone = (value: string) => { const phone = String(value || ''); return /^1\d{10}$/.test(phone) ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : (phone ? '*'.repeat(phone.length) : '') }
+const resetLoggedOutUi = () => {
+  Object.assign(profile, { name: '', username: '', company: '', phone: '', gender: '', email: '', avatarText: '', points: 0, registeredAt: '', lastLoginAt: null })
+  invoiceCount.value = 0
+  invoices.value = []
+  messageUnreadCount.value = 0
+  profileModalOpen.value = false
+  securityModalOpen.value = false
+}
+
+const feedbackModalOpen = ref(false)
+const feedbackCategory = ref('建议反馈')
+const feedbackContent = ref('')
+const feedbackImages = ref<string[]>([])
+const feedbackAttachments = ref<Array<{ storedName: string; originalName: string; mimeType: string; size: number; url: string }>>([])
+const feedbackUploading = ref(false)
 
 const load = async () => {
   loadError.value = ''
   isLoggedIn.value = Boolean(tokenStorage.getAccessToken())
   if (!isLoggedIn.value) {
-    invoiceCount.value = 0
-    invoices.value = []
-    messageUnreadCount.value = 0
+    resetLoggedOutUi()
     return
   }
   try {
@@ -136,7 +168,7 @@ const endMineOperation = (key: string) => {
 }
 const openProfile = () => { if (mineOperationKey.value) return; Object.assign(profileForm, { name: profile.name || '', phone: profile.phone || '', gender: profile.gender || '未设置', company: profile.company || '', email: profile.email || '' }); profileModalOpen.value = true }
 const closeProfile = () => { if (!mineOperationKey.value) profileModalOpen.value = false }
-const openSecurity = () => { if (mineOperationKey.value) return; passwordForm.password = ''; passwordForm.confirm = ''; securityModalOpen.value = true }
+const openSecurity = () => { if (mineOperationKey.value) return; passwordForm.oldPassword = ''; passwordForm.password = ''; passwordForm.confirm = ''; securityModalOpen.value = true }
 const openStudents = () => uni.navigateTo({ url: '/pages/students/students' })
 const openMessages = () => uni.navigateTo({ url: '/pages/messages/messages' })
 const openInvoices = () => { invoiceModalOpen.value = true }
@@ -158,38 +190,72 @@ const saveProfile = async () => {
   } catch (error: any) { uni.showToast({ title: error?.message || '资料保存失败', icon: 'none' }) } finally { savingProfile.value = false; endMineOperation(operationKey) }
 }
 const savePassword = async () => {
-  if (passwordForm.password.length < 6) return uni.showToast({ title: '密码至少 6 位', icon: 'none' })
+  if (!passwordForm.oldPassword) return uni.showToast({ title: '请输入原密码', icon: 'none' })
+  if (passwordForm.password === passwordForm.oldPassword) return uni.showToast({ title: '新密码不能与原密码一致', icon: 'none' })
+  if (!/^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,64}$/.test(passwordForm.password)) return uni.showToast({ title: '密码至少 8 位，且需包含字母、数字和符号', icon: 'none' })
   if (passwordForm.password !== passwordForm.confirm) return uni.showToast({ title: '两次输入的密码不一致', icon: 'none' })
   const operationKey = 'password-save'
   if (!beginMineOperation(operationKey)) return
   try {
     if (!await confirmAction('确认修改密码', '修改后当前登录状态会失效，需要重新登录，确定继续吗？')) return
     savingPassword.value = true
-    await api.changePassword(passwordForm.password); passwordForm.password = ''; passwordForm.confirm = ''; securityModalOpen.value = false; uni.showToast({ title: '密码已更新，请重新登录', icon: 'none' })
+    await api.changePassword(passwordForm.oldPassword, passwordForm.password)
+    passwordForm.oldPassword = ''; passwordForm.password = ''; passwordForm.confirm = ''
+    isLoggedIn.value = false; resetLoggedOutUi(); setLoginReturn('/pages/mine/mine')
+    useAuthStore().logout('/pages/login/login')
+    uni.showToast({ title: '密码已更新，请重新登录', icon: 'none' })
   } catch (error: any) { uni.showToast({ title: error?.message || '密码更新失败', icon: 'none' }) } finally { savingPassword.value = false; endMineOperation(operationKey) }
 }
 const formatDate = (value: string) => String(value || '').replace('T', ' ').slice(0, 16)
 const showPoints = () => uni.showModal({ title: '我的积分', content: `当前积分：${profile.points}\n积分由课程参与、反馈和运营活动产生。`, showCancel: false })
-const showFeedback = async () => {
+const openFeedback = () => {
   const operationKey = 'feedback'
-  if (!beginMineOperation(operationKey)) return
-  try {
-    const result = await new Promise<UniApp.ShowModalRes>((resolve) => uni.showModal({ title: '问题反馈', editable: true, placeholderText: '请输入您的建议', success: resolve, fail: () => resolve({ confirm: false, cancel: true, content: '' }) }))
-    const content = String(result.content || '').trim()
-    if (!result.confirm || !content) return
-    if (content.length > 5000) return uni.showToast({ title: '反馈内容不能超过 5000 字', icon: 'none' })
-    if (!await confirmAction('确认提交反馈', '提交后将进入管理端处理，确定继续吗？')) return
-    feedbackSubmitting.value = true
+  if (feedbackUploading.value || feedbackSubmitting.value || !beginMineOperation(operationKey)) return
+  feedbackCategory.value = '建议反馈'
+  feedbackContent.value = ''
+  feedbackImages.value = []
+  feedbackAttachments.value = []
+  feedbackModalOpen.value = true
+}
+const closeFeedback = () => {
+  if (feedbackUploading.value || feedbackSubmitting.value) return
+  feedbackModalOpen.value = false
+  endMineOperation('feedback')
+}
+const chooseFeedbackImage = () => {
+  if (feedbackUploading.value || feedbackSubmitting.value) return
+  const remaining = Math.max(0, 3 - feedbackImages.value.length)
+  if (!remaining) return uni.showToast({ title: '最多上传 3 张图片', icon: 'none' })
+  uni.chooseImage({ count: remaining, sizeType: ['compressed'], sourceType: ['album', 'camera'], success: async (result) => {
+    feedbackUploading.value = true
     try {
-      await api.submitFeedback(content)
-      uni.showToast({ title: '反馈已提交', icon: 'none' })
+      for (const filePath of result.tempFilePaths || []) {
+        const uploaded = await uploadFeedbackAttachment(filePath)
+        feedbackImages.value.push(filePath)
+        feedbackAttachments.value.push(uploaded)
+      }
     } catch (error: any) {
-      uni.showToast({ title: error?.message || '反馈提交失败，请稍后重试', icon: 'none' })
+      uni.showToast({ title: error?.message || '附件上传失败，请重试', icon: 'none' })
     } finally {
-      feedbackSubmitting.value = false
+      feedbackUploading.value = false
     }
+  } })
+}
+const submitFeedback = async () => {
+  const content = feedbackContent.value.trim()
+  if (!content) return uni.showToast({ title: '请输入反馈内容', icon: 'none' })
+  if (content.length > 5000) return uni.showToast({ title: '反馈内容不能超过 5000 字', icon: 'none' })
+  if (!await confirmAction('确认提交反馈', '提交后将进入管理端处理，确定继续吗？')) return
+  feedbackSubmitting.value = true
+  try {
+    await api.submitFeedback(content, feedbackCategory.value, feedbackAttachments.value)
+    feedbackModalOpen.value = false
+    endMineOperation('feedback')
+    uni.showToast({ title: '反馈已提交', icon: 'none' })
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '反馈提交失败，请稍后重试', icon: 'none' })
   } finally {
-    endMineOperation(operationKey)
+    feedbackSubmitting.value = false
   }
 }
 const logout = async () => {
@@ -200,12 +266,12 @@ const logout = async () => {
       confirmText: '退出登录',
       cancelText: '继续使用',
       variant: 'danger',
-    })) useAuthStore().logout()
+    })) { isLoggedIn.value = false; resetLoggedOutUi(); useAuthStore().logout() }
   } catch {
     uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' })
   }
 }
-onShow(load)
+onShow(async () => { await load(); if (profile.agreementRequired) void ensureAgreement() })
 onShareAppMessage(() => ({ title: '六边形培训 · 我的', path: '/pages/mine/mine' }))
 </script>
 
@@ -226,5 +292,8 @@ onShareAppMessage(() => ({ title: '六边形培训 · 我的', path: '/pages/min
 .invoice-list { margin-top: 8rpx; }.invoice-row { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; padding: 22rpx 0; border-top: 1rpx solid #edf1f5; }.invoice-row-main { min-width: 0; }.invoice-row-title, .invoice-row-id, .invoice-row-time { display: block; }.invoice-row-title { color: $navy; font-size: 25rpx; font-weight: 800; }.invoice-row-id { margin-top: 8rpx; color: $muted; font-size: 19rpx; word-break: break-all; }.invoice-row-time { margin-top: 6rpx; color: $muted; font-size: 19rpx; }.invoice-row-side { display: flex; align-items: center; gap: 10rpx; }.invoice-status { padding: 5rpx 12rpx; border-radius: 999rpx; font-size: 19rpx; font-weight: 800; }.invoice-status.success { color: #178a56; background: #effbf5; }.invoice-status.rejected { color: #b42318; background: #fff0f1; }.invoice-status.pending { color: #b87314; background: #fff8e9; }.invoice-empty { padding: 40rpx 0; color: $muted; text-align: center; font-size: 22rpx; }
 .modal-mask { z-index: var(--client-business-modal-layer, 1000) !important; }
 .action-disabled { opacity: .45; pointer-events: none; }
+.feedback-textarea { box-sizing: border-box; width: 100%; min-height: 180rpx; padding: 18rpx 22rpx; border: 1rpx solid #dce4ee; border-radius: 14rpx; color: $navy; background: #fbfcfe; font-size: 24rpx; line-height: 1.5; }
+.feedback-image-limit { margin-top: 18rpx; color: #d92d20; font-size: 21rpx; font-weight: 800; }
+.feedback-attachments { display: flex; flex-wrap: wrap; gap: 14rpx; margin-top: 18rpx; }.feedback-image-wrap, .feedback-add { position: relative; width: 150rpx; height: 150rpx; border-radius: 14rpx; overflow: hidden; }.feedback-image { display: block; width: 100%; height: 100%; }.feedback-image-remove { position: absolute; top: 4rpx; right: 4rpx; display: grid; place-items: center; width: 36rpx; height: 36rpx; border-radius: 50%; color: #fff; background: rgba(0,0,0,.55); font-size: 26rpx; line-height: 1; }.feedback-add { display: grid; place-items: center; border: 1rpx dashed #a9c6ec; color: $blue; background: #f5f9ff; font-size: 22rpx; font-weight: 700; }
 @media (min-width: 700px) { .modal-mask { align-items: center; padding: 30rpx; }.modal-card { width: 680rpx; border-radius: 28rpx; } }
 </style>

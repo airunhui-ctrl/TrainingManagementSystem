@@ -11,7 +11,7 @@ const value = raw.replace(/^file:/, '')
 const dbPath = isAbsolute(value) ? value : resolve(process.cwd(), value)
 mkdirSync(dirname(dbPath), { recursive: true })
 const db = new DatabaseSync(dbPath)
-const migrationFiles = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql', '0004_password_reset/migration.sql', '0005_payment_transactions/migration.sql', '0006_message_reads/migration.sql', '0007_phone_registration/migration.sql', '0008_auth_session_version/migration.sql']
+const migrationFiles = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql', '0004_password_reset/migration.sql', '0005_payment_transactions/migration.sql', '0006_message_reads/migration.sql', '0007_phone_registration/migration.sql', '0008_auth_session_version/migration.sql', '0009_p0_internal_loop/migration.sql', '0010_username_case_phone/migration.sql', '0011_phone_unique/migration.sql', '0012_username_case_sensitive/migration.sql']
 const readMigrations = (files) => files.map((file) => readFileSync(resolve(__dirname, 'migrations', file), 'utf8')).join('\n')
 const migration = readMigrations(migrationFiles)
 
@@ -39,10 +39,23 @@ if (normalized) {
   if (exists('User') && !has('User', 'wechatOpenId')) db.exec(`ALTER TABLE "User" ADD COLUMN "wechatOpenId" TEXT`)
   if (exists('User') && !has('User', 'lastLoginAt')) db.exec(`ALTER TABLE "User" ADD COLUMN "lastLoginAt" DATETIME`)
   if (exists('User') && !has('User', 'sessionVersion')) db.exec(`ALTER TABLE "User" ADD COLUMN "sessionVersion" INTEGER NOT NULL DEFAULT 0`)
+  if (exists('User') && !has('User', 'agreementVersion')) db.exec(`ALTER TABLE "User" ADD COLUMN "agreementVersion" TEXT`)
+  if (exists('User') && !has('User', 'agreementAcceptedAt')) db.exec(`ALTER TABLE "User" ADD COLUMN "agreementAcceptedAt" DATETIME`)
+  if (exists('User') && !has('User', 'usernameNormalized')) db.exec(`ALTER TABLE "User" ADD COLUMN "usernameNormalized" TEXT`)
+  if (exists('User') && has('User', 'usernameNormalized')) db.exec(`UPDATE "User" SET "usernameNormalized" = LOWER(TRIM("username")) WHERE "usernameNormalized" IS NULL`)
+  if (exists('User') && has('User', 'usernameNormalized')) db.exec(`DROP INDEX IF EXISTS "User_usernameNormalized_key"`)
+  if (exists('User') && has('User', 'phone')) db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "User_phone_key" ON "User"("phone")`)
   if (exists('Course') && !has('Course', 'image')) db.exec(`ALTER TABLE "Course" ADD COLUMN "image" TEXT`)
+  if (exists('Course') && !has('Course', 'specialPriceEndsAt')) db.exec(`ALTER TABLE "Course" ADD COLUMN "specialPriceEndsAt" TEXT`)
+  if (exists('Course') && !has('Course', 'maxParticipantsPerOrder')) db.exec(`ALTER TABLE "Course" ADD COLUMN "maxParticipantsPerOrder" INTEGER`)
+  if (exists('Course') && !has('Course', 'registrationStartAt')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationStartAt" TEXT`)
+  if (exists('Course') && !has('Course', 'registrationEndAt')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationEndAt" TEXT`)
   if (exists('DiscountRule') && !has('DiscountRule', 'scopeCourseIds')) db.exec(`ALTER TABLE "DiscountRule" ADD COLUMN "scopeCourseIds" TEXT NOT NULL DEFAULT '[]'`)
   if (exists('Course') && !has('Course', 'registrationTemplateId')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationTemplateId" TEXT`)
   if (exists('RegistrationTemplate') && !has('RegistrationTemplate', 'name')) db.exec(`ALTER TABLE "RegistrationTemplate" ADD COLUMN "name" TEXT NOT NULL DEFAULT '报名模板'`)
+  if (exists('RegistrationTemplate') && !has('RegistrationTemplate', 'enabled')) db.exec(`ALTER TABLE "RegistrationTemplate" ADD COLUMN "enabled" BOOLEAN NOT NULL DEFAULT true`)
+  if (exists('AuditLog') && !has('AuditLog', 'beforeJson')) db.exec(`ALTER TABLE "AuditLog" ADD COLUMN "beforeJson" TEXT`)
+  if (exists('AuditLog') && !has('AuditLog', 'afterJson')) db.exec(`ALTER TABLE "AuditLog" ADD COLUMN "afterJson" TEXT`)
   if (exists('Course') && exists('RegistrationTemplate') && has('RegistrationTemplate', 'courseId')) db.exec(`UPDATE "Course" SET "registrationTemplateId"=(SELECT "id" FROM "RegistrationTemplate" WHERE "RegistrationTemplate"."courseId"="Course"."id") WHERE "registrationTemplateId" IS NULL`)
   const courseCategoryMap = { '综合管理':'01', '人才管理':'02', '经营管理':'03', '组织效能':'04', '绩效管理':'05', '组织发展':'06', '数字化学习':'07' }
   const updateCourseCategory = db.prepare('UPDATE "Course" SET category=? WHERE id=?')
@@ -60,10 +73,10 @@ if (normalized) {
     : ''
   // The auth session column is added conditionally above for existing databases;
   // omit its non-idempotent ALTER statement from the repeatable migration batch.
-  const repeatableMigration = readMigrations(migrationFiles.filter((file) => file !== '0008_auth_session_version/migration.sql'))
+  const repeatableMigration = readMigrations(migrationFiles.filter((file) => file !== '0008_auth_session_version/migration.sql' && file !== '0009_p0_internal_loop/migration.sql' && file !== '0010_username_case_phone/migration.sql' && file !== '0011_phone_unique/migration.sql'))
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${rebuildTemplateTable} ${repeatableMigration}`)
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-    db.exec('PRAGMA user_version=11; COMMIT; PRAGMA foreign_keys=ON;')
+    db.exec('PRAGMA user_version=13; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite schema already current: ${dbPath}`)
   db.close()
   process.exit(0)
@@ -95,8 +108,8 @@ try {
   for (const indexName of ['User_username_key','RefreshToken_tokenHash_key','RegistrationTemplate_courseId_key','Order_userId_createdAt_idx','Order_courseId_status_idx','PaymentProof_orderId_createdAt_idx','Invoice_userId_createdAt_idx','Preview_userId_courseId_key','Feedback_userId_createdAt_idx']) db.exec(`DROP INDEX IF EXISTS "${indexName}"`)
   db.exec(migration)
 
-  const insertUser = db.prepare('INSERT INTO "User"(id,username,passwordHash,role,name,company,avatarText,phone,gender,email,wechatOpenId,lastLoginAt,registeredAt,enabled,points,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(username) DO NOTHING')
-  for (const user of legacyUsers) insertUser.run(user.id,user.username,user.passwordHash,user.role === 'admin' ? 'admin' : user.role === 'operator' ? 'operator' : 'user',user.name || '',user.company || '',user.avatarText || null,user.phone || null,user.gender || null,user.email || null,user.wechatOpenId || null,sqlDate(user.lastLoginAt),sqlDate(user.registeredAt || user.createdAt) || BigInt(now),user.enabled === 0 ? 0 : 1,Number(user.points || 0),sqlDate(user.createdAt) || BigInt(now),sqlDate(user.updatedAt) || BigInt(now))
+  const insertUser = db.prepare('INSERT INTO "User"(id,username,usernameNormalized,passwordHash,role,name,company,avatarText,phone,gender,email,wechatOpenId,lastLoginAt,registeredAt,enabled,points,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(username) DO NOTHING')
+  for (const user of legacyUsers) insertUser.run(user.id,user.username,String(user.username || '').toLowerCase(),user.passwordHash,user.role === 'admin' ? 'admin' : user.role === 'operator' ? 'operator' : 'user',user.name || '',user.company || '',user.avatarText || null,user.phone || null,user.gender || null,user.email || null,user.wechatOpenId || null,sqlDate(user.lastLoginAt),sqlDate(user.registeredAt || user.createdAt) || BigInt(now),user.enabled === 0 ? 0 : 1,Number(user.points || 0),sqlDate(user.createdAt) || BigInt(now),sqlDate(user.updatedAt) || BigInt(now))
 
   const courses = Array.isArray(state.courses) && state.courses.length ? state.courses : currentCourses
   const insertCourse = db.prepare('INSERT INTO "Course"(id,title,subtitle,category,date,location,instructor,image,price,originalPrice,specialPrice,allowMultiParticipant,registrationDeadline,capacity,enrolled,status,description,registrationTemplateId,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
@@ -148,7 +161,7 @@ try {
 
   for (const name of [...tables].reverse()) { const backup = `__backup_${name}`; if (exists(backup)) db.exec(`DROP TABLE "${backup}"`) }
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=11; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=13; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite legacy data migrated: ${dbPath}`)
 } catch (error) {
   db.exec('ROLLBACK')

@@ -1,6 +1,6 @@
 <template>
   <view class="detail-page">
-    <view class="detail-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }"><text class="back" @tap="back">‹</text><text class="detail-topbar-title" :style="{ left: '150rpx', right: (nav.capsuleRight + nav.capsuleWidth + 12) + 'px' }">{{ topbarTitle }}</text><view class="detail-topbar-actions"></view></view>
+    <view class="detail-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }"><text class="back" @tap="back">‹</text><text class="detail-topbar-title" :style="{ left: '150rpx', right: (nav.capsuleRight + nav.capsuleWidth + 12) + 'px' }">{{ topbarTitle }}</text><view class="detail-topbar-actions"><text class="detail-refresh" :class="{ disabled: loading }" @tap="retryLoad">刷新</text></view></view>
     <view v-if="loading && !course" class="page-state">正在加载课程…</view>
     <view v-else-if="loadError && !course" class="page-state error-state">
       <text class="state-title">课程加载失败</text>

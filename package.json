@@ -9,7 +9,9 @@
     "build:admin": "pnpm --dir frontend/admin-react build",
     "build:api": "pnpm --dir backend/api build",
     "preview:static": "node mvp/scripts/serve.mjs",
-    "verify": "node mvp/scripts/verify.mjs"
+    "verify": "node mvp/scripts/verify.mjs",
+    "dev:mp-weixin": "pnpm --dir frontend/client-uni dev:mp-weixin",
+    "build:mp-weixin": "pnpm --dir frontend/client-uni build:mp-weixin"
   },
   "packageManager": "pnpm@9.15.0"
 }

@@ -25,6 +25,7 @@ class RegisterDto {
   @IsOptional() @IsString() @MaxLength(80) name?: string
   @ValidateIf((_, value) => value !== undefined && value !== null && value !== '') @IsString() @Matches(/^1\d{10}$/) phone?: string
   @ValidateIf((_, value) => value !== undefined && value !== null && value !== '') @IsEmail() email?: string
+  @IsString() @MaxLength(64) agreementVersion!: string
 }
 
 class PhoneRegistrationRequestDto {
@@ -37,11 +38,12 @@ class PhoneRegistrationConfirmDto {
   @IsString() @Length(6, 6) @Matches(/^\d{6}$/) code!: string
   @IsString() @MinLength(8) @MaxLength(64) password!: string
   @IsString() @MinLength(8) @MaxLength(64) confirmPassword!: string
-  @IsOptional() @IsString() @MaxLength(80) name?: string
+  @IsString() @MinLength(3) @MaxLength(64) @Matches(/^[A-Za-z0-9_.@+-]+$/) username!: string
+  @IsString() @MaxLength(64) agreementVersion!: string
 }
 
 class PasswordResetRequestDto {
-  @IsString() @MinLength(3) @MaxLength(120) identifier!: string
+  @IsString() @Matches(/^1\d{10}$/) phone!: string
 }
 
 class PasswordResetConfirmDto {
@@ -59,7 +61,7 @@ export class AuthController {
   @Post('register') register(@Body() dto: RegisterDto) { return this.auth.register(dto) }
   @Post('register/sms/request') requestPhoneRegistration(@Body() dto: PhoneRegistrationRequestDto, @Req() request: { ip?: string }) { return this.auth.requestPhoneRegistration(dto.phone, request.ip) }
   @Post('register/sms/confirm') confirmPhoneRegistration(@Body() dto: PhoneRegistrationConfirmDto) { return this.auth.confirmPhoneRegistration(dto) }
-  @Post('password-reset/request') requestPasswordReset(@Body() dto: PasswordResetRequestDto, @Req() request: { ip?: string }) { return this.auth.requestPasswordReset(dto.identifier, request.ip) }
+  @Post('password-reset/request') requestPasswordReset(@Body() dto: PasswordResetRequestDto, @Req() request: { ip?: string }) { return this.auth.requestPasswordReset(dto.phone, request.ip) }
   @Post('password-reset/confirm') confirmPasswordReset(@Body() dto: PasswordResetConfirmDto) { return this.auth.confirmPasswordReset(dto) }
   @Post('wechat-login') wechatLogin(@Body() dto: WechatLoginDto) { return this.auth.wechatLogin(String(dto.code || ''), dto.profile || {}, dto.scene) }
   @Post('refresh') refresh(@Body() dto: RefreshDto) { return this.auth.refresh(dto.refreshToken) }
