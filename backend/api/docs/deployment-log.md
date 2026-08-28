@@ -30,6 +30,7 @@
 | 12 | 10:16 | 既有库手工补列 | `information_schema` 查缺 → 幂等 ALTER SQL（见问题 2） | 11 列补齐、usernameNormalized 回填 1 行、`User_phone_key` 唯一索引创建 |
 | 13 | 10:17 | 启动全部服务 | `docker compose --env-file .env.docker up -d` | 全部容器重建，api healthy |
 | 14 | 10:18 | 冒烟验证 | 见下「冒烟验证结果」 | 全部通过 |
+| 15 | 10:31 | 补充部署与代码文档 | 提交并推送 `ef2a368` | 新增 `backend/api/docs/deployment-log.md` 与 `backend/api/docs/code-explained.md` |
 
 ### 冒烟验证结果（10:18）
 
