@@ -720,7 +720,8 @@ function App() {
     if (saved) { setBannerModalOpen(false); setBannerForm(emptyBannerForm()) }
   }
   const savePayment = async () => {
-    if (!paymentForm.accountName.trim() || !paymentForm.bankName.trim() || !paymentForm.accountNo.trim()) return flash('请填写完整收款信息')
+    const offlineOnly = !paymentForm.onlineWechatEnabled && !paymentForm.onlineAlipayEnabled
+    if (offlineOnly && (!paymentForm.accountName.trim() || !paymentForm.bankName.trim() || !paymentForm.accountNo.trim())) return flash('线下支付未启用在线渠道时，请填写完整收款信息')
     if (!await confirmAction('确认保存收款设置吗？保存后会影响 C 端线下支付提示信息。')) return
     const saved = await runOperation('payment-settings-save', () => apiFetch('/admin/payment-settings', { method: 'PATCH', body: JSON.stringify(paymentForm) }), '支付设置已保存')
     if (saved) setPaymentModalOpen(false)
