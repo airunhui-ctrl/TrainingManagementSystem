@@ -32,6 +32,7 @@ import { api } from '../../common/api'
 import { ensureAgreement } from '../../common/agreement'
 import { redirectAfterLogin } from '../../common/invoice-notice'
 import { navigateAfterLogin } from '../../common/login-redirect'
+import { bindWechatOpenIdSilently } from '../../common/wechat-bind'
 import { useAuthStore } from '../../stores/auth'
 
 const username = ref('')
@@ -52,6 +53,9 @@ const login = async () => {
     const result = await api.login(username.value.trim(), password.value)
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
     if (!await ensureAgreement()) return
+    if (isWeixinMp.value) {
+      try { await bindWechatOpenIdSilently() } catch (error: any) { uni.showToast({ title: error?.message || '微信支付身份绑定失败', icon: 'none' }) }
+    }
     navigateAfterLogin(() => void redirectAfterLogin())
   } catch {
     uni.showToast({ title: '账号或密码错误', icon: 'none' })

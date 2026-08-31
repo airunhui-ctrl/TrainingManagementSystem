@@ -68,6 +68,7 @@ import { api, apiAssetUrl } from '../../common/api'
 import { showClientConfirm } from '../../common/confirm'
 import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
+import { bindWechatOpenIdSilently } from '../../common/wechat-bind'
 type Field={key:string;label:string;type:'text'|'phone'|'select'|'radio'|'checkbox';required:boolean;options?:string[];maxLength?:number;maxSelect?:number}
 type StudentOption={id:string;name:string;phone?:string|null;gender?:string|null;email?:string|null;company?:string|null;department?:string|null;position?:string|null;isDefault?:boolean}
 const courseId=ref('course-1'), fields=ref<Field[]>([]), loading=ref(false), quote=reactive({amount:0,discount:0})
@@ -126,6 +127,10 @@ const selectPaymentMethod=async(method:PaymentMethod)=>{
   paymentMessage.value=''
   paymentCodeUrl.value=''
   if(method==='offline')return
+  if(method==='wechat'){
+    nativePaymentLoading.value=true
+    try{await bindWechatOpenIdSilently()}catch(error:any){paymentMessage.value=error?.message||'微信支付身份绑定失败';uni.showToast({title:paymentMessage.value,icon:'none'});return}finally{nativePaymentLoading.value=false}
+  }
   nativePaymentLoading.value=true
   try{
     const intent=await api.createPaymentIntent(paymentOrder.id,method)

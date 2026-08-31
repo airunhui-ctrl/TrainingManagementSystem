@@ -18,6 +18,10 @@ class WechatLoginDto {
   @IsIn(['mini_program', 'h5', 'official_account']) @IsOptional() scene?: 'mini_program' | 'h5' | 'official_account'
 }
 
+class WechatBindDto {
+  @IsString() @MinLength(10) code!: string
+  @IsIn(['mini_program']) @IsOptional() scene?: 'mini_program'
+}
 class RegisterDto {
   @IsString() @MinLength(3) @MaxLength(64) @Matches(/^[A-Za-z0-9_.@+-]+$/) username!: string
   @IsString() @MinLength(8) @MaxLength(64) password!: string
@@ -64,6 +68,11 @@ export class AuthController {
   @Post('password-reset/request') requestPasswordReset(@Body() dto: PasswordResetRequestDto, @Req() request: { ip?: string }) { return this.auth.requestPasswordReset(dto.phone, request.ip) }
   @Post('password-reset/confirm') confirmPasswordReset(@Body() dto: PasswordResetConfirmDto) { return this.auth.confirmPasswordReset(dto) }
   @Post('wechat-login') wechatLogin(@Body() dto: WechatLoginDto) { return this.auth.wechatLogin(String(dto.code || ''), dto.profile || {}, dto.scene) }
+  @UseGuards(JwtGuard)
+  @Post('wechat-bind') wechatBind(@Body() dto: WechatBindDto, @Req() request: { user?: { sub?: string } }) {
+    return this.auth.bindWechatOpenId(String(request.user?.sub || ''), dto.code)
+  }
+
   @Post('refresh') refresh(@Body() dto: RefreshDto) { return this.auth.refresh(dto.refreshToken) }
 
   @UseGuards(JwtGuard)

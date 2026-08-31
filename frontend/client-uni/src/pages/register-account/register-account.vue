@@ -30,6 +30,7 @@ import { onShareAppMessage } from '@dcloudio/uni-app'
 import { api } from '../../common/api'
 import { AGREEMENT_VERSION } from '../../common/agreement'
 import { redirectAfterLogin } from '../../common/invoice-notice'
+import { bindWechatOpenIdSilently } from '../../common/wechat-bind'
 import { useAuthStore } from '../../stores/auth'
 
 const form = reactive({ phone: '', code: '', password: '', confirmPassword: '', username: '' })
@@ -71,6 +72,7 @@ const submit = async () => {
     if (!challengeId.value) return uni.showToast({ title: '请先获取短信验证码', icon: 'none' })
         const result = await api.registerByPhoneSms({ challengeId: challengeId.value, phone, code: form.code.trim(), password: form.password, confirmPassword: form.confirmPassword, username: form.username.trim(), agreementVersion: AGREEMENT_VERSION })
     useAuthStore().setTokens(result.accessToken, result.refreshToken, result.user.username)
+    try { await bindWechatOpenIdSilently() } catch (error: any) { uni.showToast({ title: error?.message || '微信支付身份绑定失败', icon: 'none' }) }
     uni.showToast({ title: '注册成功', icon: 'none' })
     redirectTimer = setTimeout(() => void redirectAfterLogin(), 250)
   } catch (error: any) {

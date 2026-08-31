@@ -33,6 +33,27 @@ export class AuthService {
     return this.issueTokens(user)
   }
 
+  /** 将当前登录账号与当前小程序微信身份绑定，用于 JSAPI 下单。 */
+  async bindWechatOpenId(userId: string, code: string) {
+    let openId = ''
+    try {
+      openId = (await resolveWechatIdentity(code, {}, 'mini_program')).openId
+    } catch (error: any) {
+      throw new UnauthorizedException(error?.message || '微信登录凭证无效')
+    }
+    const current = await this.db.user.findUnique({ where: { id: userId } })
+    if (!current || !current.enabled) throw new UnauthorizedException('账号不可用')
+    if (current.wechatOpenId === openId) return { bound: true, alreadyBound: true }
+    if (current.wechatOpenId) throw new ConflictException('当前账号已绑定其他微信，请使用原微信登录或联系管理员处理')
+    const existing = await this.db.user.findFirst({ where: { wechatOpenId: openId } })
+    if (existing) throw new ConflictException('当前微信已绑定其他账号，请使用微信一键登录')
+    try {
+      await this.db.user.update({ where: { id: current.id }, data: { wechatOpenId: openId } })
+    } catch {
+      throw new ConflictException('当前微信已绑定其他账号，请使用微信一键登录')
+    }
+    return { bound: true, alreadyBound: false }
+  }
   async register(input: { username: string; password: string; confirmPassword: string; name?: string; phone?: string; email?: string; agreementVersion?: string }) {
     const username = String(input.username || '').trim()
     const normalizedUsername = normalizeUsername(username)

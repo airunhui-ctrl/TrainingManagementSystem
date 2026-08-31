@@ -131,6 +131,7 @@ export const api = {
   requestPasswordReset: (phone: string) => request<{ accepted: boolean; challengeId: string; message: string; devCode?: string }>({ url: '/auth/password-reset/request', method: 'POST', data: { phone } }),
   confirmPasswordReset: (data: { challengeId: string; code: string; newPassword: string; confirmPassword: string }) => request<{ success: boolean; message: string }>({ url: '/auth/password-reset/confirm', method: 'POST', data }),
   wechatLogin: (code: string, profile: Record<string, any>, scene?: 'mini_program' | 'h5' | 'official_account') => request<{ accessToken: string; refreshToken: string; user: { username: string; role: string } }>({ url: '/auth/wechat-login', method: 'POST', data: { code, profile, ...(scene ? { scene } : {}) } }),
+  bindWechatOpenId: (code: string) => request<{ bound: boolean; alreadyBound: boolean }>({ url: '/auth/wechat-bind', method: 'POST', data: { code, scene: 'mini_program' } }),
   listCourses: (params?: { keyword?: string; category?: string }) => request<{ items: ApiCourse[] }>({ url: '/courses', data: params }),
   listBanners: () => request<{ items: ApiBanner[] }>({ url: '/banners' }),
   getCourse: (id: string) => request<ApiCourse>({ url: `/courses/${id}` }),

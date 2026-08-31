@@ -230,6 +230,7 @@ import { actionableRejectedInvoices, consumeBusinessTargetInvoice, consumeBusine
 import { goLogin } from '../../common/login-redirect'
 import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
+import { bindWechatOpenIdSilently } from '../../common/wechat-bind'
 
 type TabKey = 'payments' | 'records' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
@@ -327,6 +328,7 @@ const payOnline = async (id: string, channel: 'wechat' | 'alipay') => {
   if (payingOrderKey.value) return
   payingOrderKey.value = operationKey
   try {
+    if (channel === 'wechat') await bindWechatOpenIdSilently()
     const intent = await api.createPaymentIntent(id, channel)
     if (!intent.ready) { uni.showToast({ title: intent.message || '支付渠道尚未配置', icon: 'none' }); return }
     const result = await requestNativePayment(intent)

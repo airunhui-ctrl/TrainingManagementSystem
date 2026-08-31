@@ -120,4 +120,32 @@ describe('账号注册与找回密码', () => {
     const invalid = await request('/auth/wechat-login', { method: 'POST', body: JSON.stringify({ code: '', scene: 'mini_program' }) })
     expect(invalid.response.status).toBe(401)
   })
+
+  test('手机号账号静默绑定微信身份并拒绝 openid 冲突', async () => {
+    const register = async (phone: string, username: string) => {
+      const requested = await request('/auth/register/sms/request', { method: 'POST', body: JSON.stringify({ phone }) })
+      expect(requested.response.status).toBe(201)
+      const confirmed = await request('/auth/register/sms/confirm', { method: 'POST', body: JSON.stringify({ challengeId: requested.data.challengeId, phone, code: requested.data.devCode, password: 'Bind-pass123!', confirmPassword: 'Bind-pass123!', username, agreementVersion: '2026-08-17-v1' }) })
+      expect(confirmed.response.status).toBe(201)
+      return confirmed.data.accessToken as string
+    }
+    const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' })
+    const firstToken = await register('13800000011', 'bind-user-one')
+    const code = 'bind-openid-demo-001'
+    const firstBind = await request('/auth/wechat-bind', { method: 'POST', headers: authHeaders(firstToken), body: JSON.stringify({ code, scene: 'mini_program' }) })
+    expect(firstBind.response.status).toBe(201)
+    expect(firstBind.data).toEqual({ bound: true, alreadyBound: false })
+    const repeatBind = await request('/auth/wechat-bind', { method: 'POST', headers: authHeaders(firstToken), body: JSON.stringify({ code, scene: 'mini_program' }) })
+    expect(repeatBind.response.status).toBe(201)
+    expect(repeatBind.data).toEqual({ bound: true, alreadyBound: true })
+
+    await request('/auth/wechat-login', { method: 'POST', body: JSON.stringify({ code: 'conflict-openid-demo-001', scene: 'mini_program' }) })
+    const secondToken = await register('13800000012', 'bind-user-two')
+    const conflict = await request('/auth/wechat-bind', { method: 'POST', headers: authHeaders(secondToken), body: JSON.stringify({ code: 'conflict-openid-demo-001', scene: 'mini_program' }) })
+    expect(conflict.response.status).toBe(409)
+    expect(conflict.data.message).toContain('当前微信已绑定其他账号')
+
+    const unauthorized = await request('/auth/wechat-bind', { method: 'POST', body: JSON.stringify({ code, scene: 'mini_program' }) })
+    expect(unauthorized.response.status).toBe(401)
+  })
 })
