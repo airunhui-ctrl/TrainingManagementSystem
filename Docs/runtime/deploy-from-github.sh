@@ -20,8 +20,43 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-if ! grep -Eq '^PAYMENT_ADAPTER=disabled([[:space:]]|$)' "$ENV_FILE"; then
-  echo "PAYMENT_ADAPTER must remain disabled for this release" >&2
+env_value() {
+  grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-
+}
+
+payment_adapter="$(env_value PAYMENT_ADAPTER)"
+payment_channel="$(env_value PAYMENT_CHANNEL_POSTAR)"
+if [[ "$payment_adapter" == "disabled" ]]; then
+  :
+elif [[ "$payment_adapter" == "real" ]]; then
+  if [[ "$payment_channel" != "1" ]]; then
+    echo "Real payment requires PAYMENT_CHANNEL_POSTAR=1" >&2
+    exit 1
+  fi
+  if [[ "$(env_value WECHAT_ADAPTER)" != "real" ]]; then
+    echo "Real payment requires WECHAT_ADAPTER=real" >&2
+    exit 1
+  fi
+  for name in WECHAT_APP_ID WECHAT_APP_SECRET XYPAY_BASE_URL XYPAY_AGET_ID XYPAY_CUST_ID XYPAY_NOTIFY_URL; do
+    if [[ -z "$(env_value "$name")" ]]; then
+      echo "Real payment requires $name" >&2
+      exit 1
+    fi
+  done
+  if [[ ! "$(env_value XYPAY_BASE_URL)" =~ ^https://(xyf-server-test|xyzscxm|yyfsvxm)\.postar\.cn/?$ ]]; then
+    echo "XYPAY_BASE_URL must be an official Postar test/UAT/production gateway" >&2
+    exit 1
+  fi
+  if [[ "$(env_value XYPAY_NOTIFY_URL)" != https://* ]]; then
+    echo "XYPAY_NOTIFY_URL must use HTTPS" >&2
+    exit 1
+  fi
+  if [[ -z "$(env_value XYPAY_PUBLIC_KEY)" ]]; then
+    echo "Docker deployment requires single-line XYPAY_PUBLIC_KEY; XYPAY_PUBLIC_KEY_FILE is not mounted by Compose" >&2
+    exit 1
+  fi
+else
+  echo "PAYMENT_ADAPTER must be disabled or real" >&2
   exit 1
 fi
 

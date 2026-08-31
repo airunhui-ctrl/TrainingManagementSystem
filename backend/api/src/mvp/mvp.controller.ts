@@ -7,6 +7,7 @@ import { JwtGuard } from '../auth/jwt.guard'
 import { MvpService } from './mvp.service'
 import { COURSE_CATEGORY_DICTIONARY } from './course-categories'
 import { getIntegrationReadiness, verifyAlipayNotification, verifyWechatNotification } from '../channel-adapters'
+import { verifyXypayNotification } from '../xypay-sign'
 import { getPasswordResetReadiness } from '../auth/password-reset-delivery'
 import { getPhoneRegistrationReadiness } from '../auth/phone-registration-delivery'
 
@@ -70,6 +71,12 @@ export class MvpController {
     const notification = verifyAlipayNotification(body)
     await this.mvp.confirmExternalPayment({ channel: 'alipay', ...notification })
     return 'success'
+  }
+  @Post('payments/postar/notify') async postarPaymentNotify(@Body() body: Record<string, any>) {
+    const notification = verifyXypayNotification(body)
+    if (String(body.ORDER_STATUS || '') === '4') return { rspCod: '000000', rspMsg: 'success' }
+    await this.mvp.confirmExternalPayment({ channel: 'wechat', ...notification })
+    return { rspCod: '000000', rspMsg: 'success' }
   }
   @UseGuards(JwtGuard)
   @Post('orders/:id/payment-proof')

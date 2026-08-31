@@ -19,8 +19,14 @@ if ! command -v docker >/dev/null 2>&1; then
   echo "docker command is required" >&2
   exit 1
 fi
-if ! grep -Eq '^PAYMENT_ADAPTER=disabled([[:space:]]|$)' "$ENV_FILE"; then
-  echo "PAYMENT_ADAPTER must remain disabled for the non-payment release" >&2
+payment_adapter="$(grep -E '^PAYMENT_ADAPTER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
+payment_channel="$(grep -E '^PAYMENT_CHANNEL_POSTAR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
+if [[ "$payment_adapter" == "disabled" ]]; then
+  online_wechat_expected=false
+elif [[ "$payment_adapter" == "real" && "$payment_channel" == "1" ]]; then
+  online_wechat_expected=true
+else
+  echo "PAYMENT_ADAPTER must be disabled, or real with PAYMENT_CHANNEL_POSTAR=1" >&2
   exit 1
 fi
 
@@ -63,9 +69,9 @@ if ! "${compose[@]}" ps -a api-migrate | grep -Eq 'Exited[[:space:]]+\(0\)|exite
 fi
 
 "${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:3100/api/health').then(async r=>{if(!r.ok)process.exit(1); const body=await r.json(); if(body.status!=='ok'||body.database!=='ok')process.exit(1)}).catch(()=>process.exit(1))"
-"${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:3100/api/payment-settings/public').then(async r=>{if(!r.ok)process.exit(1); const body=await r.json(); if(body.onlineWechatEnabled!==false||body.onlineAlipayEnabled!==false)process.exit(1)}).catch(()=>process.exit(1))"
+"${compose[@]}" exec -T api node -e "fetch('http://127.0.0.1:3100/api/payment-settings/public').then(async r=>{if(!r.ok)process.exit(1); const body=await r.json(); const onlineWechat=$online_wechat_expected; if(body.onlineWechatEnabled!==onlineWechat||body.onlineAlipayEnabled!==false)process.exit(1)}).catch(()=>process.exit(1))"
 curl --fail --silent --show-error --max-time 10 "$BASE_URL:$ADMIN_PORT/" >/dev/null
 curl --fail --silent --show-error --max-time 10 "$BASE_URL:$H5_PORT/" >/dev/null
 
 echo "Compose release smoke check passed"
-echo "admin=$BASE_URL:$ADMIN_PORT h5=$BASE_URL:$H5_PORT api=healthy postgres=healthy payment=disabled"
+echo "admin=$BASE_URL:$ADMIN_PORT h5=$BASE_URL:$H5_PORT api=healthy postgres=healthy payment=$payment_adapter"

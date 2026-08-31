@@ -1,8 +1,9 @@
 import { createHash, createSign, createVerify, createDecipheriv, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
+import { createXypayJsapiPaymentIntent, isXypayEnabled } from './xypay-sign'
 
 export type WechatIdentity = { openId: string; unionId?: string; sessionKey?: string }
-export type PaymentIntentResult = { ready: boolean; payload: Record<string, any> | null; message: string }
+export type PaymentIntentResult = { ready: boolean; payload: Record<string, any> | null; message: string; providerTradeNo?: string }
 export type PaymentNotification = { outTradeNo: string; providerTradeNo?: string; amount: number; payload: Record<string, any> }
 
 const secretValue = (value?: string) => {
@@ -36,6 +37,7 @@ export function getIntegrationReadiness() {
   const paymentAdapter = String(process.env.PAYMENT_ADAPTER || (nodeEnv === 'production' ? 'disabled' : 'fake')).trim()
   const wechatAdapter = String(process.env.WECHAT_ADAPTER || (nodeEnv === 'production' ? 'real' : 'fake')).trim()
   const wechatProduct = String(process.env.WECHAT_PAY_PRODUCT || 'h5').trim().toLowerCase()
+  const postarEnabled = String(process.env.PAYMENT_CHANNEL_POSTAR || '').trim() === '1'
   const wechatMissing: string[] = []
   if (!String(process.env.WECHAT_PAY_MCH_ID || '').trim()) wechatMissing.push('WECHAT_PAY_MCH_ID')
   if (!String(process.env.WECHAT_PAY_APP_ID || process.env.WECHAT_APP_ID || '').trim()) wechatMissing.push('WECHAT_PAY_APP_ID')
@@ -57,13 +59,27 @@ export function getIntegrationReadiness() {
   if (productionHttpsRequired && !wechatNotifyHttps) wechatMissing.push('WECHAT_PAY_NOTIFY_URL(HTTPS)')
   if (productionHttpsRequired && !alipayNotifyHttps) alipayMissing.push('ALIPAY_NOTIFY_URL(HTTPS)')
   if (productionHttpsRequired && !alipayReturnHttps) alipayMissing.push('ALIPAY_RETURN_URL(HTTPS)')
-  const paymentConfigured = paymentAdapter === 'real' ? wechatMissing.length === 0 : paymentAdapter === 'fake' && nodeEnv !== 'production'
+  const postarMissing: string[] = []
+  if (postarEnabled) {
+    if (!String(process.env.XYPAY_BASE_URL || '').trim()) postarMissing.push('XYPAY_BASE_URL')
+    if (!String(process.env.XYPAY_AGET_ID || '').trim()) postarMissing.push('XYPAY_AGET_ID')
+    if (!String(process.env.XYPAY_CUST_ID || '').trim()) postarMissing.push('XYPAY_CUST_ID')
+    if (!secretConfigured(process.env.XYPAY_PUBLIC_KEY, process.env.XYPAY_PUBLIC_KEY_FILE)) postarMissing.push('XYPAY_PUBLIC_KEY[_FILE]')
+    if (!String(process.env.XYPAY_NOTIFY_URL || '').trim()) postarMissing.push('XYPAY_NOTIFY_URL')
+    if (!String(process.env.WECHAT_APP_ID || '').trim()) postarMissing.push('WECHAT_APP_ID')
+    if (productionHttpsRequired && !httpsUrlConfigured(process.env.XYPAY_NOTIFY_URL)) postarMissing.push('XYPAY_NOTIFY_URL(HTTPS)')
+  }
+  const postarConfigured = !postarEnabled || (paymentAdapter === 'real' && postarMissing.length === 0)
+  const paymentConfigured = paymentAdapter === 'real'
+    ? (postarEnabled ? postarMissing.length === 0 : wechatMissing.length === 0)
+    : paymentAdapter === 'fake' && nodeEnv !== 'production'
   const alipayConfigured = paymentAdapter === 'real' ? alipayMissing.length === 0 : paymentAdapter === 'fake' && nodeEnv !== 'production'
   return {
     nodeEnv,
     paymentAdapter,
     wechatLogin: { adapter: wechatAdapter, configured: wechatAdapter === 'fake' ? nodeEnv !== 'production' : Boolean(String(process.env.WECHAT_APP_ID || '').trim() && String(process.env.WECHAT_APP_SECRET || '').trim()), productionSafe: wechatAdapter === 'real' && Boolean(String(process.env.WECHAT_APP_ID || '').trim() && String(process.env.WECHAT_APP_SECRET || '').trim()), missing: wechatAdapter === 'real' ? [!String(process.env.WECHAT_APP_ID || '').trim() ? 'WECHAT_APP_ID' : '', !String(process.env.WECHAT_APP_SECRET || '').trim() ? 'WECHAT_APP_SECRET' : ''].filter(Boolean) : [] },
-    wechatPayment: { adapter: paymentAdapter, product: wechatProduct, configured: paymentConfigured, productionSafe: paymentAdapter === 'real' && wechatMissing.length === 0, callbackHttps: wechatNotifyHttps, missing: paymentAdapter === 'real' ? wechatMissing : [] },
+    wechatPayment: { adapter: paymentAdapter, product: postarEnabled ? 'postar-jsapi' : wechatProduct, configured: paymentConfigured, productionSafe: paymentAdapter === 'real' && (postarEnabled ? postarMissing.length === 0 : wechatMissing.length === 0), callbackHttps: postarEnabled ? httpsUrlConfigured(process.env.XYPAY_NOTIFY_URL) : wechatNotifyHttps, missing: paymentAdapter === 'real' && !postarEnabled ? wechatMissing : [] },
+    postarPayment: { enabled: postarEnabled, adapter: paymentAdapter, configured: postarConfigured, productionSafe: postarEnabled && paymentAdapter === 'real' && postarMissing.length === 0, callbackHttps: httpsUrlConfigured(process.env.XYPAY_NOTIFY_URL), missing: postarEnabled && paymentAdapter === 'real' ? postarMissing : [] },
     alipayPayment: { adapter: paymentAdapter, configured: alipayConfigured, productionSafe: paymentAdapter === 'real' && alipayMissing.length === 0, callbackHttps: alipayNotifyHttps, returnUrlHttps: alipayReturnHttps, missing: paymentAdapter === 'real' ? alipayMissing : [] },
   }
 }
@@ -140,6 +156,7 @@ export async function createPaymentIntent(channel: 'wechat' | 'alipay', amount: 
   if (mode === 'fake') return { ready: false, payload: null, message: '开发环境未配置真实支付，已禁用原生支付并保留二维码回退' }
   if (mode === 'disabled') return { ready: false, payload: null, message: '支付渠道未启用，请联系管理员配置商户参数' }
   if (mode !== 'real') return { ready: false, payload: null, message: `未知支付适配器模式：${mode}` }
+  if (channel === 'wechat' && isXypayEnabled()) return createXypayJsapiPaymentIntent(amount, orderId, context)
   const merchant = channel === 'wechat' ? process.env.WECHAT_PAY_MCH_ID : process.env.ALIPAY_APP_ID
   if (!merchant) return { ready: false, payload: null, message: `${channel === 'wechat' ? '微信支付' : '支付宝'}商户参数未配置` }
   if (channel === 'wechat') {

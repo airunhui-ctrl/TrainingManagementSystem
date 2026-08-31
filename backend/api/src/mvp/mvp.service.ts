@@ -1,9 +1,10 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, extname, join, resolve } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { passwordMatches, PrismaService } from '../prisma.service'
 import { createPaymentIntent as createPaymentIntentAdapter } from '../channel-adapters'
+import { createXypayOrderNo, isXypayEnabled, queryXypayPayment, type XypayOrderQueryResult } from '../xypay-sign'
 import { isAdminRole } from '../auth/roles'
 import { AGREEMENT_VERSION } from '../common/agreement-version'
 import { PASSWORD_POLICY_MESSAGE, isValidPassword } from '../common/password-policy'
@@ -364,28 +365,48 @@ export class MvpService {
     const order = await this.db.order.findFirst({ where: { id: orderId, userId } })
     if (!order) throw new NotFoundException('订单不存在')
     if (order.status !== '待支付') throw new BadRequestException('当前订单状态不能发起支付')
-    const provider = channel === 'wechat' ? 'wxpay' : 'alipay'
-    const transaction = await this.db.paymentTransaction.upsert({
-      where: { outTradeNo: orderId },
-      create: { id: id('PAY'), orderId, channel, provider, outTradeNo: orderId, amount: order.amount, status: 'pending' },
-      update: { channel, provider, amount: order.amount, status: 'pending', updatedAt: new Date() },
-    })
-    const payer = channel === 'wechat' && String(process.env.WECHAT_PAY_PRODUCT || '').toLowerCase() === 'jsapi'
+    const postar = channel === 'wechat' && String(process.env.PAYMENT_ADAPTER || '').trim() === 'real' && isXypayEnabled()
+    const provider = postar ? 'postar' : channel === 'wechat' ? 'wxpay' : 'alipay'
+    const outTradeNo = postar ? createXypayOrderNo(orderId) : orderId
+    const transaction = postar
+      ? await this.db.paymentTransaction.create({ data: { id: id('PAY'), orderId, channel, provider, outTradeNo, amount: order.amount, status: 'pending' } })
+      : await this.db.paymentTransaction.upsert({
+        where: { outTradeNo: orderId },
+        create: { id: id('PAY'), orderId, channel, provider, outTradeNo: orderId, amount: order.amount, status: 'pending' },
+        update: { channel, provider, amount: order.amount, status: 'pending', updatedAt: new Date() },
+      })
+    const payer = provider === 'postar' || (channel === 'wechat' && String(process.env.WECHAT_PAY_PRODUCT || '').toLowerCase() === 'jsapi')
       ? await this.db.user.findUnique({ where: { id: userId }, select: { wechatOpenId: true } })
       : null
     const intent = await createPaymentIntentAdapter(channel, order.amount, transaction.outTradeNo, { clientIp, openId: payer?.wechatOpenId || undefined })
     await this.db.order.update({ where: { id: orderId }, data: { paymentMethod: 'online', paymentChannel: channel } })
-    await this.db.paymentTransaction.update({ where: { id: transaction.id }, data: { payload: JSON.stringify(intent.payload || {}) } })
-    return { orderId, channel, provider, amount: order.amount, currency: 'CNY', ...intent }
+    await this.db.paymentTransaction.update({ where: { id: transaction.id }, data: { payload: JSON.stringify(intent.payload || {}), providerTradeNo: intent.providerTradeNo || transaction.providerTradeNo } })
+    return { orderId, channel, provider: provider === 'postar' ? 'wxpay' : provider, amount: order.amount, currency: 'CNY', ...intent }
   }
-
-  async getPaymentStatus(userId: string, orderId: string) {
+  async getPaymentStatus(userId: string, orderId: string): Promise<{ orderId: string; orderStatus: string; paid: boolean; channel: string | null; providerTradeNo: string | null; transactionStatus: string | null }> {
     const order = await this.db.order.findFirst({ where: { id: orderId, userId }, include: { paymentTransactions: { orderBy: { createdAt: 'desc' }, take: 1 } } })
     if (!order) throw new NotFoundException('订单不存在')
     const transaction = order.paymentTransactions[0]
+    if (transaction?.provider === 'postar' && transaction.status === 'pending') {
+      let remote: XypayOrderQueryResult
+      try {
+        remote = await queryXypayPayment(transaction.outTradeNo, transaction.createdAt)
+      } catch {
+        // 查单兜底不可用时保留异步通知链路，不把网络抖动误判为支付失败。
+        return { orderId, orderStatus: order.status, paid: order.status === '已支付', channel: transaction.channel, providerTradeNo: transaction.providerTradeNo, transactionStatus: transaction.status }
+      }
+      if (remote.status === 'paid') {
+        if (Math.round(remote.amount * 100) !== Math.round(transaction.amount * 100)) throw new BadRequestException('星驿付查单金额与订单金额不一致')
+        await this.confirmExternalPayment({ channel: 'wechat', outTradeNo: transaction.outTradeNo, providerTradeNo: remote.providerTradeNo, amount: remote.amount, payload: remote.payload })
+        return this.getPaymentStatus(userId, orderId)
+      }
+      if (remote.status === 'failed') {
+        await this.db.paymentTransaction.update({ where: { id: transaction.id }, data: { status: 'failed', payload: JSON.stringify(remote.payload) } })
+        return this.getPaymentStatus(userId, orderId)
+      }
+    }
     return { orderId, orderStatus: order.status, paid: order.status === '已支付', channel: transaction?.channel || order.paymentChannel || null, providerTradeNo: transaction?.providerTradeNo || null, transactionStatus: transaction?.status || null }
   }
-
   async confirmExternalPayment(input: { channel: 'wechat' | 'alipay'; outTradeNo: string; providerTradeNo?: string; amount: number; payload?: Record<string, any> }) {
     const transaction = await this.db.paymentTransaction.findUnique({ where: { outTradeNo: input.outTradeNo } })
     if (!transaction) throw new NotFoundException('支付交易不存在')
@@ -396,8 +417,19 @@ export class MvpService {
     if (order.status === '已取消') throw new BadRequestException('已取消订单不能确认支付')
     if (order.status === '已支付' && transaction.status === 'paid') return this.orderView(await this.db.order.findUniqueOrThrow({ where: { id: order.id }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } }))
     const updated = await this.db.$transaction(async (tx) => {
+      // 先按“待支付”抢占订单终态，防止回调与取消/退款并发时把已关闭订单改回已支付。
+      const claimed = await tx.order.updateMany({ where: { id: order.id, status: '待支付' }, data: { status: '已支付', paymentMethod: 'online', paymentChannel: input.channel } })
+      if (claimed.count === 0) {
+        const latestOrder = await tx.order.findUniqueOrThrow({ where: { id: order.id } })
+        const latestTransaction = await tx.paymentTransaction.findUniqueOrThrow({ where: { id: transaction.id } })
+        if (latestOrder.status === '已支付' && latestTransaction.status === 'paid') {
+          const paidOrder = await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+          return { item: latestTransaction, paidOrder }
+        }
+        throw new ConflictException('订单状态已变化，不能确认支付')
+      }
       const item = await tx.paymentTransaction.update({ where: { id: transaction.id }, data: { status: 'paid', providerTradeNo: input.providerTradeNo || transaction.providerTradeNo, payload: JSON.stringify(input.payload || {}), paidAt: new Date() } })
-      const paidOrder = await tx.order.update({ where: { id: order.id }, data: { status: '已支付', paymentMethod: 'online', paymentChannel: input.channel }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      const paidOrder = await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
       return { item, paidOrder }
     })
     await this.audit(`payment:${input.channel}`, '支付回调确认', `${order.id} ${updated.item.providerTradeNo || ''}`)
