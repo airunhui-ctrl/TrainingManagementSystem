@@ -4,7 +4,7 @@ type BindResult = { bound: boolean; alreadyBound: boolean }
 
 let pending: Promise<BindResult> | null = null
 
-const isWeixinMiniProgram = () => {
+export const isWeixinMiniProgram = () => {
   try { return String((uni.getSystemInfoSync() as any).uniPlatform || '').toLowerCase() === 'mp-weixin' } catch { return false }
 }
 

@@ -41,9 +41,10 @@
               <label v-if="order.status === '已支付'" class="invoice-check"><checkbox :checked="selectedInvoiceOrderIds.includes(order.id)" color="#2F80ED" @tap.stop="toggleInvoiceOrder(order.id, !selectedInvoiceOrderIds.includes(order.id))" /><text>选择开票</text></label>
               <button v-if="order.status === '已支付' && !invoicedOrderIds.has(order.id)" class="outline-button" @tap="openInvoiceDialog(order.id)">申请开票</button>
               <text v-if="order.status === '已支付' && invoicedOrderIds.has(order.id)" class="invoice-done">已提交开票</text>
-              <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineWechatEnabled" class="primary-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'wechat')">{{ payingOrderKey ? '支付处理中...' : '微信支付' }}</button>
+              <button v-if="order.status === '待支付' && paymentInfoLoaded && isWeixinMiniProgram() && paymentInfo.onlineWechatEnabled" class="primary-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'wechat')">{{ payingOrderKey ? '支付处理中...' : '微信支付' }}</button>
               <button v-if="order.status === '待支付' && paymentInfoLoaded && paymentInfo.onlineAlipayEnabled" class="outline-button" :disabled="Boolean(payingOrderKey)" @tap="payOnline(order.id, 'alipay')">{{ payingOrderKey ? '支付处理中...' : '支付宝支付' }}</button>
-              <text v-if="order.status === '待支付' && paymentInfoLoaded && !paymentInfo.onlineWechatEnabled && !paymentInfo.onlineAlipayEnabled" class="status-hint">在线支付暂未启用，请使用线下对公转账并上传凭证。</text>
+              <text v-if="order.status === '待支付' && paymentInfoLoaded && !isWeixinMiniProgram()" class="status-hint">在线微信支付请使用微信小程序完成；也可使用线下对公转账并上传凭证。</text>
+              <text v-else-if="order.status === '待支付' && paymentInfoLoaded && isWeixinMiniProgram() && !paymentInfo.onlineWechatEnabled && !paymentInfo.onlineAlipayEnabled" class="status-hint">在线支付暂未启用，请使用线下对公转账并上传凭证。</text>
               <button v-if="order.status === '待支付'" class="offline-button" @tap="openPaymentProofModal(order.id)">提交线下支付凭证</button>
               <text v-if="order.status === '待审核'" class="status-hint">支付凭证审核中，暂不能重复提交。</text>
               <button class="outline-button" @tap="openPaymentDetail(order.id)">支付详情</button>
@@ -230,7 +231,7 @@ import { actionableRejectedInvoices, consumeBusinessTargetInvoice, consumeBusine
 import { goLogin } from '../../common/login-redirect'
 import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
-import { bindWechatOpenIdSilently } from '../../common/wechat-bind'
+import { bindWechatOpenIdSilently, isWeixinMiniProgram } from '../../common/wechat-bind'
 
 type TabKey = 'payments' | 'records' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
@@ -328,6 +329,7 @@ const payOnline = async (id: string, channel: 'wechat' | 'alipay') => {
   if (payingOrderKey.value) return
   payingOrderKey.value = operationKey
   try {
+    if (channel === 'wechat' && !isWeixinMiniProgram()) throw new Error('微信支付请使用微信小程序完成')
     if (channel === 'wechat') await bindWechatOpenIdSilently()
     const intent = await api.createPaymentIntent(id, channel)
     if (!intent.ready) { uni.showToast({ title: intent.message || '支付渠道尚未配置', icon: 'none' }); return }

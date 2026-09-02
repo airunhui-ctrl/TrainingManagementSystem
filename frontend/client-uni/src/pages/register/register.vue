@@ -68,7 +68,7 @@ import { api, apiAssetUrl } from '../../common/api'
 import { showClientConfirm } from '../../common/confirm'
 import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
-import { bindWechatOpenIdSilently } from '../../common/wechat-bind'
+import { bindWechatOpenIdSilently, isWeixinMiniProgram } from '../../common/wechat-bind'
 type Field={key:string;label:string;type:'text'|'phone'|'select'|'radio'|'checkbox';required:boolean;options?:string[];maxLength?:number;maxSelect?:number}
 type StudentOption={id:string;name:string;phone?:string|null;gender?:string|null;email?:string|null;company?:string|null;department?:string|null;position?:string|null;isDefault?:boolean}
 const courseId=ref('course-1'), fields=ref<Field[]>([]), loading=ref(false), quote=reactive({amount:0,discount:0})
@@ -82,7 +82,7 @@ const paymentModalOpen=ref(false), paying=ref(false), nativePaymentLoading=ref(f
 const paymentOptions=[{key:'wechat' as const,label:'微信支付',hint:'优先打开微信支付',icon:'微'},{key:'alipay' as const,label:'支付宝支付',hint:'优先打开支付宝支付',icon:'支'},{key:'offline' as const,label:'线下对公转账',hint:'转账后上传凭证审核',icon:'公'}]
 let pageUnloaded=false
 let paymentRedirectTimer: ReturnType<typeof setTimeout> | null = null
-const availablePaymentOptions = computed(() => paymentOptions.filter((option) => option.key === 'offline' || (option.key === 'wechat' ? paymentInfo.onlineWechatEnabled !== false : paymentInfo.onlineAlipayEnabled !== false)))
+const availablePaymentOptions = computed(() => paymentOptions.filter((option) => option.key === 'offline' || (option.key === 'wechat' ? isWeixinMiniProgram() && paymentInfo.onlineWechatEnabled !== false : paymentInfo.onlineAlipayEnabled !== false)))
 const blank=()=>Object.fromEntries(fields.value.map(field=>[field.key,''])) as Record<string,string>
 const students=ref<StudentOption[]>([])
 const participants=reactive<Array<Record<string,string> & {studentId?:string}>>([])
@@ -128,6 +128,7 @@ const selectPaymentMethod=async(method:PaymentMethod)=>{
   paymentCodeUrl.value=''
   if(method==='offline')return
   if(method==='wechat'){
+    if(!isWeixinMiniProgram()){paymentMessage.value='微信支付请使用微信小程序完成';uni.showToast({title:paymentMessage.value,icon:'none'});return}
     nativePaymentLoading.value=true
     try{await bindWechatOpenIdSilently()}catch(error:any){paymentMessage.value=error?.message||'微信支付身份绑定失败';uni.showToast({title:paymentMessage.value,icon:'none'});return}finally{nativePaymentLoading.value=false}
   }
