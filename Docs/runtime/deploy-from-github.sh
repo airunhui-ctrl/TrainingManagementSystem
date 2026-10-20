@@ -21,7 +21,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 env_value() {
-  grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-
+  grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true
 }
 
 payment_adapter="$(env_value PAYMENT_ADAPTER)"

@@ -19,8 +19,8 @@ if ! command -v docker >/dev/null 2>&1; then
   echo "docker command is required" >&2
   exit 1
 fi
-payment_adapter="$(grep -E '^PAYMENT_ADAPTER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
-payment_channel="$(grep -E '^PAYMENT_CHANNEL_POSTAR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
+payment_adapter="$(grep -E '^PAYMENT_ADAPTER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)" || true
+payment_channel="$(grep -E '^PAYMENT_CHANNEL_POSTAR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)" || true
 if [[ "$payment_adapter" == "disabled" ]]; then
   online_wechat_expected=false
 elif [[ "$payment_adapter" == "real" && "$payment_channel" == "1" ]]; then
@@ -31,7 +31,7 @@ else
 fi
 
 env_value() {
-  grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-
+  grep -E "^$1=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true
 }
 
 postgres_password="$(env_value POSTGRES_PASSWORD)"
