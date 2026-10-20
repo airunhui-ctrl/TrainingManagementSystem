@@ -85,11 +85,13 @@ const imageByCourseId: Record<string, string> = {
 
 const categories = computed(() => ['全部', ...new Set(courses.value.map((course) => course.category))])
 const visibleCourses = computed(() => courses.value.filter((course) => (category.value === '全部' || course.category === category.value) && (!keyword.value.trim() || `${course.title}${course.subtitle}${course.category}`.includes(keyword.value.trim()))))
+const BANNER_SLIDE_LIMIT = 5
+
 const bannerSlides = computed(() => {
   const candidates = (bannerIds.value.length ? bannerIds.value : courses.value.map((course) => course.id))
     .map((id) => courses.value.find((course) => course.id === id))
     .filter((course): course is DisplayCourse => Boolean(course))
-  return candidates.map((course, index) => ({
+  return candidates.slice(0, BANNER_SLIDE_LIMIT).map((course) => ({
     id: `banner-${course.id}`,
     courseId: course.id,
     image: apiAssetUrl(course.image) || bannerImage,
