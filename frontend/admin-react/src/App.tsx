@@ -586,7 +586,7 @@ function App() {
       price: String(item.price ?? ''), originalPrice: String(item.originalPrice ?? item.price ?? ''), specialPrice: String(item.specialPrice ?? ''),
       specialPriceEndsAt: dateToLocalInput(item.specialPriceEndsAt),
       capacity: String(item.capacity ?? 30), enrolled: String(item.enrolled ?? 0), status: String(item.status || '报名中'),
-      registrationDeadline: dateToLocalInput(item.registrationDeadline), registrationStartAt: dateToLocalInput(item.registrationStartAt), registrationEndAt: dateToLocalInput(item.registrationEndAt), maxParticipantsPerOrder: String(item.maxParticipantsPerOrder ?? ''), registrationTemplateId: String(item.registrationTemplateId || templateOptions[0]?.id || ''), allowMultiParticipant: item.allowMultiParticipant !== false,
+      registrationDeadline: dateToLocalInput(item.registrationEndAt || item.registrationDeadline), registrationStartAt: dateToLocalInput(item.registrationStartAt), registrationEndAt: dateToLocalInput(item.registrationEndAt || item.registrationDeadline), maxParticipantsPerOrder: String(item.maxParticipantsPerOrder ?? ''), registrationTemplateId: String(item.registrationTemplateId || templateOptions[0]?.id || ''), allowMultiParticipant: item.allowMultiParticipant !== false,
       description: String(item.description || ''), descriptionRichText: String(item.descriptionRichText || plainTextToRichText(String(item.description || ''))), image: String(item.image || ''),
     } : (() => {
       const draft = readCourseDraft()
@@ -816,7 +816,7 @@ function App() {
     setCourseSubmitting(true)
     try {
       const descriptionRichText = form.descriptionRichText.trim() || plainTextToRichText(form.description)
-      const payload = { ...form, title: form.title.trim(), subtitle: form.subtitle.trim(), category: form.category.trim(), date: scheduleDate, location: form.location.trim(), instructor: form.instructor.trim(), registrationDeadline: form.registrationDeadline.trim() || null, registrationStartAt: form.registrationStartAt.trim() || null, registrationEndAt: form.registrationEndAt.trim() || null, maxParticipantsPerOrder: form.maxParticipantsPerOrder.trim() ? Number(form.maxParticipantsPerOrder) : null, specialPriceEndsAt: form.specialPriceEndsAt.trim() || null, description: richTextToPlainText(descriptionRichText), descriptionRichText, ...numericFields }
+      const payload = { ...form, title: form.title.trim(), subtitle: form.subtitle.trim(), category: form.category.trim(), date: scheduleDate, location: form.location.trim(), instructor: form.instructor.trim(), registrationDeadline: form.registrationEndAt.trim() || null, registrationStartAt: form.registrationStartAt.trim() || null, registrationEndAt: form.registrationEndAt.trim() || null, maxParticipantsPerOrder: form.maxParticipantsPerOrder.trim() ? Number(form.maxParticipantsPerOrder) : null, specialPriceEndsAt: form.specialPriceEndsAt.trim() || null, description: richTextToPlainText(descriptionRichText), descriptionRichText, ...numericFields }
       const saved = await runOperation(
         `course-save:${form.id || 'new'}`,
         () => apiFetch(form.id ? `/admin/courses/${form.id}` : '/admin/courses', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(payload) }),
@@ -1480,7 +1480,6 @@ function CourseModal({ form, templates, categories, submitting, onChange, onUplo
         <label>课程特价<input type="number" min="0" value={form.specialPrice} onChange={event => onChange('specialPrice', event.target.value)} placeholder="可选" /></label>
         <label>课程名额<input type="number" min="0" value={form.capacity} onChange={event => onChange('capacity', event.target.value)} /></label>
         <label>已报名人数<input type="number" min="0" value={form.enrolled} readOnly aria-readonly="true" /><small className="field-hint">由报名、取消报名和退款自动维护，不可手动修改</small></label>
-        <label>报名截止时间<input type="datetime-local" value={form.registrationDeadline} onChange={event => onChange('registrationDeadline', event.target.value)} /><small className="field-hint">可选；点击日历图标选择截止日期和时间</small></label>
         <label>报名开始时间<input type="datetime-local" value={form.registrationStartAt} onChange={event => onChange('registrationStartAt', event.target.value)} /><small className="field-hint">可选；开始时间前不能报名</small></label>
         <label>报名结束时间<input type="datetime-local" value={form.registrationEndAt} onChange={event => onChange('registrationEndAt', event.target.value)} /><small className="field-hint">可选；结束时间后自动截止报名</small></label>
         <label>单次报名人数上限<input type="number" min="1" value={form.maxParticipantsPerOrder} onChange={event => onChange('maxParticipantsPerOrder', event.target.value)} placeholder="不限" /><small className="field-hint">可选；限制一笔订单最多报名人数</small></label>
