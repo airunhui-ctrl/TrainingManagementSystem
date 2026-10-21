@@ -18,6 +18,22 @@ class PayDto { @IsIn(['online', 'offline']) method!: 'online' | 'offline'; @IsOp
 class PaymentIntentDto { @IsIn(['wechat', 'alipay']) channel!: 'wechat' | 'alipay' }
 class InvoiceDto { @IsString() title!: string; @IsString() taxNo!: string; @IsString() email!: string; @IsOptional() @IsString() remark?: string; @IsArray() @IsString({ each: true }) orderIds!: string[] }
 
+type UploadFile = { originalname: string; mimetype: string; size: number; buffer: Buffer }
+
+function normalizeUploadFile(file: UploadFile): UploadFile {
+  if (!file) return file
+  const value = file.originalname || ''
+  const hasNonLatin1 = (text: string) => Array.from(text).some(char => (char.codePointAt(0) || 0) > 255)
+  if (value && !hasNonLatin1(value)) {
+    const decoded = Buffer.from(value, 'latin1').toString('utf8')
+    const hasReplacement = Array.from(decoded).some(char => char.codePointAt(0) === 0xfffd)
+    if (decoded !== value && !hasReplacement && hasNonLatin1(decoded)) {
+      return { ...file, originalname: decoded }
+    }
+  }
+  return file
+}
+
 @Controller()
 export class MvpController {
   constructor(private readonly mvp: MvpService) {}
@@ -81,7 +97,7 @@ export class MvpController {
   @UseGuards(JwtGuard)
   @Post('orders/:id/payment-proof')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
-  paymentProof(@Req() request: any, @Param('id') id: string, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请上传支付凭证文件'); return this.mvp.uploadPaymentProof(request.user.sub, id, file) }
+  paymentProof(@Req() request: any, @Param('id') id: string, @UploadedFile() file?: UploadFile) { if (!file) throw new BadRequestException('请上传支付凭证文件'); return this.mvp.uploadPaymentProof(request.user.sub, id, normalizeUploadFile(file)) }
   @UseGuards(JwtGuard)
   @Post('invoices') invoice(@Req() request: any, @Body() dto: InvoiceDto) { return this.mvp.createInvoice(request.user.sub, { title: dto.title, taxNo: dto.taxNo, email: dto.email, remark: dto.remark, orderIds: dto.orderIds }) }
   @UseGuards(JwtGuard)
@@ -111,7 +127,7 @@ export class MvpController {
   @UseGuards(JwtGuard)
   @Post('feedback/attachment')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
-  feedbackAttachment(@Req() request: any, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择反馈附件图片'); return this.mvp.uploadFeedbackAttachment(request.user.sub, file) }
+  feedbackAttachment(@Req() request: any, @UploadedFile() file?: UploadFile) { if (!file) throw new BadRequestException('请选择反馈附件图片'); return this.mvp.uploadFeedbackAttachment(request.user.sub, normalizeUploadFile(file)) }
 
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/courses') adminCourses(@Query('keyword') keyword?: string, @Query('category') category?: string, @Query('status') status?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listAdminCoursesPage(keyword, category, Number(page || 1), Number(pageSize || 20), status) }
@@ -120,11 +136,11 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/uploads/course-image')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
-  courseImageUpload(@Req() request: any, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择课程图片'); return this.mvp.uploadCourseImage(file, request.user.username) }
+  courseImageUpload(@Req() request: any, @UploadedFile() file?: UploadFile) { if (!file) throw new BadRequestException('请选择课程图片'); return this.mvp.uploadCourseImage(normalizeUploadFile(file), request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/uploads/payment-qr/:channel')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
-  paymentQrUpload(@Req() request: any, @Param('channel') channel: string, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择收款码图片'); if (channel !== 'wechat' && channel !== 'alipay') throw new BadRequestException('收款码渠道不合法'); return this.mvp.uploadPaymentQr(channel, file, request.user.username) }
+  paymentQrUpload(@Req() request: any, @Param('channel') channel: string, @UploadedFile() file?: UploadFile) { if (!file) throw new BadRequestException('请选择收款码图片'); if (channel !== 'wechat' && channel !== 'alipay') throw new BadRequestException('收款码渠道不合法'); return this.mvp.uploadPaymentQr(channel, normalizeUploadFile(file), request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/dashboard') dashboard() { return this.mvp.dashboard() }
   @UseGuards(JwtGuard, AdminGuard)
@@ -212,7 +228,7 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/invoices/:id/file')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.INVOICE_UPLOAD_MAX_BYTES || 10 * 1024 * 1024) } }))
-  uploadInvoiceFile(@Req() request: any, @Param('id') id: string, @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }) { if (!file) throw new BadRequestException('请选择电子发票文件'); return this.mvp.uploadInvoiceFile(id, file, request.user.username) }
+  uploadInvoiceFile(@Req() request: any, @Param('id') id: string, @UploadedFile() file?: UploadFile) { if (!file) throw new BadRequestException('请选择电子发票文件'); return this.mvp.uploadInvoiceFile(id, normalizeUploadFile(file), request.user.username) }
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/invoices/:id/file') async adminInvoiceFile(@Param('id') id: string) { const result = await this.mvp.readInvoiceFile(id); return new StreamableFile(result.buffer, { type: result.mimeType, disposition: `inline; filename="${encodeURIComponent(result.originalName)}"` }) }
   @UseGuards(JwtGuard, AdminGuard)

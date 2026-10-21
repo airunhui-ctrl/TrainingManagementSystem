@@ -1435,7 +1435,19 @@ function StudentMergeDialog({ sourceId, busy, onClose, onSubmit }: { sourceId: s
   return typeof document === 'undefined' ? null : createPortal(dialog, document.body)
 }
 
+function fileNameFromUrl(value?: string | null) {
+  if (!value) return ''
+  try { return decodeURIComponent(String(value).split(/[?#]/)[0].split('/').pop() || '') } catch { return String(value).split(/[?#]/)[0].split('/').pop() || '' }
+}
+
 function CourseModal({ form, templates, categories, submitting, onChange, onUploadImage, onPrompt, onNotify, onClose, onSaveDraft, onReset, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; categories: FilterOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSaveDraft: () => void; onReset: () => void; onSave: () => void; onDelete: () => void }) {
+  const [imageFileName, setImageFileName] = useState(() => fileNameFromUrl(form.image))
+  const [lastImage, setLastImage] = useState(form.image)
+  useEffect(() => {
+    if (form.image === lastImage) return
+    setLastImage(form.image)
+    if (!form.image) setImageFileName('')
+  }, [form.image, lastImage])
   const updateSchedule = (key: 'courseStartAt' | 'courseEndAt', value: string) => {
     const nextStart = key === 'courseStartAt' ? value : form.courseStartAt
     const nextEnd = key === 'courseEndAt' ? value : form.courseEndAt
@@ -1454,7 +1466,7 @@ function CourseModal({ form, templates, categories, submitting, onChange, onUplo
         <div className="wide-field course-schedule-field"><span className="form-label">上课时间</span><div className="course-schedule-grid"><label>课程开始时间<input type="datetime-local" required value={form.courseStartAt} onChange={event => updateSchedule('courseStartAt', event.target.value)} /></label><label>课程结束时间<input type="datetime-local" required value={form.courseEndAt} onChange={event => updateSchedule('courseEndAt', event.target.value)} /></label></div><small className="field-hint">点击日期输入框右侧日历图标选择开始和结束时间；保存时将自动生成课程时间段。</small><div className="course-date-summary">当前时间段：{form.courseStartAt && form.courseEndAt ? formatCourseSchedule(form.courseStartAt, form.courseEndAt) : '请选择完整的开始和结束时间'}</div></div>
         <label>上课地点<input value={form.location} onChange={event => onChange('location', event.target.value)} placeholder="请输入上课地点" /></label>
         <label>讲师<input value={form.instructor} onChange={event => onChange('instructor', event.target.value)} placeholder="请输入讲师" /></label>
-<label className="wide-field course-image-field">课程图片<input type="file" accept="image/*" disabled={submitting} onChange={event => { const file = event.target.files?.[0]; if (file) void onUploadImage(file); event.target.value = '' }} /><small className="field-hint">用于 C 端首页课程卡片、首页轮播和课程详情顶部；建议上传 16:9 图片，单张不超过 5MB。</small>{form.image && <img className="course-image-preview" src={assetUrl(form.image)} alt="课程图片预览" />}</label>
+<div className="wide-field course-image-field upload-field"><span className="form-label">课程图片</span><input type="file" accept="image/*" disabled={submitting} onChange={event => { const file = event.target.files?.[0]; if (file) { setImageFileName(file.name); void onUploadImage(file) } event.target.value = '' }} /><small className="field-hint">用于 C 端首页课程卡片、首页轮播和课程详情顶部；建议上传 16:9 图片，单张不超过 5MB。</small>{imageFileName && form.image && <div className="invoice-file-selected upload-status-row"><b>已上传：{imageFileName}</b><button type="button" className="upload-remove-button" disabled={submitting} onClick={() => { setImageFileName(''); onChange('image', '') }}>删除</button></div>}{form.image && <img className="course-image-preview" src={assetUrl(form.image)} alt="课程图片预览" />}</div>
         <label>课程原价<input type="number" min="0" value={form.originalPrice} onChange={event => onChange('originalPrice', event.target.value)} /></label>
         <label>课程售价<input type="number" min="0" value={form.price} onChange={event => onChange('price', event.target.value)} /></label>
         <label>课程特价<input type="number" min="0" value={form.specialPrice} onChange={event => onChange('specialPrice', event.target.value)} placeholder="可选" /></label>
@@ -1515,7 +1527,22 @@ function IntegrationReadinessPanel({ data, loading, error, onRefresh }: { data: 
 }
 
 function PaymentModal({ form, onChange, onUploadQr, onClose, onSave, busy = false }: { form: PaymentForm; onChange: (form: PaymentForm) => void; onUploadQr: (channel: 'wechat' | 'alipay', file: File) => void; onClose: () => void; onSave: () => void; busy?: boolean }) {
-  const qrField = (channel: 'wechat' | 'alipay', label: string, value: string) => <label className="wide-field course-image-field">{label}收款码图片<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => { const file = event.target.files?.[0]; if (file) void onUploadQr(channel, file); event.target.value = '' }} /><small className="field-hint">用于个人收款码线下转账；上传后 C 端会展示，支付仍需上传凭证并由管理端审核。</small>{value && <img className="course-image-preview payment-qr-preview" src={value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/api\/?$/, '')}${value}`} alt={`${label}收款码预览`} />}</label>
+  const [qrNames, setQrNames] = useState({ wechat: fileNameFromUrl(form.wechatQrImage), alipay: fileNameFromUrl(form.alipayQrImage) })
+  const [lastQr, setLastQr] = useState({ wechat: form.wechatQrImage, alipay: form.alipayQrImage })
+  useEffect(() => {
+    (['wechat', 'alipay'] as const).forEach(channel => {
+      const value = channel === 'wechat' ? form.wechatQrImage : form.alipayQrImage
+      if (value !== lastQr[channel]) {
+        setLastQr(current => ({ ...current, [channel]: value }))
+        if (!value) setQrNames(current => ({ ...current, [channel]: '' }))
+      }
+    })
+  }, [form.wechatQrImage, form.alipayQrImage, lastQr])
+  const removeQr = (channel: 'wechat' | 'alipay') => {
+    setQrNames(current => ({ ...current, [channel]: '' }))
+    onChange({ ...form, [channel === 'wechat' ? 'wechatQrImage' : 'alipayQrImage']: '' })
+  }
+  const qrField = (channel: 'wechat' | 'alipay', label: string, value: string) => <div className="wide-field course-image-field upload-field"><span className="form-label">{label}收款码图片</span><input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => { const file = event.target.files?.[0]; if (file) { setQrNames(current => ({ ...current, [channel]: file.name })); void onUploadQr(channel, file) } event.target.value = '' }} /><small className="field-hint">用于个人收款码线下转账；上传后 C 端会展示，支付仍需上传凭证并由管理端审核。</small>{value && <div className="invoice-file-selected upload-status-row"><b>已上传：{qrNames[channel] || fileNameFromUrl(value)}</b><button type="button" className="upload-remove-button" disabled={busy} onClick={() => removeQr(channel)}>删除</button></div>}{value && <img className="course-image-preview payment-qr-preview" src={value.startsWith('http') ? value : `${API_BASE_URL.replace(/\/api\/?$/, '')}${value}`} alt={`${label}收款码预览`} />}</div>
   return <SimpleModal title="支付设置" description="维护对公转账和个人收款码的线下支付信息；在线支付需另行配置商户渠道" onClose={onClose} busy={busy}>
     <div className="course-form-grid"><label>收款户名<input disabled={busy} value={form.accountName} onChange={event => onChange({ ...form, accountName: event.target.value })} /></label><label>开户银行<input disabled={busy} value={form.bankName} onChange={event => onChange({ ...form, bankName: event.target.value })} /></label><label>银行账号<input disabled={busy} value={form.accountNo} onChange={event => onChange({ ...form, accountNo: event.target.value })} /></label><label>转账备注/收款码文本<input disabled={busy} value={form.qrCodeText} onChange={event => onChange({ ...form, qrCodeText: event.target.value })} /></label>{qrField('wechat', '微信', form.wechatQrImage)}{qrField('alipay', '支付宝', form.alipayQrImage)}<label className="checkbox-field modal-checkbox"><input type="checkbox" disabled={busy} checked={form.onlineWechatEnabled} onChange={event => onChange({ ...form, onlineWechatEnabled: event.target.checked })} /><span>启用微信在线支付（需商户配置）</span></label><label className="checkbox-field modal-checkbox"><input type="checkbox" disabled={busy} checked={form.onlineAlipayEnabled} onChange={event => onChange({ ...form, onlineAlipayEnabled: event.target.checked })} /><span>启用支付宝在线支付（需商户配置）</span></label></div>
     <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary" disabled={busy} onClick={onSave}>{busy ? '保存中…' : '保存支付设置'}</button></div>
@@ -1601,8 +1628,8 @@ function StudentProfileModal({ form, onChange, onClose, onSave, busy = false }: 
 
 function InvoiceUploadModal({ item, file, busy, onChangeFile, onClose, onSubmit }: { item: TableItem; file: File | null; busy: boolean; onChangeFile: (file: File | null) => void; onClose: () => void; onSubmit: () => void }) {
   return <SimpleModal title="上传电子发票" description={`开票记录 ${item.id} · 公司 ${item.title || '-'}`} onClose={onClose} busy={busy}>
-    <label className="wide-field invoice-file-field">选择发票文件<input type="file" accept="application/pdf,image/png,image/jpeg" disabled={busy} onChange={event => { onChangeFile(event.target.files?.[0] || null); event.target.value = '' }} /><small className="field-hint">支持 PDF、PNG、JPEG；选择文件后点击“确认上传”提交。</small></label>
-    {file && <div className="invoice-file-selected"><b>{file.name}</b><span>{Math.ceil(file.size / 1024)} KB</span></div>}
+    <label className="wide-field invoice-file-field">选择发票文件<input type="file" accept="application/pdf,image/png,image/jpeg" disabled={busy} onChange={event => { onChangeFile(event.target.files?.[0] || null); event.target.value = '' }} /><small className="field-hint">支持 PDF、PNG、JPEG；选择文件后可先清除并重新选择。</small></label>
+    {file && <div className="invoice-file-selected upload-status-row"><b>{file.name}</b><span>{Math.ceil(file.size / 1024)} KB</span><button type="button" className="upload-remove-button" disabled={busy} onClick={() => onChangeFile(null)}>清除</button></div>}
     <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary" disabled={busy || !file} onClick={onSubmit}>{busy ? '上传中…' : '确认上传'}</button></div>
   </SimpleModal>
 }

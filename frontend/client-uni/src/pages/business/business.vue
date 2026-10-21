@@ -92,7 +92,7 @@
       <view v-if="invoices.length"><view v-for="invoice in invoices" :key="invoice.id" class="card invoice-card" @tap="openInvoiceDetail(invoice)">
         <view class="order-heading"><text class="order-title">{{ invoice.title || '企业发票' }}</text><text :class="['status', invoiceStatusClass(invoice)]">{{ invoiceStatusText(invoice) }}</text></view>
         <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.retryOfInvoiceId" class="invoice-meta">来源申请：{{ invoice.retryOfInvoiceId }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text v-if="invoice.status === '已驳回' && invoice.rejectReason" class="invoice-meta rejected">驳回理由：{{ invoice.rejectReason }}</text><text v-if="invoice.status === '已驳回' && !actionableRejectedIds.has(invoice.id)" class="invoice-meta">该申请已重新提交，历史记录保留</text><text v-if="invoice.invoiceFileStatus" class="invoice-meta">电子发票：{{ invoice.invoiceFileStatus }}<text v-if="invoice.invoiceFileName">（{{ invoice.invoiceFileName }}）</text></text>
-        <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap.stop="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="outline-button invoice-file-button" @tap.stop="openInvoiceFile(invoice)">查看电子发票</button><button class="invoice-detail-button" @tap.stop="openInvoiceDetail(invoice)">查看详情</button></view></view>
+        <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap.stop="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="invoice-file-button" @tap.stop="openInvoiceFile(invoice)">查看电子发票</button><button class="invoice-detail-button" @tap.stop="openInvoiceDetail(invoice)">查看详情</button></view></view>
       </view></view>
       <view v-else-if="!loadError" class="card empty-state"><text>暂无开票记录</text></view>
     </template>
@@ -507,7 +507,7 @@ onShareAppMessage(() => ({ title: '我的订单', path: '/pages/business/busines
 .invoice-card-actions button { display: block; flex: 0 0 auto; width: auto !important; min-width: 0 !important; }
 .retry-invoice-button { box-sizing: border-box; width: fit-content !important; height: 54rpx; margin: 0; padding: 0 20rpx; border: 1rpx solid #b9d2f5; border-radius: 999rpx; color: $blue; background: #f5f9ff; font-size: 21rpx; line-height: 52rpx; }
 .retry-invoice-button::after { border: 0; }
-.invoice-file-button { margin-top: 0; align-self: center; }
+.invoice-file-button { min-height: 48rpx; margin: 0; padding: 0 14rpx; align-self: center; border: 1rpx solid #b9d7ff; border-radius: $radius-pill; color: $blue; background: #f4f9ff; font-size: 20rpx; line-height: 46rpx; }
 .tabs { display: flex; gap: 12rpx; margin: 28rpx 0 20rpx; overflow-x: auto; white-space: nowrap; }
 .tab { padding: 16rpx 24rpx; border-radius: $radius-pill; color: $muted; background: #edf0f4; font-size: 22rpx; }
 .tab.active { color: $navy; background: $yellow; font-weight: 800; }

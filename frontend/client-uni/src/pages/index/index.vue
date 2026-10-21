@@ -23,8 +23,7 @@
     <view class="search-box"><text>⌕</text><input v-model="keyword" placeholder="搜索课程名称或关键词" confirm-type="search" /></view>
 
     <view class="section-head">
-      <view><text class="section-title">平台活动</text><text class="section-caption">为组织成长准备一堂好课</text></view>
-      <text class="section-more" @tap="showMore">更多活动</text>
+      <view><text class="section-title">精选课程</text><text class="section-caption">为组织成长准备一堂好课</text></view>
     </view>
     <scroll-view scroll-x class="chips" :show-scrollbar="false">
       <view v-for="item in categories" :key="item" :class="['chip', { active: category === item }]" @tap="category = item">{{ item }}</view>
@@ -125,7 +124,6 @@ const handleBannerTap = (id: string) => {
   if (Date.now() < bannerSuppressTapUntil.value) return
   openDetail(id)
 }
-const showMore = () => uni.showToast({ title: '已展示全部可报名课程', icon: 'none' })
 
 const loadHome = async () => {
   loading.value = true
