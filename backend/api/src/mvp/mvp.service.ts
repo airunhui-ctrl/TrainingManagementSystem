@@ -277,12 +277,18 @@ export class MvpService {
       const originalAmount = unitPrice * participants.length
       const discountRate = rule ? Math.max(0, Math.min(1, 1 - rule.discountRate)) : 0
       const discount = Math.round(originalAmount * discountRate)
+      const totalAmount = originalAmount - discount
+      // 0 元订单（免费课程或优惠后应付为 0）走免费通道：跳过支付环节，订单直接进入已支付状态。
+      const isFreeOrder = totalAmount <= 0
       const snapshots = participants.map((participant) => { const snapshot = { ...participant }; delete snapshot.studentId; return snapshot })
       const order = await tx.order.create({ data: {
         id: id('HX'), userId, courseId, participants: JSON.stringify(snapshots), participantCount: participants.length,
-        originalAmount, discount, amount: originalAmount - discount,
-        status: '待支付', paymentMethod,
+        originalAmount, discount, amount: totalAmount,
+        status: isFreeOrder ? '已支付' : '待支付', paymentMethod: isFreeOrder ? 'free' : paymentMethod,
       }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
+      if (isFreeOrder) {
+        await tx.paymentTransaction.create({ data: { id: id('PAY'), orderId: order.id, channel: 'wechat', provider: 'free', outTradeNo: `${order.id}-free`, amount: 0, status: 'paid', paidAt: new Date() } })
+      }
       const templateVersion = await tx.registrationTemplateVersion.upsert({
         where: { templateId_version: { templateId: template.templateId, version: template.version || 1 } },
         create: { id: stableId('rtv', `${template.templateId}:${template.version || 1}`), templateId: template.templateId, version: template.version || 1, payload: JSON.stringify(template.fields), checksum: createHash('sha256').update(JSON.stringify(template.fields)).digest('hex'), status: 'published', publishedAt: new Date(), },
@@ -827,7 +833,8 @@ export class MvpService {
     const item = await this.db.$transaction(async (tx) => {
       const order = await tx.order.findFirst({ where: { id: orderId, userId } })
       if (!order) throw new NotFoundException('订单不存在')
-      if (order.status === '已支付') throw new BadRequestException('已支付订单请申请退款')
+      // 0 元免费订单没有实际收款，允许用户直接取消报名，无需再走退款流程。
+      if (order.status === '已支付' && order.paymentMethod !== 'free') throw new BadRequestException('已支付订单请申请退款')
       if (order.status === '已取消') throw new BadRequestException('订单已经取消，不能重复操作')
       await tx.course.update({ where: { id: order.courseId }, data: { enrolled: { decrement: Math.min(order.participantCount, (await tx.course.findUniqueOrThrow({ where: { id: order.courseId } })).enrolled) } } })
       const updated = await tx.order.update({ where: { id: orderId }, data: { status: '已取消' }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })

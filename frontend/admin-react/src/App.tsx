@@ -1988,7 +1988,7 @@ function UserDetailPanel({ item, onClose }: { item: TableItem; onClose: () => vo
       <div className="modal-scroll user-detail-scroll">
         <h4>基础资料</h4><div className="detail-grid">{['name', 'phone', 'email', 'company', 'role', 'enabled', 'points', 'registeredAt', 'lastActiveAt', 'lastLoginAt'].filter(key => item[key] !== undefined).map(key => <div key={key}><small>{displayColumnLabel(key)}</small><span>{formatValue(item[key])}</span></div>)}</div>
         <div className="section-action-row"><h4>订单与支付（{orders.length}）</h4></div>
-        {orders.length ? <div className="table-scroll"><table><thead><tr><th>订单号</th><th>课程</th><th>金额</th><th>状态</th><th>支付方式</th><th>支付渠道</th><th>创建时间</th></tr></thead><tbody>{orders.map(order => <tr key={order.id}><td>{order.id}</td><td>{order.courseTitle || order.courseId || '-'}</td><td>¥{order.amount ?? 0}</td><td>{order.status || '-'}</td><td>{order.paymentMethod || '-'}</td><td>{order.paymentChannel || '-'}</td><td>{formatValue(order.createdAt)}</td></tr>)}</tbody></table>{orders.some(order => (order.paymentTransactions || []).length) && <div className="payment-transaction-list">{orders.map(order => (order.paymentTransactions || []).map((transaction: TableItem) => <div className="transaction-row" key={transaction.id}><span>{order.id}</span><span>{transaction.channel || '-'} · {transaction.status || '-'}</span><span>{transaction.providerTradeNo || transaction.outTradeNo || '-'}</span><span>{formatValue(transaction.paidAt || transaction.createdAt)}</span></div>))}</div>}</div> : <p className="detail-muted">暂无订单记录</p>}
+        {orders.length ? <div className="table-scroll"><table><thead><tr><th>订单号</th><th>课程</th><th>金额</th><th>状态</th><th>支付方式</th><th>支付渠道</th><th>创建时间</th></tr></thead><tbody>{orders.map(order => <tr key={order.id}><td>{order.id}</td><td>{order.courseTitle || order.courseId || '-'}</td><td>¥{order.amount ?? 0}</td><td>{order.status || '-'}</td><td>{order.paymentMethod === 'free' ? '免费报名' : order.paymentMethod || '-'}</td><td>{order.paymentChannel || '-'}</td><td>{formatValue(order.createdAt)}</td></tr>)}</tbody></table>{orders.some(order => (order.paymentTransactions || []).length) && <div className="payment-transaction-list">{orders.map(order => (order.paymentTransactions || []).map((transaction: TableItem) => <div className="transaction-row" key={transaction.id}><span>{order.id}</span><span>{transaction.channel || '-'} · {transaction.status || '-'}</span><span>{transaction.providerTradeNo || transaction.outTradeNo || '-'}</span><span>{formatValue(transaction.paidAt || transaction.createdAt)}</span></div>))}</div>}</div> : <p className="detail-muted">暂无订单记录</p>}
       </div>
       <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button></div>
     </section>
@@ -2030,6 +2030,12 @@ function formatTableValue(moduleKey: string, key: string, value: unknown): strin
   if (key === 'participants' && Array.isArray(value)) return `${value.length} 位报名人`
   if (key === 'orderIds' && Array.isArray(value)) return value.length ? `${value.length} 个订单：${value.join('、')}` : '无关联订单'
   if (moduleKey === 'banners' && key === 'courseTitle' && !value) return '未绑定课程'
+  if (moduleKey === 'orders' && key === 'paymentMethod') {
+    if (value === 'free') return '免费报名'
+    if (value === 'online') return '在线支付'
+    if (value === 'offline') return '对公转账'
+    return formatValue(value)
+  }
   return formatValue(value)
 }
 

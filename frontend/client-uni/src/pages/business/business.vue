@@ -47,9 +47,9 @@
               <text v-else-if="order.status === '待支付' && paymentInfoLoaded && isWeixinMiniProgram() && !paymentInfo.onlineWechatEnabled && !paymentInfo.onlineAlipayEnabled" class="status-hint">在线支付暂未启用，请使用线下对公转账并上传凭证。</text>
               <button v-if="order.status === '待支付'" class="offline-button" @tap="openPaymentProofModal(order.id)">提交线下支付凭证</button>
               <text v-if="order.status === '待审核'" class="status-hint">支付凭证审核中，暂不能重复提交。</text>
-              <button class="outline-button" @tap="openPaymentDetail(order.id)">支付详情</button>
+              <button v-if="order.paymentMethod !== 'free'" class="outline-button" @tap="openPaymentDetail(order.id)">支付详情</button>
             </view>
-            <button v-if="order.status === '待支付' || order.status === '待审核'" class="text-button cancel-order-button" :disabled="Boolean(cancellingOrderId || cancelConfirming)" @tap="cancelOrder(order.id)">{{ cancellingOrderId === order.id || cancelConfirming ? '取消中...' : '取消报名' }}</button>
+            <button v-if="order.status === '待支付' || order.status === '待审核' || order.paymentMethod === 'free'" class="text-button cancel-order-button" :disabled="Boolean(cancellingOrderId || cancelConfirming)" @tap="cancelOrder(order.id)">{{ cancellingOrderId === order.id || cancelConfirming ? '取消中...' : '取消报名' }}</button>
           </view>
           <text v-if="order.status === '待审核'" class="status-hint">凭证已提交，等待管理端审核到账。</text>
           <text v-if="order.paymentProofStatus === 'rejected'" class="status-hint rejected">上次凭证未通过：{{ order.paymentProofRemark || '请重新上传清晰的付款凭证' }}</text>
@@ -286,6 +286,7 @@ const displayedPreviews = computed(() => showAllPreviews.value ? previews.value 
 const invoiceSelectionLabel = computed(() => selectedInvoiceOrderIds.value.length ? '（' + selectedInvoiceOrderIds.value.length + '）' : '')
 const courseName = (id: string) => courses.value[id]?.title || '培训课程'
 const paymentMethodLabel = (order: Order) => {
+  if (order.paymentMethod === 'free') return '免费报名'
   if (order.paymentMethod === 'offline') return '对公转账'
   if (order.paymentChannel === 'alipay') return '支付宝支付'
   if (order.paymentChannel === 'wechat') return '微信支付'
@@ -390,7 +391,7 @@ const cancelOrder = async (id: string) => {
   cancelConfirming.value = true
   try {
     let confirmation = false
-    try { confirmation = await showClientConfirm({ title: '确认取消报名', content: '取消后本次报名将不再保留待支付状态，确定继续吗？' }) } catch { confirmation = false; uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }) }
+    try { confirmation = await showClientConfirm({ title: '确认取消报名', content: orders.value.find((item) => item.id === id)?.paymentMethod === 'free' ? '该课程为免费报名，取消后名额将被释放，确定继续吗？' : '取消后本次报名将不再保留待支付状态，确定继续吗？' }) } catch { confirmation = false; uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }) }
     if (!confirmation) return
     cancellingOrderId.value = id
     try { await api.cancelOrder(id); uni.showToast({ title: '报名已取消', icon: 'none' }); await loadAll() } catch (error: any) { uni.showToast({ title: error?.message || '取消失败', icon: 'none' }) } finally { cancellingOrderId.value = '' }
