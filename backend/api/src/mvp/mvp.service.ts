@@ -589,7 +589,13 @@ export class MvpService {
     merged.title = title
     merged.startsAt = startsAt || null
     merged.endsAt = endsAt || null
-    const nextSort = existing ? sort : Number((await this.db.banner.aggregate({ _max: { sort: true } }))._max.sort || 0) + 1
+    // 新增 Banner 时允许显式指定排序位置；未显式提供时仍默认追加到现有列表末尾。
+    const hasExplicitSort = payload.sort !== undefined && payload.sort !== null && String(payload.sort).trim() !== ''
+    const nextSort = existing
+      ? sort
+      : hasExplicitSort && Number.isInteger(sort) && sort >= 0
+        ? sort
+        : Number((await this.db.banner.aggregate({ _max: { sort: true } }))._max.sort || 0) + 1
     merged.sort = nextSort
     const item = await this.db.banner.upsert({ where: { id: bannerId }, create: { id: bannerId, payload: JSON.stringify(merged), enabled: merged.enabled !== false, sort: nextSort }, update: { payload: JSON.stringify(merged), enabled: merged.enabled !== false, sort: nextSort } })
     const before = existing ? { ...json<Record<string, any>>(existing.payload, {}), id: existing.id, enabled: existing.enabled, sort: existing.sort } : null
