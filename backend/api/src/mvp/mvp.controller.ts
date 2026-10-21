@@ -134,6 +134,8 @@ export class MvpController {
   @UseGuards(JwtGuard, AdminGuard)
   @Get('admin/course-categories') adminCourseCategories() { return { items: COURSE_CATEGORY_DICTIONARY } }
   @UseGuards(JwtGuard, AdminGuard)
+  @Get('admin/courses/:courseId/message-recipients') courseMessageRecipients(@Param('courseId') courseId: string) { return this.mvp.listCourseMessageRecipients(courseId) }
+  @UseGuards(JwtGuard, AdminGuard)
   @Post('admin/uploads/course-image')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES || 5 * 1024 * 1024) } }))
   courseImageUpload(@Req() request: any, @UploadedFile() file?: UploadFile) { if (!file) throw new BadRequestException('请选择课程图片'); return this.mvp.uploadCourseImage(normalizeUploadFile(file), request.user.username) }

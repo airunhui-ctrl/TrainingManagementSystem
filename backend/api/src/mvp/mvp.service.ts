@@ -211,6 +211,25 @@ export class MvpService {
     return { items: items.map((item) => this.courseView(item)), page: args.page, pageSize: args.pageSize, total }
   }
 
+  async listCourseMessageRecipients(courseId: string) {
+    const course = await this.db.course.findUnique({ where: { id: courseId }, select: { id: true, title: true } })
+    if (!course) throw new NotFoundException('课程不存在')
+    const [orders, enrollments] = await Promise.all([
+      this.db.order.findMany({ where: { courseId, status: { not: '已取消' } }, select: { userId: true, user: { select: { id: true, username: true, name: true } } }, orderBy: { createdAt: 'desc' } }),
+      this.db.enrollment.findMany({ where: { courseId, status: { not: 'cancelled' } }, select: { accountUserId: true, accountUser: { select: { id: true, username: true, name: true } } }, orderBy: { registeredAt: 'desc' } }),
+    ])
+    const users = new Map<string, { id: string; username: string; name: string | null }>()
+    for (const order of orders) {
+      const user = order.user
+      if (user?.id) users.set(user.id, user)
+    }
+    for (const enrollment of enrollments) {
+      const user = enrollment.accountUser
+      if (user?.id) users.set(user.id, user)
+    }
+    return { courseId, courseTitle: course.title, items: [...users.values()].map(user => ({ ...user, name: user.name || '' })).sort((a, b) => a.username.localeCompare(b.username)) }
+  }
+
   async getCourse(courseId: string) {
     const course = await this.db.course.findUnique({ where: { id: courseId }, include: { registrationTemplate: { select: { id: true, name: true } } } })
     if (!course || PUBLIC_HIDDEN_COURSE_STATUSES.has(String(course.status))) throw new NotFoundException('课程不存在')

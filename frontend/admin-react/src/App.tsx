@@ -16,7 +16,7 @@ type TemplateForm = { id?: string; name: string; enabled: boolean; fields: Templ
 type BannerForm = { id?: string; title: string; courseId: string; sort: string; enabled: boolean; startsAt: string; endsAt: string }
 type PaymentForm = { accountName: string; bankName: string; accountNo: string; qrCodeText: string; wechatQrImage: string; alipayQrImage: string; onlineWechatEnabled: boolean; onlineAlipayEnabled: boolean }
 type RuleForm = { id?: string; minPeople: string; discountRate: string; courseIds: string; enabled: boolean }
-type MessageForm = { id?: string; title: string; content: string; channel: string; enabled: boolean; targetUserIds: string; targetCourseIds: string; startsAt: string; endsAt: string }
+type MessageForm = { id?: string; title: string; content: string; channel: string; enabled: boolean; targetUserIds: string[]; targetCourseIds: string[]; startsAt: string; endsAt: string }
 type ConfigForm = { key: string; value: string; description: string }
 type PointsForm = { userId: string; userName: string; points: string; reason: string }
 type FeedbackForm = { id: string; reply: string }
@@ -112,9 +112,10 @@ const emptyTemplateForm = (): TemplateForm => ({ name: '', enabled: true, fields
 const emptyBannerForm = (sort = '1'): BannerForm => ({ title: '', courseId: '', sort, enabled: true, startsAt: '', endsAt: '' })
 const emptyPaymentForm = (): PaymentForm => ({ accountName: '', bankName: '', accountNo: '', qrCodeText: '', wechatQrImage: '', alipayQrImage: '', onlineWechatEnabled: true, onlineAlipayEnabled: true })
 const emptyRuleForm = (): RuleForm => ({ minPeople: '2', discountRate: '0.9', courseIds: '', enabled: true })
-const emptyMessageForm = (): MessageForm => ({ title: '', content: '', channel: '站内消息', enabled: true, targetUserIds: '', targetCourseIds: '', startsAt: '', endsAt: '' })
-const listFieldToText = (value: unknown) => Array.isArray(value) ? value.map(String).join(', ') : String(value || '')
+const emptyMessageForm = (): MessageForm => ({ title: '', content: '', channel: '站内消息', enabled: true, targetUserIds: [], targetCourseIds: [], startsAt: '', endsAt: '' })
 const textToListField = (value: string) => [...new Set(value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean))]
+const listFieldToValues = (value: unknown) => Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : textToListField(String(value || ''))
+const normalizeListField = (values: string[]) => [...new Set(values.map(item => item.trim()).filter(Boolean))]
 const dateToLocalInput = (value: unknown) => { const source = String(value || '').trim(); if (!source) return ''; const date = new Date(source); if (!Number.isFinite(date.getTime())) return source.slice(0, 16); const pad = (item: number) => String(item).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}` }
 const normalizeCourseDateTime = (value: unknown) => {
   const source = String(value || '').trim()
@@ -444,7 +445,7 @@ function App() {
     if (!snapshot) { resetTabState(); return }
     loadVersion.current += 1
     setData(snapshot.data ?? null); setListLoading(false); setListError(''); setCourseModalOpen(Boolean(snapshot.courseModalOpen)); setTemplateModalOpen(Boolean(snapshot.templateModalOpen)); setBannerModalOpen(Boolean(snapshot.bannerModalOpen)); setPaymentModalOpen(Boolean(snapshot.paymentModalOpen)); setRuleModalOpen(Boolean(snapshot.ruleModalOpen)); setMessageModalOpen(Boolean(snapshot.messageModalOpen)); setConfigModalOpen(Boolean(snapshot.configModalOpen)); setPointsModalOpen(Boolean(snapshot.pointsModalOpen)); setFeedbackModalOpen(Boolean(snapshot.feedbackModalOpen)); setStudentEditModalOpen(Boolean(snapshot.studentEditModalOpen))
-    setCourseForm({ ...emptyCourseForm(), ...(snapshot.courseForm || {}) }); setTemplateForm({ ...emptyTemplateForm(), ...(snapshot.templateForm || {}) }); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm(snapshot.messageForm || emptyMessageForm()); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm())
+    setCourseForm({ ...emptyCourseForm(), ...(snapshot.courseForm || {}) }); setTemplateForm({ ...emptyTemplateForm(), ...(snapshot.templateForm || {}) }); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm({ ...emptyMessageForm(), ...(snapshot.messageForm || {}), targetUserIds: listFieldToValues(snapshot.messageForm?.targetUserIds), targetCourseIds: listFieldToValues(snapshot.messageForm?.targetCourseIds) }); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm())
     setSelectedDetail(snapshot.selectedDetail ?? null); setEnrollmentSummaryDetail(snapshot.enrollmentSummaryDetail ?? null); setPointLedgerDetail(snapshot.pointLedgerDetail ?? null); setReviewState(snapshot.reviewState ?? null); setReviewRemark(snapshot.reviewRemark || ''); setSelectedRows(Array.isArray(snapshot.selectedRows) ? snapshot.selectedRows : []); setTableKeyword(snapshot.tableKeyword || ''); setQueryKeyword(snapshot.queryKeyword || ''); setStatusFilter(snapshot.statusFilter || ''); setAuditActionFilter(snapshot.auditActionFilter || ''); setAuditActorFilter(snapshot.auditActorFilter || ''); setAuditFrom(snapshot.auditFrom || ''); setAuditTo(snapshot.auditTo || ''); setPage(Number(snapshot.page) || 1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
   const navigate = (moduleKey: string) => {
@@ -521,7 +522,7 @@ function App() {
           ])
           commit(courseData)
           if (version === loadVersion.current) setTemplateOptions(Array.isArray(templateData?.items) ? templateData.items.map(item => ({ id: String(item.id), name: String(item.name || item.id), locked: item.locked === true })) : [])
-        } else if (active === 'banners' || active === 'templates' || active === 'rules' || active === 'enrollment-details') {
+        } else if (active === 'banners' || active === 'templates' || active === 'rules' || active === 'enrollment-details' || active === 'messages') {
           const [moduleData, courseData] = await Promise.all([
             apiFetch(`${current.endpoint}${params}`),
             apiFetch<{ items?: CourseOption[] }>('/admin/courses?page=1&pageSize=100'),
@@ -651,7 +652,7 @@ function App() {
   const openBannerEditor = (item?: TableItem) => { setBannerForm(item ? { id: String(item.id), title: String(item.title || ''), courseId: String(item.courseId || ''), sort: String(item.sort ?? 0), enabled: item.enabled !== false, startsAt: dateToLocalInput(item.startsAt), endsAt: dateToLocalInput(item.endsAt) } : { ...emptyBannerForm(nextBannerSort()), courseId: courseOptions[0]?.id || '' }); setBannerModalOpen(true) }
   const openPaymentEditor = (item?: TableItem) => { setPaymentForm({ ...emptyPaymentForm(), ...(item || {}) }); setPaymentModalOpen(true) }
   const openRuleEditor = (item?: TableItem) => { setRuleForm(item ? { id: String(item.id), minPeople: String(item.minPeople ?? 2), discountRate: String(item.discountRate ?? 0.9), courseIds: Array.isArray(item.courseIds) ? item.courseIds.join(', ') : '', enabled: item.enabled !== false } : emptyRuleForm()); setRuleModalOpen(true) }
-  const openMessageEditor = (item?: TableItem) => { setMessageForm(item ? { id: String(item.id), title: String(item.title || ''), content: String(item.content || ''), channel: String(item.channel || '站内消息'), enabled: item.enabled !== false, targetUserIds: listFieldToText(item.targetUserIds), targetCourseIds: listFieldToText(item.targetCourseIds), startsAt: dateToLocalInput(item.startsAt), endsAt: dateToLocalInput(item.endsAt) } : emptyMessageForm()); setMessageModalOpen(true) }
+  const openMessageEditor = (item?: TableItem) => { setMessageForm(item ? { id: String(item.id), title: String(item.title || ''), content: String(item.content || ''), channel: String(item.channel || '站内消息'), enabled: item.enabled !== false, targetUserIds: listFieldToValues(item.targetUserIds), targetCourseIds: listFieldToValues(item.targetCourseIds), startsAt: dateToLocalInput(item.startsAt), endsAt: dateToLocalInput(item.endsAt) } : emptyMessageForm()); setMessageModalOpen(true) }
   const openConfigEditor = (item?: TableItem) => { setConfigForm(item ? { key: String(item.key || ''), value: String(item.value || ''), description: String(item.description || '') } : emptyConfigForm()); setConfigModalOpen(true) }
   const openPointsEditor = (item?: TableItem) => { setPointsForm(item ? { userId: String(item.userId || ''), userName: String(item.userName || ''), points: '0', reason: '' } : emptyPointsForm()); setPointsModalOpen(true) }
   const openPointLedger = async (item: TableItem) => {
@@ -758,7 +759,7 @@ function App() {
   const saveMessage = async () => {
     if (!messageForm.title.trim() || !messageForm.content.trim()) return flash('请填写消息标题和内容')
     if (!await confirmAction(`${messageForm.id ? '确认保存对消息的修改' : '确认发布消息'}“${messageForm.title.trim()}”吗？`)) return
-    const saved = await runOperation(`message-save:${messageForm.id || 'new'}`, () => apiFetch(messageForm.id ? `/admin/messages/${messageForm.id}` : '/admin/messages', { method: messageForm.id ? 'PATCH' : 'POST', body: JSON.stringify({ ...messageForm, title: messageForm.title.trim(), content: messageForm.content.trim(), targetUserIds: textToListField(messageForm.targetUserIds), targetCourseIds: textToListField(messageForm.targetCourseIds), startsAt: messageForm.startsAt.trim(), endsAt: messageForm.endsAt.trim() }) }), '消息已保存')
+    const saved = await runOperation(`message-save:${messageForm.id || 'new'}`, () => apiFetch(messageForm.id ? `/admin/messages/${messageForm.id}` : '/admin/messages', { method: messageForm.id ? 'PATCH' : 'POST', body: JSON.stringify({ ...messageForm, title: messageForm.title.trim(), content: messageForm.content.trim(), targetUserIds: normalizeListField(messageForm.targetUserIds), targetCourseIds: normalizeListField(messageForm.targetCourseIds), startsAt: messageForm.startsAt.trim(), endsAt: messageForm.endsAt.trim() }) }), '消息已保存')
     if (saved) { setMessageModalOpen(false); setMessageForm(emptyMessageForm()) }
   }
   const deleteMessage = async () => { if (!messageForm.id) return; if (!await confirmAction(`确定删除消息“${messageForm.title || messageForm.id}”吗？删除后用户将无法查看该消息，阅读记录也会一并清理。`, '删除消息', true)) return; const deleted = await runOperation(`message-delete:${messageForm.id}`, () => apiFetch(`/admin/messages/${encodeURIComponent(messageForm.id!)}`, { method: 'DELETE' }), '消息已删除'); if (deleted) { setMessageModalOpen(false); setMessageForm(emptyMessageForm()) } }
@@ -1154,7 +1155,7 @@ function App() {
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
   const auditActionOptions = active === 'audits' ? Array.from(new Set([...(Array.isArray(data?.actions) ? data.actions : []), auditActionFilter].filter(Boolean))).sort() : []
   const actionLabel: RowActionLabel = ['enrollments', 'enrollment-details', 'students'].includes(active) ? '查看详情' : active === 'invoices' ? ((item: TableItem) => item.status === '已开票' ? '上传发票' : '开票通过') : ['courses', 'templates', 'banners', 'payment', 'rules', 'messages', 'configs', 'points'].includes(active) ? (active === 'templates' ? '编辑模板' : active === 'points' ? '调整积分' : '编辑') : active === 'orders' ? ((item: TableItem) => item.status === '待审核' ? '审核凭证' : item.status === '已支付' ? '退款' : item.status === '待支付' ? '关闭订单' : '查看详情') : active === 'users' ? '重置密码' : active === 'feedbacks' ? '回复处理' : '处理'
-  const secondaryActionLabel: RowActionLabel | undefined = active === 'banners' ? (item: TableItem) => (item.enabled === false ? '已禁用' : '已启用') : active === 'users' ? '启用 / 禁用' : active === 'templates' ? '启用 / 停用' : active === 'invoices' ? ((item: TableItem) => item.status === '待处理' ? '驳回' : '查看发票') : active === 'rules' || active === 'messages' ? '启用 / 停用' : active === 'points' ? '查看流水' : undefined
+  const secondaryActionLabel: RowActionLabel | undefined = active === 'banners' ? (item: TableItem) => (item.enabled === false ? '已禁用' : '已启用') : active === 'users' ? '启用 / 禁用' : active === 'templates' ? '启用 / 停用' : active === 'invoices' ? ((item: TableItem) => item.status === '待处理' ? '驳回' : '查看发票') : active === 'rules' || active === 'messages' ? (item: TableItem) => (item.enabled === false ? '已禁用' : '已启用') : active === 'points' ? '查看流水' : undefined
   const detailOnlyModule = active === 'enrollment-details' || active === 'students'
   // ['orders', 'invoices', 'feedbacks', 'enrollment-details', 'students'].includes(active) ? openDetail : undefined
   const detailHandler = ['orders', 'invoices', 'feedbacks', 'enrollment-details', 'students'].includes(active) || active === 'users' ? openDetail : undefined
@@ -1318,7 +1319,7 @@ function App() {
       {paymentModalOpen && <PaymentModal form={paymentForm} onChange={setPaymentForm} onUploadQr={uploadPaymentQr} onClose={() => setPaymentModalOpen(false)} onSave={savePayment} busy={Boolean(operationKey)} />}
       {ruleModalOpen && <RuleModal form={ruleForm} courses={courseOptions} onChange={setRuleForm} onClose={() => setRuleModalOpen(false)} onSave={saveRule} onDelete={deleteRule} busy={Boolean(operationKey)} />}
       {pointLedgerDetail && <PointLedgerModal detail={pointLedgerDetail} onClose={() => setPointLedgerDetail(null)} />}
-       {messageModalOpen && <MessageModal form={messageForm} onChange={setMessageForm} onClose={() => setMessageModalOpen(false)} onSave={saveMessage} onDelete={deleteMessage} busy={Boolean(operationKey)} />}
+       {messageModalOpen && <MessageModal form={messageForm} courses={courseOptions} onChange={setMessageForm} onClose={() => setMessageModalOpen(false)} onSave={saveMessage} onDelete={deleteMessage} busy={Boolean(operationKey)} />}
       {configModalOpen && <ConfigModal form={configForm} onChange={setConfigForm} onClose={() => setConfigModalOpen(false)} onSave={saveConfig} busy={Boolean(operationKey)} />}
       {pointsModalOpen && <PointsModal form={pointsForm} onChange={setPointsForm} onClose={() => setPointsModalOpen(false)} onSave={savePoints} busy={Boolean(operationKey)} />}
       {feedbackModalOpen && <FeedbackModal form={feedbackForm} item={feedbackItem} onChange={setFeedbackForm} onClose={() => setFeedbackModalOpen(false)} onSave={saveFeedback} onNotify={flash} busy={Boolean(operationKey)} />}
@@ -1597,10 +1598,48 @@ function RuleModal({ form, courses, onChange, onClose, onSave, onDelete, busy = 
   </SimpleModal>
 }
 
-function MessageModal({ form, onChange, onClose, onSave, onDelete, busy = false }: { form: MessageForm; onChange: (form: MessageForm) => void; onClose: () => void; onSave: () => void; onDelete?: () => void; busy?: boolean }) {
+function MessageModal({ form, courses, onChange, onClose, onSave, onDelete, busy = false }: { form: MessageForm; courses: CourseOption[]; onChange: (form: MessageForm) => void; onClose: () => void; onSave: () => void; onDelete?: () => void; busy?: boolean }) {
+  const selectedCourseId = form.targetCourseIds[0] || ''
+  const selectedUserId = form.targetUserIds[0] || ''
+  const [recipients, setRecipients] = useState<CourseOption[]>([])
+  const [recipientsLoading, setRecipientsLoading] = useState(false)
+  const [recipientsError, setRecipientsError] = useState('')
+
+  useEffect(() => {
+    if (!selectedCourseId) {
+      setRecipients([])
+      setRecipientsError('')
+      return
+    }
+    let active = true
+    setRecipientsLoading(true)
+    setRecipientsError('')
+    apiFetch<{ items?: TableItem[] }>(`/admin/courses/${encodeURIComponent(selectedCourseId)}/message-recipients`)
+      .then(result => {
+        if (!active) return
+        setRecipients((result.items || []).map(item => ({ id: String(item.id || ''), title: String(item.name || item.username || item.id || '') })))
+      })
+      .catch(error => {
+        if (!active) return
+        setRecipients([])
+        setRecipientsError(error instanceof Error ? error.message : '报名用户加载失败')
+      })
+      .finally(() => { if (active) setRecipientsLoading(false) })
+    return () => { active = false }
+  }, [selectedCourseId])
+
+  const courseOptions = courses.map(course => ({ ...course }))
+  if (selectedCourseId && !courseOptions.some(course => course.id === selectedCourseId)) {
+    courseOptions.unshift({ id: selectedCourseId, title: `${selectedCourseId}（历史课程）` })
+  }
   const legacyChannel = form.channel && form.channel !== '站内消息' ? form.channel : ''
-  return <SimpleModal title={form.id ? '编辑消息' : '新增消息'} description="维护站内通知、目标范围、展示时间和阅读状态" onClose={onClose} busy={busy}>
-    <div className="course-form-grid"><label>消息标题<input value={form.title} onChange={event => onChange({ ...form, title: event.target.value })} placeholder="例如：课程报名提醒" /></label><label>通知渠道<select value={form.channel} onChange={event => onChange({ ...form, channel: event.target.value })}><option value="站内消息">站内消息</option>{legacyChannel && <option value={legacyChannel}>{legacyChannel}（历史记录，暂不可继续使用）</option>}<option disabled>短信（待接入）</option><option disabled>邮件（待接入）</option></select><small className="field-hint">当前仅支持站内消息；短信、邮件待接入真实投递服务。</small></label><label className="wide-field">消息内容<textarea value={form.content} onChange={event => onChange({ ...form, content: event.target.value })} placeholder="请输入通知内容" /></label><label>目标用户 ID<span className="field-hint">可选，多个用逗号或换行分隔；留空表示不按用户限制</span><input value={form.targetUserIds} onChange={event => onChange({ ...form, targetUserIds: event.target.value })} placeholder="例如：u-demo, u-operator" /></label><label>目标课程 ID<span className="field-hint">可选，多个用逗号或换行分隔；报名该课程的用户可见</span><input value={form.targetCourseIds} onChange={event => onChange({ ...form, targetCourseIds: event.target.value })} placeholder="例如：course-1, course-2" /></label><label>开始展示时间<span className="field-hint">可选，支持 ISO 时间</span><input type="datetime-local" value={form.startsAt} onChange={event => onChange({ ...form, startsAt: event.target.value })} /></label><label>结束展示时间<span className="field-hint">可选，支持 ISO 时间</span><input type="datetime-local" value={form.endsAt} onChange={event => onChange({ ...form, endsAt: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用消息</span></label></div>
+  const recipientOptions = recipients.filter(item => item.id)
+  if (selectedUserId && !recipientOptions.some(item => item.id === selectedUserId)) {
+    recipientOptions.unshift({ id: selectedUserId, title: `${selectedUserId}（当前不在名单中）` })
+  }
+
+  return <SimpleModal title={form.id ? '编辑消息' : '发布消息'} description="维护站内通知、目标范围、展示时间和阅读状态" onClose={onClose} busy={busy}>
+    <div className="course-form-grid"><label>消息标题<input value={form.title} onChange={event => onChange({ ...form, title: event.target.value })} placeholder="例如：课程报名提醒" /></label><label>通知渠道<select value={form.channel} onChange={event => onChange({ ...form, channel: event.target.value })}><option value="站内消息">站内消息</option>{legacyChannel && <option value={legacyChannel}>{legacyChannel}（历史记录，暂不可继续使用）</option>}<option disabled>短信（待接入）</option><option disabled>邮件（待接入）</option></select><small className="field-hint">当前仅支持站内消息；短信、邮件待接入真实投递服务。</small></label><label className="wide-field">消息内容<textarea value={form.content} onChange={event => onChange({ ...form, content: event.target.value })} placeholder="请输入通知内容" /></label><label>目标课程<select value={selectedCourseId} disabled={busy} onChange={event => { const courseId = event.target.value; onChange({ ...form, targetCourseIds: courseId ? [courseId] : [], targetUserIds: [] }) }}><option value="">全部用户（不按课程限制）</option>{courseOptions.map(course => <option key={course.id} value={course.id}>{course.title}（{course.id}）</option>)}</select><small className="field-hint">先选择课程，再选择该课程的报名用户；选择全部用户时不限制目标课程。</small>{form.targetCourseIds.length > 1 && <small className="field-hint">历史数据包含 {form.targetCourseIds.length} 个课程，当前显示第一个；重新选择后将只保留新选择。</small>}</label><label>目标用户<select value={selectedUserId} disabled={busy || !selectedCourseId || recipientsLoading} onChange={event => { const userId = event.target.value; onChange({ ...form, targetUserIds: userId ? [userId] : [] }) }}><option value="">{selectedCourseId ? '该课程全部报名用户' : '请先选择目标课程'}</option>{recipientOptions.map(item => <option key={item.id} value={item.id}>{item.title}（{item.id}）</option>)}</select><small className="field-hint">{!selectedCourseId ? '目标课程选择后即可选择用户。' : recipientsLoading ? '正在加载报名用户…' : recipientsError ? recipientsError : `已找到 ${recipients.length} 个该课程报名用户。`}</small>{form.targetUserIds.length > 1 && <small className="field-hint">历史数据包含 {form.targetUserIds.length} 个用户，当前显示第一个；重新选择后将只保留新选择。</small>}</label><label>开始展示时间<span className="field-hint">可选，支持 ISO 时间</span><input type="datetime-local" value={form.startsAt} onChange={event => onChange({ ...form, startsAt: event.target.value })} /></label><label>结束展示时间<span className="field-hint">可选，支持 ISO 时间</span><input type="datetime-local" value={form.endsAt} onChange={event => onChange({ ...form, endsAt: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用消息</span></label></div>
     <div className="modal-actions"><button type="button" onClick={onClose} disabled={busy}>取消</button>{form.id && onDelete && <button type="button" className="danger-button" onClick={onDelete} disabled={busy}>删除消息</button>}<button type="button" className="primary" onClick={onSave} disabled={busy}>保存消息</button></div>
   </SimpleModal>
 }
