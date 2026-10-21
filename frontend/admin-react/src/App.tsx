@@ -1441,7 +1441,11 @@ function fileNameFromUrl(value?: string | null) {
 }
 
 function UploadButton({ label, accept, disabled, onFile }: { label: string; accept: string; disabled?: boolean; onFile: (file: File) => void }) {
-  return <label className={`upload-select-button${disabled ? ' disabled' : ''}`} aria-disabled={Boolean(disabled)}>{label}<input className="visually-hidden-file-input" type="file" accept={accept} disabled={disabled} onChange={event => { const file = event.target.files?.[0]; if (file) onFile(file); event.target.value = '' }} /></label>
+  const inputRef = useRef<HTMLInputElement>(null)
+  return <>
+    <button type="button" className={`upload-select-button${disabled ? ' disabled' : ''}`} disabled={disabled} onClick={() => inputRef.current?.click()}>{label}</button>
+    <input ref={inputRef} type="file" accept={accept} disabled={disabled} style={{ display: 'none' }} onChange={event => { const file = event.target.files?.[0]; if (file) onFile(file); event.target.value = '' }} />
+  </>
 }
 
 function CourseModal({ form, templates, categories, submitting, onChange, onUploadImage, onPrompt, onNotify, onClose, onSaveDraft, onReset, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; categories: FilterOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSaveDraft: () => void; onReset: () => void; onSave: () => void; onDelete: () => void }) {
