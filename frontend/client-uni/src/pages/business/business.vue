@@ -472,10 +472,29 @@ const submitInvoice = async () => {
     } catch (error: any) { uni.showToast({ title: error?.message || '开票申请失败', icon: 'none' }) } finally { invoiceSubmitting.value = false }
   } finally { invoiceConfirming.value = false }
 }
+const isMiniProgramPlatform = () => {
+  try {
+    const info = uni.getSystemInfoSync() as { uniPlatform?: string; platform?: string }
+    return String(info.uniPlatform || info.platform || '').toLowerCase().startsWith('mp-')
+  } catch {
+    return false
+  }
+}
+
 const openInvoiceFile = async (invoice: Invoice) => {
   if (invoice.invoiceFileStatus !== '已上传') return uni.showToast({ title: '电子发票文件尚未上传', icon: 'none' })
   try {
     const filePath = await downloadInvoiceFile(invoice.id)
+    if (!isMiniProgramPlatform()) {
+      const link = document.createElement('a')
+      link.href = filePath
+      link.download = invoice.invoiceFileName || `invoice-${invoice.id}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      uni.showToast({ title: '发票文件已开始下载', icon: 'none' })
+      return
+    }
     uni.openDocument({ filePath, showMenu: true, fail: () => uni.showToast({ title: '当前设备无法打开该发票文件', icon: 'none' }) })
   } catch (error: any) { uni.showToast({ title: error?.message || '电子发票下载失败', icon: 'none' }) }
 }

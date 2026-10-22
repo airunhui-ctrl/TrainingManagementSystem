@@ -1749,10 +1749,12 @@ function InvoiceUploadModal({ item, file, busy, onChangeFile, onClose, onSubmit 
 }
 
 function InvoicePreviewModal({ preview, onClose }: { preview: { item: TableItem; url: string }; onClose: () => void }) {
+  const previewSource = preview.item.invoiceFileName || preview.url
+  const isImageFile = /\.(png|jpe?g)(?:[?#]|$)/i.test(previewSource)
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <section className="detail-modal invoice-preview-modal modal-with-footer" role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title">
       <div className="detail-head"><div><h3 id="invoice-preview-title">电子发票预览</h3><p>{preview.item.id} · {preview.item.invoiceFileName || '发票文件'}</p></div><ModalCloseButton onClick={onClose} label="关闭发票预览" /></div>
-      <div className="modal-scroll invoice-preview-scroll"><iframe title="电子发票预览" src={preview.url} /></div>
+      <div className="modal-scroll invoice-preview-scroll">{isImageFile ? <img className="invoice-preview-image" src={preview.url} alt={preview.item.invoiceFileName || '电子发票'} /> : <iframe title="电子发票预览" src={preview.url} />}</div>
       <div className="modal-actions"><button type="button" onClick={onClose}>关闭</button><a className="primary invoice-download-link" href={preview.url} download={preview.item.invoiceFileName || 'invoice'}>下载发票</a></div>
     </section>
   </div>
