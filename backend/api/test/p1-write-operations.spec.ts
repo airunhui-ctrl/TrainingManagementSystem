@@ -111,6 +111,9 @@ describe('P1 非支付写操作闭环', () => {
     expect((await uploadProof(paidOrder.id, demoToken)).response.status).toBe(201)
     expect((await request(`/admin/orders/${encodeURIComponent(paidOrder.id)}/review`, { method: 'POST', body: JSON.stringify({ approved: true, remark: '到账' }) }, adminToken)).response.status).toBe(201)
 
+    const invalidEmailInvoice = await request('/invoices', { method: 'POST', body: JSON.stringify({ title: 'P1 测试企业', taxNo: '91350000P1TEST01', email: 'p1-invalid-email', orderIds: [paidOrder.id] }) }, demoToken)
+    expect(invalidEmailInvoice.response.status).toBe(400)
+
     const invoice = await request('/invoices', { method: 'POST', body: JSON.stringify({ title: 'P1 测试企业', taxNo: '91350000P1TEST01', email: 'p1@example.com', orderIds: [paidOrder.id] }) }, demoToken)
     expect(invoice.response.status).toBe(201)
     expect((await request(`/admin/invoices/${invoice.data.id}/process`, { method: 'POST', body: JSON.stringify({ approved: true }) }, adminToken)).response.status).toBe(400)

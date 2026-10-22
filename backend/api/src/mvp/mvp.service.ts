@@ -505,13 +505,15 @@ export class MvpService {
   }
 
   async createInvoice(userId: string, payload: Record<string, any>) {
+    const email = String(payload.email || '').trim()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequestException('邮箱格式不正确')
     const orderIds = Array.isArray(payload.orderIds) ? [...new Set(payload.orderIds.map(String))] : []
     if (!orderIds.length) throw new BadRequestException('请选择需要开票的已支付订单')
     const orders = await this.db.order.findMany({ where: { id: { in: orderIds } } })
     if (orders.length !== orderIds.length || orders.some((order) => order.userId !== userId || order.status !== '已支付')) throw new BadRequestException('只能选择本人已支付订单开票')
     const invoices = await this.db.invoice.findMany({ where: { status: { not: '已驳回' } }, select: { orderIds: true } })
     if (invoices.some((invoice) => json<string[]>(invoice.orderIds, []).some((item) => orderIds.includes(item)))) throw new BadRequestException('所选订单已提交开票申请')
-    const item = await this.db.invoice.create({ data: { id: id('INV'), userId, orderIds: JSON.stringify(orderIds), payload: JSON.stringify({ ...payload, orderIds, invoiceFileStatus: '未生成', invoiceFileName: null, invoiceFileUrl: null, invoiceFileUploadedAt: null }), status: '待处理' } })
+    const item = await this.db.invoice.create({ data: { id: id('INV'), userId, orderIds: JSON.stringify(orderIds), payload: JSON.stringify({ ...payload, email, orderIds, invoiceFileStatus: '未生成', invoiceFileName: null, invoiceFileUrl: null, invoiceFileUploadedAt: null }), status: '待处理' } })
     await this.audit(userId, '提交开票申请', item.id)
     return this.invoiceView(item)
   }

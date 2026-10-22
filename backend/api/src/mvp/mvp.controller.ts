@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, Res, ServiceUnavailableException, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { Type } from 'class-transformer'
-import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
+import { IsArray, IsEmail, IsIn, IsInt, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
 import { AdminGuard } from '../auth/admin.guard'
 import { JwtGuard } from '../auth/jwt.guard'
 import { MvpService } from './mvp.service'
@@ -16,7 +16,7 @@ class ParticipantDto { @IsObject() data!: Record<string, string>; @IsOptional() 
 class CreateOrderDto { @IsString() courseId!: string; @IsArray() @ValidateNested({ each: true }) @Type(() => ParticipantDto) participants!: ParticipantDto[]; @IsOptional() @IsIn(['online', 'offline']) paymentMethod?: 'online' | 'offline' }
 class PayDto { @IsIn(['online', 'offline']) method!: 'online' | 'offline'; @IsOptional() @IsString() proof?: string; @IsOptional() @IsIn(['wechat', 'alipay']) channel?: 'wechat' | 'alipay' }
 class PaymentIntentDto { @IsIn(['wechat', 'alipay']) channel!: 'wechat' | 'alipay' }
-class InvoiceDto { @IsString() title!: string; @IsString() taxNo!: string; @IsString() email!: string; @IsOptional() @IsString() remark?: string; @IsArray() @IsString({ each: true }) orderIds!: string[] }
+class InvoiceDto { @IsString() title!: string; @IsString() taxNo!: string; @IsEmail({}, { message: '邮箱格式不正确' }) email!: string; @IsOptional() @IsString() remark?: string; @IsArray() @IsString({ each: true }) orderIds!: string[] }
 
 type UploadFile = { originalname: string; mimetype: string; size: number; buffer: Buffer }
 
