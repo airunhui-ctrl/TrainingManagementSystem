@@ -1536,7 +1536,25 @@ function CourseSearchPicker({ value, courses, disabled, onChange }: { value: str
   </div>
 }
 
-function BannerModal({ form, courses, onChange, onClose, onSave, onDelete, busy = false }: { form: BannerForm; courses: CourseOption[]; onChange: (form: BannerForm) => void; onClose: () => void; onSave: () => void; onDelete: () => void; busy?: boolean }) {
+type BannerModalProps = {
+  form: BannerForm
+  courses: CourseOption[]
+  onChange: (form: BannerForm) => void
+  onClose: () => void
+  onSave: () => void
+  onDelete: () => void
+  busy?: boolean
+}
+
+function BannerModal({
+  form,
+  courses,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+  busy = false,
+}: BannerModalProps) {
   return <SimpleModal title={form.id ? '编辑 Banner' : '新增 Banner'} description="配置宣传位内容、关联课程和展示时间" onClose={onClose} busy={busy}>
     <div className="course-form-grid"><label>Banner 标题<input disabled={busy} value={form.title} onChange={event => onChange({ ...form, title: event.target.value })} placeholder="请输入宣传位标题" /></label><label>关联课程<CourseSearchPicker value={form.courseId} courses={courses} disabled={busy} onChange={courseId => onChange({ ...form, courseId })} /><small className="field-hint">点击后输入课程名称或编号搜索，再选择对应课程</small></label><label>排序<span className="field-hint">数值越小越靠前；新增时默认排在现有列表末尾，可修改</span><input type="number" min="0" value={form.sort} disabled={busy} onChange={event => onChange({ ...form, sort: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" disabled={busy} checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用展示</span></label><label>开始时间<input type="datetime-local" disabled={busy} value={form.startsAt} onChange={event => onChange({ ...form, startsAt: event.target.value })} /><small className="field-hint">可选；点击日历图标选择开始时间</small></label><label>结束时间<input type="datetime-local" disabled={busy} value={form.endsAt} onChange={event => onChange({ ...form, endsAt: event.target.value })} /><small className="field-hint">可选；点击日历图标选择结束时间</small></label></div>
     <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button>{form.id && <button type="button" className="danger-button" disabled={busy} onClick={onDelete}>删除 Banner</button>}<button type="button" className="primary" disabled={busy} onClick={onSave}>{busy ? '保存中…' : '保存 Banner'}</button></div>
@@ -1600,7 +1618,8 @@ function RuleModal({ form, courses, onChange, onClose, onSave, onDelete, busy = 
 
 function MessageModal({ form, courses, onChange, onClose, onSave, onDelete, busy = false }: { form: MessageForm; courses: CourseOption[]; onChange: (form: MessageForm) => void; onClose: () => void; onSave: () => void; onDelete?: () => void; busy?: boolean }) {
   const selectedCourseId = form.targetCourseIds[0] || ''
-  const selectedUserId = form.targetUserIds[0] || ''
+  const selectedUserIds = form.targetUserIds
+  const [userPickerOpen, setUserPickerOpen] = useState(false)
   const [recipients, setRecipients] = useState<CourseOption[]>([])
   const [recipientsLoading, setRecipientsLoading] = useState(false)
   const [recipientsError, setRecipientsError] = useState('')
@@ -1634,12 +1653,34 @@ function MessageModal({ form, courses, onChange, onClose, onSave, onDelete, busy
   }
   const legacyChannel = form.channel && form.channel !== '站内消息' ? form.channel : ''
   const recipientOptions = recipients.filter(item => item.id)
-  if (selectedUserId && !recipientOptions.some(item => item.id === selectedUserId)) {
-    recipientOptions.unshift({ id: selectedUserId, title: `${selectedUserId}（当前不在名单中）` })
+  for (const userId of selectedUserIds) {
+    if (userId && !recipientOptions.some(item => item.id === userId)) {
+      recipientOptions.unshift({ id: userId, title: `${userId}（当前不在名单中）` })
+    }
+  }
+  const allRecipientIds = recipientOptions.map(item => item.id)
+  const allUsersSelected = selectedUserIds.length === 0
+  const selectedRecipientNames = selectedUserIds.map(userId => recipientOptions.find(item => item.id === userId)?.title || userId)
+  const selectedUserSummary = selectedUserIds.length
+    ? selectedRecipientNames.slice(0, 2).join('、') + (selectedRecipientNames.length > 2 ? ` 等 ${selectedRecipientNames.length} 名用户` : '')
+    : selectedCourseId ? '该课程全部报名用户' : '全部用户（不按课程限制）'
+
+  const toggleAllUsers = () => {
+    if (!selectedCourseId || recipientsLoading || busy) return
+    onChange({ ...form, targetUserIds: allUsersSelected ? [...allRecipientIds] : [] })
+  }
+  const toggleRecipient = (userId: string) => {
+    if (!selectedCourseId || recipientsLoading || busy) return
+    const baseIds = allUsersSelected ? [...allRecipientIds] : [...selectedUserIds]
+    const nextIds = baseIds.includes(userId)
+      ? baseIds.filter(id => id !== userId)
+      : [...baseIds, userId]
+    if (!nextIds.length) return
+    onChange({ ...form, targetUserIds: nextIds.length === allRecipientIds.length ? [] : nextIds })
   }
 
   return <SimpleModal title={form.id ? '编辑消息' : '发布消息'} description="维护站内通知、目标范围、展示时间和阅读状态" onClose={onClose} busy={busy}>
-    <div className="course-form-grid"><label>消息标题<input value={form.title} onChange={event => onChange({ ...form, title: event.target.value })} placeholder="例如：课程报名提醒" /></label><label>通知渠道<select value={form.channel} onChange={event => onChange({ ...form, channel: event.target.value })}><option value="站内消息">站内消息</option>{legacyChannel && <option value={legacyChannel}>{legacyChannel}（历史记录，暂不可继续使用）</option>}<option disabled>短信（待接入）</option><option disabled>邮件（待接入）</option></select><small className="field-hint">当前仅支持站内消息；短信、邮件待接入真实投递服务。</small></label><label className="wide-field">消息内容<textarea value={form.content} onChange={event => onChange({ ...form, content: event.target.value })} placeholder="请输入通知内容" /></label><label>目标课程<select value={selectedCourseId} disabled={busy} onChange={event => { const courseId = event.target.value; onChange({ ...form, targetCourseIds: courseId ? [courseId] : [], targetUserIds: [] }) }}><option value="">全部用户（不按课程限制）</option>{courseOptions.map(course => <option key={course.id} value={course.id}>{course.title}（{course.id}）</option>)}</select><small className="field-hint">先选择课程，再选择该课程的报名用户；选择全部用户时不限制目标课程。</small>{form.targetCourseIds.length > 1 && <small className="field-hint">历史数据包含 {form.targetCourseIds.length} 个课程，当前显示第一个；重新选择后将只保留新选择。</small>}</label><label>目标用户<select value={selectedUserId} disabled={busy || !selectedCourseId || recipientsLoading} onChange={event => { const userId = event.target.value; onChange({ ...form, targetUserIds: userId ? [userId] : [] }) }}><option value="">{selectedCourseId ? '该课程全部报名用户' : '请先选择目标课程'}</option>{recipientOptions.map(item => <option key={item.id} value={item.id}>{item.title}（{item.id}）</option>)}</select><small className="field-hint">{!selectedCourseId ? '目标课程选择后即可选择用户。' : recipientsLoading ? '正在加载报名用户…' : recipientsError ? recipientsError : `已找到 ${recipients.length} 个该课程报名用户。`}</small>{form.targetUserIds.length > 1 && <small className="field-hint">历史数据包含 {form.targetUserIds.length} 个用户，当前显示第一个；重新选择后将只保留新选择。</small>}</label><label>开始展示时间<span className="field-hint">可选，支持 ISO 时间</span><input type="datetime-local" value={form.startsAt} onChange={event => onChange({ ...form, startsAt: event.target.value })} /></label><label>结束展示时间<span className="field-hint">可选，支持 ISO 时间</span><input type="datetime-local" value={form.endsAt} onChange={event => onChange({ ...form, endsAt: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用消息</span></label></div>
+    <div className="course-form-grid"><label>消息标题<input value={form.title} onChange={event => onChange({ ...form, title: event.target.value })} placeholder="例如：课程报名提醒" /></label><label>通知渠道<select value={form.channel} onChange={event => onChange({ ...form, channel: event.target.value })}><option value="站内消息">站内消息</option>{legacyChannel && <option value={legacyChannel}>{legacyChannel}（历史记录，暂不可继续使用）</option>}<option disabled>短信（待接入）</option><option disabled>邮件（待接入）</option></select><small className="field-hint">当前仅支持站内消息；短信、邮件待接入真实投递服务。</small></label><label className="wide-field">消息内容<textarea value={form.content} onChange={event => onChange({ ...form, content: event.target.value })} placeholder="请输入通知内容" /></label><label>目标课程<select value={selectedCourseId} disabled={busy} onChange={event => { const courseId = event.target.value; setUserPickerOpen(false); onChange({ ...form, targetCourseIds: courseId ? [courseId] : [], targetUserIds: [] }) }}><option value="">全部用户（不按课程限制）</option>{courseOptions.map(course => <option key={course.id} value={course.id}>{course.title}（{course.id}）</option>)}</select><small className="field-hint">先选择课程，再选择该课程的报名用户；选择全部用户时不限制目标课程。</small>{form.targetCourseIds.length > 1 && <small className="field-hint">历史数据包含 {form.targetCourseIds.length} 个课程，当前显示第一个；重新选择后将只保留新选择。</small>}</label><div className="wide-field rule-course-picker-field"><span className="form-label">目标用户（可多选）</span><div className="rule-course-picker"><button type="button" className="rule-course-summary" aria-haspopup="listbox" aria-expanded={userPickerOpen} disabled={busy || !selectedCourseId || recipientsLoading} onClick={() => setUserPickerOpen(value => !value)}><span>{!selectedCourseId ? '请先选择目标课程' : recipientsLoading ? '正在加载报名用户…' : selectedUserSummary}</span><b aria-hidden="true">⌄</b></button>{userPickerOpen && selectedCourseId && !recipientsLoading && <div className="rule-course-menu"><label className="rule-course-option message-user-option"><input type="checkbox" checked={allUsersSelected} disabled={!allRecipientIds.length} onChange={toggleAllUsers} /><span><b>全选该课程报名用户</b><small className="field-hint">{allUsersSelected ? '当前发给全部报名用户，含后续新增报名' : '勾选后恢复发送给全部报名用户'}</small></span></label>{recipientOptions.map(item => <label key={item.id} className="rule-course-option message-user-option"><input type="checkbox" checked={allUsersSelected || selectedUserIds.includes(item.id)} onChange={() => toggleRecipient(item.id)} /><span>{item.title}（{item.id}）</span></label>)}<button type="button" className="rule-course-done" onClick={() => setUserPickerOpen(false)}>完成</button></div>}</div><small className="field-hint">{!selectedCourseId ? '目标课程选择后即可按报名名单多选用户。' : recipientsLoading ? '正在加载报名用户…' : recipientsError ? recipientsError : allUsersSelected ? `不指定具体用户时，发送给该课程全部 ${recipients.length} 个报名用户。` : `已指定 ${selectedUserIds.length} 名用户；全部勾选会动态发送给全部报名用户。`}</small>{selectedUserIds.length > 0 && selectedUserIds.length < allRecipientIds.length && <small className="field-hint">至少保留 1 名用户；如需取消指定用户，请重新勾选“全选该课程报名用户”。</small>}</div><label>开始展示时间<span className="field-hint">可选；留空表示立即生效、不限开始时间。</span><input type="datetime-local" value={form.startsAt} onChange={event => onChange({ ...form, startsAt: event.target.value })} /></label><label>结束展示时间<span className="field-hint">可选；留空表示长期展示，不会自动结束。</span><input type="datetime-local" value={form.endsAt} onChange={event => onChange({ ...form, endsAt: event.target.value })} /></label><label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.enabled} onChange={event => onChange({ ...form, enabled: event.target.checked })} /><span>启用消息</span></label></div>
     <div className="modal-actions"><button type="button" onClick={onClose} disabled={busy}>取消</button>{form.id && onDelete && <button type="button" className="danger-button" onClick={onDelete} disabled={busy}>删除消息</button>}<button type="button" className="primary" onClick={onSave} disabled={busy}>保存消息</button></div>
   </SimpleModal>
 }
