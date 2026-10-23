@@ -23,6 +23,7 @@ type FeedbackForm = { id: string; reply: string }
 type StudentProfileForm = { id: string; name: string; phone: string; email: string; company: string; department: string; position: string }
 type UserProfileForm = { id: string; name: string; phone: string; email: string; company: string; gender: string }
 type ReviewState = { order: TableItem; proof: TableItem; imageUrl: string }
+type DashboardTodo = { type: 'payment' | 'invoice' | 'feedback'; id: string; target: 'orders' | 'invoices' | 'feedbacks' }
 type EnrollmentSummaryDetailState = { summary: TableItem; items: TableItem[] }
 type PointLedgerDetailState = { user: TableItem; items: TableItem[]; page: number; pageSize: number; total: number }
 type DialogRequest = { kind: 'confirm' | 'prompt'; title: string; message: string; value: string; placeholder: string; confirmLabel: string; danger?: boolean }
@@ -346,6 +347,7 @@ function App() {
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const [feedbackForm, setFeedbackForm] = useState<FeedbackForm>(emptyFeedbackForm)
   const [feedbackItem, setFeedbackItem] = useState<TableItem | null>(null)
+  const [pendingTodo, setPendingTodo] = useState<DashboardTodo | null>(null)
   const [studentEditModalOpen, setStudentEditModalOpen] = useState(false)
   const [studentProfileForm, setStudentProfileForm] = useState<StudentProfileForm>(emptyStudentProfileForm)
   const [userEditModalOpen, setUserEditModalOpen] = useState(false)
@@ -459,6 +461,16 @@ function App() {
     setSidebarOpen(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  const navigateToTodo = (moduleKey: string, todo?: DashboardTodo) => {
+    if (!todo) return navigate(moduleKey)
+    navigate(todo.target)
+    setPendingTodo(todo)
+    setTableKeyword(todo.id)
+    setQueryKeyword(todo.id)
+    setStatusFilter('')
+    setUserStatusFilter('')
+    setPage(1)
+  }
   const logout = () => {
     authStorage.clear()
     tabCacheRef.current = {}
@@ -555,11 +567,43 @@ function App() {
 
   useEffect(() => {
     restoreTabState(tabCacheRef.current[active])
+    // 待办跳转使用目标记录 ID 作为服务端关键字，避免目标记录不在第一页时找不到。
+    if (pendingTodo && pendingTodo.target === active) {
+      setTableKeyword(pendingTodo.id)
+      setQueryKeyword(pendingTodo.id)
+      setStatusFilter('')
+      setUserStatusFilter('')
+      setPage(1)
+    }
   }, [active])
   useEffect(() => {
     try { window.sessionStorage.setItem(VISITED_TABS_STORAGE_KEY, JSON.stringify(visitedTabs)) } catch { /* 浏览器禁用存储时仍保留当前会话标签 */ }
   }, [visitedTabs])
   useEffect(() => { if (loggedIn) load().catch((error) => flash(error instanceof Error ? error.message : '加载失败，请重新登录')) }, [active, loggedIn, page, queryKeyword, statusFilter, userStatusFilter, auditActionFilter, auditActorFilter, auditFrom, auditTo])
+  useEffect(() => {
+    if (!pendingTodo) return
+    if (active !== pendingTodo.target) {
+      setPendingTodo(null)
+      return
+    }
+    if (listLoading || listError || !Array.isArray(data?.items)) return
+    const item = (data.items as TableItem[]).find((row: TableItem) => String(row.id) === pendingTodo.id)
+    if (!item) return
+    const todo = pendingTodo
+    setPendingTodo(null)
+    if (todo.type === 'payment') {
+      if (String(item.status) !== '待审核') return flash('该支付待办已处理，请刷新列表')
+      void openOrderReview(item)
+      return
+    }
+    if (todo.type === 'invoice') {
+      if (String(item.status) !== '待处理') return flash('该开票待办已处理，请刷新列表')
+      void operate(item)
+      return
+    }
+    if (String(item.status) !== '待处理') return flash('该反馈待办已处理，请刷新列表')
+    openFeedbackEditor(item)
+  }, [active, data, listError, listLoading, pendingTodo])
   useEffect(() => {
     if (!loggedIn || courseCategoryOptions.length) return
     apiFetch<{ items?: Array<{ code: string; label: string }> }>('/admin/course-categories')
@@ -1317,7 +1361,7 @@ function App() {
           })}
         </nav>
       </header>
-      {active === 'dashboard' ? <Dashboard data={data} loading={listLoading} error={listError} onRetry={() => { void load().catch(() => undefined) }} onNavigate={navigate} /> : <section className="panel data-panel list-page">
+      {active === 'dashboard' ? <Dashboard data={data} loading={listLoading} error={listError} onRetry={() => { void load().catch(() => undefined) }} onNavigate={navigateToTodo} /> : <section className="panel data-panel list-page">
         {active === 'readiness' ? <IntegrationReadinessPanel data={data} loading={listLoading} error={listError} onRefresh={() => { void load().catch(() => undefined) }} /> : <>
         <section className="list-section search-section" aria-label="搜索条件">
           <div className="search-toolbar">
@@ -1940,7 +1984,7 @@ function ListState({ kind, message, onRetry }: { kind: 'loading' | 'error'; mess
   </div>
 }
 
-function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; loading: boolean; error: string; onRetry: () => void; onNavigate: (key: string) => void }) {
+function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; loading: boolean; error: string; onRetry: () => void; onNavigate: (key: string, todo?: DashboardTodo) => void }) {
   const [statsKeyword, setStatsKeyword] = useState('')
   const [statsPage, setStatsPage] = useState(1)
   const [todoPage, setTodoPage] = useState(1)
@@ -1974,7 +2018,7 @@ function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; l
     <section className="panel">
       <h2>运营待办</h2>
       <p>请依次处理线下支付审核、开票申请和用户反馈；所有处理结果将写入操作审计。</p>
-      {todos.length ? <div className="dashboard-todo-list">{todoRows.map((todo: any) => <button type="button" className="dashboard-todo-item" key={`${todo.type}-${todo.id}`} onClick={() => onNavigate(todo.target)}>
+      {todos.length ? <div className="dashboard-todo-list">{todoRows.map((todo: any) => <button type="button" className="dashboard-todo-item" key={`${todo.type}-${todo.id}`} onClick={() => onNavigate(todo.target, { type: todo.type, id: String(todo.id), target: todo.target })}>
         <span className={`dashboard-todo-badge todo-${todo.type}`}>{todoTypeLabel[todo.type] || '待处理'}</span>
         <span className="dashboard-todo-detail"><b>{todo.label}</b><small>{todo.detail}</small></span>
         <b aria-hidden="true">→</b>
