@@ -1941,6 +1941,8 @@ function ListState({ kind, message, onRetry }: { kind: 'loading' | 'error'; mess
 }
 
 function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; loading: boolean; error: string; onRetry: () => void; onNavigate: (key: string) => void }) {
+  const [statsKeyword, setStatsKeyword] = useState('')
+  const [statsPage, setStatsPage] = useState(1)
   if (loading) return <div className="dashboard-stack"><ListState kind="loading" message="正在加载工作台…" /></div>
   if (error) return <div className="dashboard-stack"><ListState kind="error" message={error} onRetry={onRetry} /></div>
   const cards = [
@@ -1951,11 +1953,34 @@ function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; l
     { name: '待支付', value: data?.pendingPaymentCount, target: 'orders' },
     { name: '待开票', value: data?.pendingInvoiceCount, target: 'invoices' },
   ]
-  const stats = Array.isArray(data?.courseStats) ? data.courseStats : []
+  const todos = Array.isArray(data?.todos) ? data.todos : []
+  const allStats = Array.isArray(data?.courseStats) ? data.courseStats : []
+  const filteredStats = !statsKeyword.trim() ? allStats : allStats.filter((item: any) => {
+    const keyword = statsKeyword.trim().toLowerCase()
+    return String(item.title || '').toLowerCase().includes(keyword) || String(item.courseId || '').toLowerCase().includes(keyword)
+  })
+  const statsPageSize = 5
+  const statsTotalPages = Math.max(1, Math.ceil(filteredStats.length / statsPageSize))
+  const safeStatsPage = Math.min(statsPage, statsTotalPages)
+  const statsRows = filteredStats.slice((safeStatsPage - 1) * statsPageSize, safeStatsPage * statsPageSize)
+  const todoTypeLabel: Record<string, string> = { payment: '支付审核', invoice: '开票处理', feedback: '用户反馈' }
   return <div className="dashboard-stack">
     <section className="kpis">{cards.map(card => <button className="kpi" type="button" key={card.name} onClick={() => onNavigate(card.target)}><span>{card.name}</span><strong>{card.value ?? '-'}</strong><small>查看对应业务 <b aria-hidden="true">→</b></small></button>)}</section>
-    <section className="panel"><h2>运营待办</h2><p>请依次处理线下支付审核、开票申请和用户反馈；所有处理结果将写入操作审计。</p></section>
-    <section className="panel"><div className="panel-head"><h2>课程开展统计</h2></div><DataTable moduleKey="dashboard" items={stats} onOperate={() => undefined} showAction={false} /></section>
+    <section className="panel">
+      <h2>运营待办</h2>
+      <p>请依次处理线下支付审核、开票申请和用户反馈；所有处理结果将写入操作审计。</p>
+      {todos.length ? <div className="dashboard-todo-list">{todos.map((todo: any) => <button type="button" className="dashboard-todo-item" key={`${todo.type}-${todo.id}`} onClick={() => onNavigate(todo.target)}>
+        <span className={`dashboard-todo-badge todo-${todo.type}`}>{todoTypeLabel[todo.type] || '待处理'}</span>
+        <span className="dashboard-todo-detail"><b>{todo.label}</b><small>{todo.detail}</small></span>
+        <b aria-hidden="true">→</b>
+      </button>)}</div> : <p className="detail-muted">当前没有待处理事项。</p>}
+    </section>
+    <section className="panel">
+      <div className="panel-head"><h2>课程开展统计</h2></div>
+      <div className="list-toolbar"><input value={statsKeyword} onChange={event => { setStatsKeyword(event.target.value); setStatsPage(1) }} placeholder="搜索课程名称或编号" aria-label="搜索课程" /></div>
+      <DataTable moduleKey="dashboard" items={statsRows} onOperate={() => undefined} showAction={false} />
+      <div className="list-footer"><span>共 {filteredStats.length} 门课程</span><div className="pagination"><div><button type="button" disabled={safeStatsPage <= 1} onClick={() => setStatsPage(value => Math.max(1, value - 1))}>上一页</button><button type="button" disabled={safeStatsPage >= statsTotalPages} onClick={() => setStatsPage(value => Math.min(statsTotalPages, value + 1))}>下一页</button></div><span>第 {safeStatsPage} / {statsTotalPages} 页</span></div></div>
+    </section>
   </div>
 }
 

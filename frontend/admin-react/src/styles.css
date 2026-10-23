@@ -194,6 +194,17 @@ button { cursor: pointer; }
 .visited-tab.active .visited-tab-close:hover { color: #142b4a; background: rgba(255, 255, 255, .84); }
 
 .dashboard-stack { display: grid; gap: 26px; }
+.dashboard-todo-list { display: grid; gap: 10px; margin-top: 16px; }
+.dashboard-todo-item { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; border: 1px solid #dbe9ff; border-radius: 14px; background: #f8fbff; text-align: left; cursor: pointer; font-size: 13px; }
+.dashboard-todo-item:hover { border-color: #9fc3f0; background: #f0f7ff; }
+.dashboard-todo-badge { flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.dashboard-todo-badge.todo-payment { color: #8a6413; background: #fff3d6; }
+.dashboard-todo-badge.todo-invoice { color: #1a5c9e; background: #e3f1fd; }
+.dashboard-todo-badge.todo-feedback { color: #178a56; background: #effbf5; }
+.dashboard-todo-detail { flex: 1 1 auto; min-width: 0; display: grid; gap: 3px; }
+.dashboard-todo-detail b { color: #142b4a; font-size: 13px; }
+.dashboard-todo-detail small { color: #7d8da5; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-todo-item > b:last-child { flex: 0 0 auto; color: #2f6fc7; }
 .kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

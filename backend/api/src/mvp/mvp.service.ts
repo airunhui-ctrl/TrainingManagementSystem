@@ -534,19 +534,29 @@ export class MvpService {
   }
 
   async dashboard() {
-    const [courses, orders, previews, pendingInvoiceCount] = await Promise.all([
+    const [courses, orders, previews, pendingInvoiceItems, pendingProofOrders, pendingFeedbacks] = await Promise.all([
       this.db.course.findMany({ orderBy: { createdAt: 'asc' } }),
       this.db.order.findMany(),
       this.db.preview.findMany(),
-      this.db.invoice.count({ where: { status: '待处理' } }),
+      this.db.invoice.findMany({ where: { status: '待处理' }, orderBy: { createdAt: 'desc' } }),
+      this.db.order.findMany({ where: { status: '待审核' }, include: { course: { select: { title: true } } }, orderBy: { createdAt: 'desc' } }),
+      this.db.feedback.findMany({ where: { status: '待处理' }, orderBy: { createdAt: 'desc' } }),
     ])
+    const todos = [
+      ...pendingProofOrders.map((item: any) => ({ type: 'payment' as const, id: item.id, label: '支付凭证待审核', detail: `${item.course?.title || item.courseId} · ¥${item.amount ?? 0}`, target: 'orders' })),
+      ...pendingInvoiceItems.map((item) => { const view = json<Record<string, any>>(item.payload, {}); return { type: 'invoice' as const, id: item.id, label: '开票申请待处理', detail: String(view.title || item.id), target: 'invoices' } }),
+      ...pendingFeedbacks.map((item) => { const view = json<Record<string, any>>(item.payload, {}); return { type: 'feedback' as const, id: item.id, label: '用户反馈待处理', detail: String(view.content || view.message || item.id).slice(0, 60), target: 'feedbacks' } }),
+    ]
     return {
       courseCount: courses.length,
       enrollmentCount: orders.reduce((sum, item) => sum + item.participantCount, 0),
       previewCount: previews.length,
       paidCount: orders.filter((item) => item.status === '已支付').length,
       pendingPaymentCount: orders.filter((item) => item.status === '待支付').length,
-      pendingInvoiceCount,
+      pendingInvoiceCount: pendingInvoiceItems.length,
+      pendingProofCount: pendingProofOrders.length,
+      pendingFeedbackCount: pendingFeedbacks.length,
+      todos,
       courseStats: courses.map((course) => ({ courseId: course.id, title: course.title, enrolled: course.enrolled, paidOrders: orders.filter((order) => order.courseId === course.id && order.status === '已支付').length, previews: previews.filter((item) => item.courseId === course.id).length })),
     }
   }
