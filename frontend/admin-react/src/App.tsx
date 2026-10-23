@@ -21,6 +21,7 @@ type ConfigForm = { key: string; value: string; description: string }
 type PointsForm = { userId: string; userName: string; points: string; reason: string }
 type FeedbackForm = { id: string; reply: string }
 type StudentProfileForm = { id: string; name: string; phone: string; email: string; company: string; department: string; position: string }
+type UserProfileForm = { id: string; name: string; phone: string; email: string; company: string; gender: string }
 type ReviewState = { order: TableItem; proof: TableItem; imageUrl: string }
 type EnrollmentSummaryDetailState = { summary: TableItem; items: TableItem[] }
 type PointLedgerDetailState = { user: TableItem; items: TableItem[]; page: number; pageSize: number; total: number }
@@ -143,6 +144,7 @@ const emptyConfigForm = (): ConfigForm => ({ key: '', value: '', description: ''
 const emptyPointsForm = (): PointsForm => ({ userId: '', userName: '', points: '0', reason: '' })
 const emptyFeedbackForm = (): FeedbackForm => ({ id: '', reply: '' })
 const emptyStudentProfileForm = (): StudentProfileForm => ({ id: '', name: '', phone: '', email: '', company: '', department: '', position: '' })
+const emptyUserProfileForm = (): UserProfileForm => ({ id: '', name: '', phone: '', email: '', company: '', gender: '' })
 const getInitialVisitedTabs = () => {
   const fallback = ['dashboard']
   if (typeof window === 'undefined') return fallback
@@ -346,6 +348,8 @@ function App() {
   const [feedbackItem, setFeedbackItem] = useState<TableItem | null>(null)
   const [studentEditModalOpen, setStudentEditModalOpen] = useState(false)
   const [studentProfileForm, setStudentProfileForm] = useState<StudentProfileForm>(emptyStudentProfileForm)
+  const [userEditModalOpen, setUserEditModalOpen] = useState(false)
+  const [userProfileForm, setUserProfileForm] = useState<UserProfileForm>(emptyUserProfileForm)
   const [reviewState, setReviewState] = useState<ReviewState | null>(null)
   const [reviewRemark, setReviewRemark] = useState('')
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
@@ -436,16 +440,16 @@ function App() {
   }
   const resetTabState = () => {
     loadVersion.current += 1
-    setData(null); setListLoading(false); setListError(''); setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setFeedbackItem(null); setStudentEditModalOpen(false)
+    setData(null); setListLoading(false); setListError(''); setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setFeedbackItem(null); setStudentEditModalOpen(false); setUserEditModalOpen(false)
     setInvoiceUploadOpen(false); setInvoiceUploadItem(null); setInvoiceUploadFile(null); setInvoiceUploading(false); setInvoicePreview((current: any) => { if (current) URL.revokeObjectURL(current.url); return null }); setResetPasswordUser(null); setResetPasswordValue(''); setResetPasswordConfirm(''); setResetPasswordSubmitting(false)
-    setCourseForm(emptyCourseForm()); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setStudentProfileForm(emptyStudentProfileForm())
+    setCourseForm(emptyCourseForm()); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setStudentProfileForm(emptyStudentProfileForm()); setUserProfileForm(emptyUserProfileForm())
     setSelectedDetail(null); setEnrollmentSummaryDetail(null); setPointLedgerDetail(null); setReviewState(null); setReviewRemark(''); setSelectedRows([]); setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setAuditActionFilter(''); setAuditActorFilter(''); setAuditFrom(''); setAuditTo(''); setPage(1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
   const restoreTabState = (snapshot?: TabSnapshot) => {
     if (!snapshot) { resetTabState(); return }
     loadVersion.current += 1
-    setData(snapshot.data ?? null); setListLoading(false); setListError(''); setCourseModalOpen(Boolean(snapshot.courseModalOpen)); setTemplateModalOpen(Boolean(snapshot.templateModalOpen)); setBannerModalOpen(Boolean(snapshot.bannerModalOpen)); setPaymentModalOpen(Boolean(snapshot.paymentModalOpen)); setRuleModalOpen(Boolean(snapshot.ruleModalOpen)); setMessageModalOpen(Boolean(snapshot.messageModalOpen)); setConfigModalOpen(Boolean(snapshot.configModalOpen)); setPointsModalOpen(Boolean(snapshot.pointsModalOpen)); setFeedbackModalOpen(Boolean(snapshot.feedbackModalOpen)); setStudentEditModalOpen(Boolean(snapshot.studentEditModalOpen))
-    setCourseForm({ ...emptyCourseForm(), ...(snapshot.courseForm || {}) }); setTemplateForm({ ...emptyTemplateForm(), ...(snapshot.templateForm || {}) }); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm({ ...emptyMessageForm(), ...(snapshot.messageForm || {}), targetUserIds: listFieldToValues(snapshot.messageForm?.targetUserIds), targetCourseIds: listFieldToValues(snapshot.messageForm?.targetCourseIds) }); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm())
+    setData(snapshot.data ?? null); setListLoading(false); setListError(''); setCourseModalOpen(Boolean(snapshot.courseModalOpen)); setTemplateModalOpen(Boolean(snapshot.templateModalOpen)); setBannerModalOpen(Boolean(snapshot.bannerModalOpen)); setPaymentModalOpen(Boolean(snapshot.paymentModalOpen)); setRuleModalOpen(Boolean(snapshot.ruleModalOpen)); setMessageModalOpen(Boolean(snapshot.messageModalOpen)); setConfigModalOpen(Boolean(snapshot.configModalOpen)); setPointsModalOpen(Boolean(snapshot.pointsModalOpen)); setFeedbackModalOpen(Boolean(snapshot.feedbackModalOpen)); setStudentEditModalOpen(Boolean(snapshot.studentEditModalOpen)); setUserEditModalOpen(false)
+    setCourseForm({ ...emptyCourseForm(), ...(snapshot.courseForm || {}) }); setTemplateForm({ ...emptyTemplateForm(), ...(snapshot.templateForm || {}) }); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm({ ...emptyMessageForm(), ...(snapshot.messageForm || {}), targetUserIds: listFieldToValues(snapshot.messageForm?.targetUserIds), targetCourseIds: listFieldToValues(snapshot.messageForm?.targetCourseIds) }); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm()); setUserProfileForm(emptyUserProfileForm())
     setSelectedDetail(snapshot.selectedDetail ?? null); setEnrollmentSummaryDetail(snapshot.enrollmentSummaryDetail ?? null); setPointLedgerDetail(snapshot.pointLedgerDetail ?? null); setReviewState(snapshot.reviewState ?? null); setReviewRemark(snapshot.reviewRemark || ''); setSelectedRows(Array.isArray(snapshot.selectedRows) ? snapshot.selectedRows : []); setTableKeyword(snapshot.tableKeyword || ''); setQueryKeyword(snapshot.queryKeyword || ''); setStatusFilter(snapshot.statusFilter || ''); setAuditActionFilter(snapshot.auditActionFilter || ''); setAuditActorFilter(snapshot.auditActorFilter || ''); setAuditFrom(snapshot.auditFrom || ''); setAuditTo(snapshot.auditTo || ''); setPage(Number(snapshot.page) || 1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
   const navigate = (moduleKey: string) => {
@@ -685,6 +689,27 @@ function App() {
     if (!saved) return
     setStudentEditModalOpen(false)
     setStudentProfileForm(emptyStudentProfileForm())
+  }
+  const openUserEditor = (item: TableItem) => {
+    const phone = String(item.phone || '').trim()
+    const email = String(item.email || '').trim()
+    // List endpoints return masked phone/email. Never turn a masked value
+    // into a shorter invalid value; leaving it blank preserves the server value.
+    setUserProfileForm({ id: String(item.id || ''), name: String(item.name || ''), phone: /^\d{3}\*+\d{2,4}$/.test(phone) ? '' : phone, email: email.includes('*') ? '' : email, company: String(item.company || ''), gender: String(item.gender || '') })
+    setUserEditModalOpen(true)
+  }
+  const saveUserProfile = async () => {
+    const form = userProfileForm
+    if (!form.id) return flash('用户 ID 缺失')
+    if (form.phone.trim() && !/^1\d{10}$/.test(form.phone.trim())) return flash('请输入有效的 11 位手机号')
+    if (!await confirmAction(`确认保存用户「${form.name.trim() || form.id}」的资料修改吗？`)) return
+    const payload: Record<string, string> = { name: form.name.trim(), company: form.company.trim(), gender: form.gender.trim() }
+    if (form.phone.trim()) payload.phone = form.phone.trim()
+    if (form.email.trim()) payload.email = form.email.trim()
+    const saved = await runOperation(`user-edit:${form.id}`, () => apiFetch(`/admin/users/${encodeURIComponent(form.id)}`, { method: 'PATCH', body: JSON.stringify(payload) }), '用户资料已更新')
+    if (!saved) return
+    setUserEditModalOpen(false)
+    setUserProfileForm(emptyUserProfileForm())
   }
   const updateTemplateField = (index: number, patch: Partial<TemplateField>) => setTemplateForm(current => ({ ...current, fields: current.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) }))
   const removeTemplateField = async (index: number) => {
@@ -1162,7 +1187,9 @@ function App() {
   const canOperate = active === 'orders' ? (item: TableItem) => ['待支付', '待审核', '已支付'].includes(String(item.status)) : active === 'invoices' ? (item: TableItem) => item.status === '待处理' || (item.status === '已开票' && item.invoiceFileStatus === '待上传') : active === 'feedbacks' ? (item: TableItem) => item.status === '待处理' : detailOnlyModule || active === 'audits' ? () => false : undefined
   const canSecondary = active === 'invoices' ? (item: TableItem) => item.status === '待处理' || (item.status === '已开票' && item.invoiceFileStatus === '已上传') : undefined
   const bannerRows = active === 'banners' ? [...(Array.isArray(data?.items) ? data.items : [])].sort((a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0)) : []
-  const extraActions = active === 'banners' ? (item: TableItem) => {
+  const extraActions = active === 'users' ? (item: TableItem) => [
+    { key: 'user-edit', label: '编辑资料', disabled: Boolean(operationKey), onRun: () => openUserEditor(item) },
+  ] : active === 'banners' ? (item: TableItem) => {
     const bannerIndex = bannerRows.findIndex(row => String(row.id) === String(item.id))
     return [
       { key: 'banner-up', label: '上移', disabled: Boolean(operationKey) || bannerIndex <= 0, onRun: () => { void moveBanner(item, -1) } },
@@ -1324,6 +1351,7 @@ function App() {
       {pointsModalOpen && <PointsModal form={pointsForm} onChange={setPointsForm} onClose={() => setPointsModalOpen(false)} onSave={savePoints} busy={Boolean(operationKey)} />}
       {feedbackModalOpen && <FeedbackModal form={feedbackForm} item={feedbackItem} onChange={setFeedbackForm} onClose={() => setFeedbackModalOpen(false)} onSave={saveFeedback} onNotify={flash} busy={Boolean(operationKey)} />}
       {studentEditModalOpen && <StudentProfileModal form={studentProfileForm} onChange={setStudentProfileForm} onClose={() => setStudentEditModalOpen(false)} onSave={saveStudentProfile} busy={Boolean(operationKey)} />}
+      {userEditModalOpen && <UserProfileModal form={userProfileForm} onChange={setUserProfileForm} onClose={() => setUserEditModalOpen(false)} onSave={saveUserProfile} busy={Boolean(operationKey)} />}
       {enrollmentSummaryDetail && <EnrollmentSummaryDetailPanel detail={enrollmentSummaryDetail} onClose={() => setEnrollmentSummaryDetail(null)} />}
       {reviewState && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeReview() }}>
         <section className="detail-modal review-modal modal-with-footer" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
@@ -1722,6 +1750,20 @@ function FeedbackModal({ form, item, onChange, onClose, onSave, onNotify, busy =
     {attachments.length > 0 && <div className="feedback-admin-attachments"><b>反馈附件（{attachments.length}）</b><div className="feedback-admin-attachment-list">{attachments.map((attachment: TableItem) => <button type="button" key={attachment.storedName} disabled={busy} onClick={() => void openAttachment(attachment)}>{attachment.originalName || attachment.storedName}</button>)}</div>{previewUrl && <div className="feedback-admin-preview"><img src={previewUrl} alt="反馈附件预览" /><button type="button" onClick={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl('') }}>关闭预览</button></div>}</div>}
     <label className="wide-field">回复内容<textarea value={form.reply} onChange={event => onChange({ ...form, reply: event.target.value })} placeholder="请输入回复内容" /></label>
     <div className="modal-actions"><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="button" className="primary" disabled={busy} onClick={onSave}>{busy ? '保存中…' : '保存回复'}</button></div>
+  </SimpleModal>
+}
+
+function UserProfileModal({ form, onChange, onClose, onSave, busy = false }: { form: UserProfileForm; onChange: (form: UserProfileForm) => void; onClose: () => void; onSave: () => void; busy?: boolean }) {
+  const field = (key: keyof Omit<UserProfileForm, 'id'>, label: string, placeholder = '') => <label>{label}<input value={form[key]} onChange={event => onChange({ ...form, [key]: event.target.value })} placeholder={placeholder} disabled={busy} /></label>
+  return <SimpleModal title="编辑用户资料" description="修改登录账号的基础资料；不影响登录名、密码和角色权限" onClose={onClose} busy={busy}>
+    <div className="course-form-grid">
+      {field('name', '姓名', '请输入用户姓名')}
+      {field('phone', '手机号', '留空表示不修改；修改请输入完整 11 位手机号')}
+      {field('email', '邮箱', '留空表示不修改；修改请输入完整邮箱')}
+      {field('company', '公司', '可选')}
+      {field('gender', '性别', '可选')}
+    </div>
+    <div className="modal-actions"><button type="button" onClick={onClose} disabled={busy}>取消</button><button type="button" className="primary" onClick={onSave} disabled={busy}>{busy ? '保存中…' : '保存资料'}</button></div>
   </SimpleModal>
 }
 

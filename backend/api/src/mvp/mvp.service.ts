@@ -1110,6 +1110,34 @@ export class MvpService {
     return { id: userId, username: item.username, resetPassword: newPassword ? '' : password }
   }
 
+  async updateUserByAdmin(userId: string, payload: Record<string, any>, actor = 'admin') {
+    const current = await this.db.user.findUnique({ where: { id: userId } })
+    if (!current) throw new NotFoundException('用户不存在')
+    const name = payload.name !== undefined ? String(payload.name || '').trim() : current.name
+    if (payload.name !== undefined && !name) throw new BadRequestException('姓名不能为空')
+    const phone = payload.phone !== undefined ? normalizedPhone(payload.phone) : current.phone
+    if (payload.phone !== undefined && phone && !/^1\d{10}$/.test(phone)) throw new BadRequestException('手机号格式不正确')
+    if (phone) {
+      const conflict = await this.db.user.findFirst({ where: { phone, id: { not: userId } }, select: { id: true } })
+      if (conflict) throw new BadRequestException('手机号已绑定其他账号')
+    }
+    const email = payload.email !== undefined ? String(payload.email || '').trim().toLowerCase() : current.email
+    if (payload.email !== undefined && email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequestException('邮箱格式不正确')
+    if (email) {
+      const conflict = await this.db.user.findFirst({ where: { email, id: { not: userId } }, select: { id: true } })
+      if (conflict) throw new BadRequestException('邮箱已绑定其他账号')
+    }
+    const item = await this.db.user.update({ where: { id: userId }, data: {
+      ...(payload.name !== undefined ? { name } : {}),
+      ...(payload.company !== undefined ? { company: String(payload.company).trim() } : {}),
+      ...(payload.phone !== undefined ? { phone: phone || null } : {}),
+      ...(payload.gender !== undefined ? { gender: String(payload.gender).trim() || null } : {}),
+      ...(payload.email !== undefined ? { email: email || null } : {}),
+    } })
+    await this.audit(actor, '管理员编辑用户资料', item.username, { name: current.name, phone: current.phone, email: current.email, company: current.company, gender: current.gender }, { name: item.name, phone: item.phone, email: item.email, company: item.company, gender: item.gender })
+    return this.getProfile(userId)
+  }
+
   async listStudents() { return this.listEnrollments() }
 
   private enrollmentView(item: any, reveal = false) {
