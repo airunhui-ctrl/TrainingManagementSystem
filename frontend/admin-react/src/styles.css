@@ -500,6 +500,10 @@ tbody tr:hover .action-cell { background: #fbfcfe; }
 .review-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 4px 0 16px; color: #52677f; font-size: 12px; }
 .payment-proof-preview { display: block; width: 100%; max-height: 420px; object-fit: contain; border: 1px solid #e5ebf3; border-radius: 12px; background: #f7f9fc; }
 .review-remark-field { display: grid; gap: 7px; margin-top: 16px; color: #52677f; font-size: 13px; font-weight: 700; }
+.required-mark { color:#e02424; font-weight:800; margin-left:4px; line-height:1; }
+.required-input-wrap { position:relative; display:block; min-width:0; }
+.required-input-wrap .required-mark { position:absolute; right:9px; top:50%; transform:translateY(-50%); margin:0; pointer-events:none; }
+.template-options.required-options-input { position:relative; display:block; grid-column:1 / -1; min-width:0; }.template-options.required-options-input input { width:100%; }.template-options.required-options-input .required-mark { position:absolute; right:9px; top:50%; transform:translateY(-50%); margin:0; pointer-events:none; }
 .review-remark-field textarea { min-height: 88px; padding: 11px 13px; border: 1px solid #dce4ee; border-radius: 12px; color: #142b4a; background: #fbfcfe; resize: vertical; font: inherit; font-weight: 400; line-height: 1.5; }
 .participant-list b { color: #142b4a; }
 .section-action-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; }
@@ -714,3 +718,8 @@ tbody tr:hover .action-cell { background: #fbfcfe; }
 .user-detail-scroll { max-height:62vh; overflow:auto; }
 .payment-transaction-list { display:grid; gap:8px; margin-top:12px; }
 .transaction-row { display:flex; flex-wrap:wrap; gap:8px 16px; padding:10px 12px; border:1px solid #e4e9f0; border-radius:10px; color:#52627a; font-size:12px; background:#f8fafc; }
+
+.app-dialog-required-field { display:block; margin-top:16px; }
+.app-dialog-required-label { display:block; margin-bottom:8px; color:#52677f; font-size:13px; font-weight:700; }
+.app-dialog-required-field .required-mark { margin-left:4px; }
+.app-dialog-required-field .app-dialog-input { margin-top:0; }

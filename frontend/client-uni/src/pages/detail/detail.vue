@@ -42,8 +42,8 @@
         </view>
         <view v-if="shouldCollapseIntro" class="intro-toggle" @tap="toggleIntro"><text>{{ introExpanded ? '收起课程简介' : '展开完整简介' }}</text><text class="intro-toggle-icon">{{ introExpanded ? '⌃' : '⌄' }}</text></view>
       </view>
-      <view v-if="course.seatsLeft" class="bottom-cta"><view><text class="cta-label">课程费用</text><text class="cta-price">¥{{ course.price.toLocaleString() }}<text> / 人</text></text></view><button class="register-btn" @tap="register">我要报名</button></view>
-      <view v-else class="bottom-cta ended"><text>本期课程已结束，关注后续活动</text></view>
+      <view v-if="canRegister" class="bottom-cta"><view><text class="cta-label">课程费用</text><text class="cta-price">¥{{ course.price.toLocaleString() }}<text> / 人</text></text></view><button class="register-btn" @tap="register">我要报名</button></view>
+      <view v-else class="bottom-cta ended"><text>{{ registrationState?.displayStatus || '暂不可报名' }}<text v-if="registrationState?.reason">：{{ registrationState.reason }}</text></text></view>
     </view>
     <view v-if="!loading && !course && !loadError" class="page-state">课程不存在或已下架</view>
   </view>
@@ -51,7 +51,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
+import { onLoad, onShareAppMessage, onUnload } from '@dcloudio/uni-app'
 import bannerImage from '../../assets/courses/banner-training.svg'
 import talentImage from '../../assets/courses/course-talent.svg'
 import managementImage from '../../assets/courses/course-management.svg'
@@ -61,6 +61,7 @@ import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
 import { goLogin } from '../../common/login-redirect'
 import { useNavLayout } from '../../common/nav-layout'
+import { getCourseRegistrationState } from '../../common/course-registration'
 
 type DisplayCourse = ApiCourse & { image: string; descriptionRichText?: string }
 type IntroBlock =
@@ -74,6 +75,9 @@ const loading = ref(true)
 const loadError = ref('')
 const currentCourseId = ref('course-1')
 const introExpanded = ref(false)
+const nowTick = ref(Date.now())
+let registrationTicker: ReturnType<typeof setInterval> | null = null
+registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 15000)
 const imageByCourseId: Record<string, string> = { 'course-1': talentImage, 'course-2': managementImage, 'course-3': leanImage }
 const introBlocksByCourseId: Record<string, IntroBlock[]> = {
   'course-1': [
@@ -113,6 +117,8 @@ const introBlocks = computed<IntroBlock[]>(() => {
     { type: 'paragraph', text: course.value.description },
   ]
 })
+const registrationState = computed(() => course.value ? getCourseRegistrationState(course.value, nowTick.value) : null)
+const canRegister = computed(() => Boolean(registrationState.value?.isOpen))
 const shouldCollapseIntro = computed(() => introBlocks.value.length > 3 || Boolean(course.value?.descriptionRichText && course.value.descriptionRichText.length > 520))
 
 const loadCourse = async (id: string) => {
@@ -132,12 +138,17 @@ const loadCourse = async (id: string) => {
 }
 
 onLoad((query) => { currentCourseId.value = String(query?.id || 'course-1'); loadCourse(currentCourseId.value) })
+onUnload(() => { if (registrationTicker) clearInterval(registrationTicker); registrationTicker = null })
 onShareAppMessage(() => ({ title: course.value?.title || '课程详情', path: `/pages/detail/detail?id=${currentCourseId.value}` }))
 const retryLoad = () => { if (!loading.value) void loadCourse(currentCourseId.value) }
 const back = () => uni.navigateBack()
 const toggleIntro = () => { if (shouldCollapseIntro.value) introExpanded.value = !introExpanded.value }
 const register = () => {
   if (!course.value) return
+  if (!canRegister.value) {
+    uni.showToast({ title: registrationState.value?.reason || '当前课程暂不可报名', icon: 'none' })
+    return
+  }
   if (!tokenStorage.getAccessToken()) {
     void showClientConfirm({
       title: '请先登录',

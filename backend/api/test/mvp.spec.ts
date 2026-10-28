@@ -346,6 +346,12 @@ describe('Prisma 业务仓储', () => {
     const past = new Date(Date.now() - 60 * 60 * 1000).toISOString()
     await mvp.saveCourse({ id: 'course-time-window', status: '报名中', registrationStartAt: future, registrationEndAt: null, maxParticipantsPerOrder: 2, specialPrice: 100, specialPriceEndsAt: past, price: 200, registrationTemplateId: 'tpl-basic' }, 'admin')
     await expect(mvp.quote('course-time-window', 1)).rejects.toThrow('尚未开始')
+    await expect(mvp.getCourse('course-time-window')).resolves.toMatchObject({ displayStatus: '等待开始报名', registrationOpen: false, registrationClosedReason: '等待开始报名' })
+
+    const beijingOffset = 8 * 60 * 60 * 1000
+    const beijingWallTime = (offsetMs: number) => new Date(Date.now() + beijingOffset + offsetMs).toISOString().slice(0, 16).replace('T', ' ')
+    await mvp.saveCourse({ id: 'course-time-window', registrationStartAt: beijingWallTime(-60 * 60 * 1000), registrationEndAt: beijingWallTime(60 * 60 * 1000) }, 'admin')
+    await expect(mvp.getCourse('course-time-window')).resolves.toMatchObject({ displayStatus: '报名中', registrationOpen: true })
     await mvp.saveCourse({ id: 'course-time-window', registrationStartAt: past, registrationEndAt: future }, 'admin')
     await expect(mvp.quote('course-time-window', 1)).resolves.toMatchObject({ unitPrice: 200 })
     await expect(mvp.quote('course-time-window', 3)).rejects.toThrow('最多报名')

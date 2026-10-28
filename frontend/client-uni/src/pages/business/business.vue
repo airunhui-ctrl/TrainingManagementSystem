@@ -120,7 +120,7 @@
             </view>
           </view>
           <view class="proof-section">
-            <view class="section-heading"><view><text class="section-title">上传支付凭证</text><text class="section-caption">请上传清晰的银行回单或付款截图</text></view></view>
+            <view class="section-heading"><view><text class="section-title">上传支付凭证<text class="required"> *</text></text><text class="section-caption">请上传清晰的银行回单或付款截图</text></view></view>
             <view class="upload-area" :class="{ disabled: uploading || proofConfirming }" @tap="chooseProofImage">
               <image v-if="selectedProofImage" class="proof-preview" :src="selectedProofImage" mode="aspectFit" />
               <view v-else class="upload-placeholder"><text class="upload-icon">+</text><text class="upload-title">选择凭证图片</text><text class="upload-caption">支持 JPG、PNG，单张不超过 5MB</text></view>
@@ -137,7 +137,7 @@
         <view class="modal-header"><text class="modal-title">{{ reapplyInvoiceId ? '修改后重新申请开票' : '提交开票信息' }}</text><text class="close-button" @tap="closeInvoiceDialog">×</text></view>
         <view class="modal-scroll invoice-scroll">
           <text class="dialog-hint">已选择 {{ selectedInvoiceOrderIds.length }} 笔订单{{ reapplyInvoiceId ? '；请根据驳回理由修改信息后重新提交' : '' }}</text>
-          <input v-model="invoiceForm.title" class="invoice-field" placeholder="请输入发票抬头" /><input v-model="invoiceForm.taxNo" class="invoice-field" placeholder="请输入纳税人识别号" /><input v-model="invoiceForm.email" class="invoice-field" placeholder="请输入接收发票的邮箱" />
+          <view class="invoice-item"><text class="invoice-label">发票抬头<text class="required"> *</text></text><input v-model="invoiceForm.title" class="invoice-field" placeholder="请输入发票抬头" /></view><view class="invoice-item"><text class="invoice-label">纳税人识别号<text class="required"> *</text></text><input v-model="invoiceForm.taxNo" class="invoice-field" placeholder="请输入纳税人识别号" /></view><view class="invoice-item"><text class="invoice-label">接收邮箱<text class="required"> *</text></text><input v-model="invoiceForm.email" class="invoice-field" placeholder="请输入接收发票的邮箱" /></view>
         </view>
         <view class="dialog-actions invoice-actions"><button class="cancel-button" :disabled="invoiceSubmitting || invoiceConfirming" @tap="closeInvoiceDialog">取消</button><button class="submit-button" :disabled="!selectedInvoiceOrderIds.length || invoiceSubmitting || invoiceConfirming" @tap="submitInvoice">{{ invoiceSubmitting ? '提交中...' : invoiceConfirming ? '确认中...' : reapplyInvoiceId ? '重新提交申请' : '提交申请' }}</button></view>
       </view>
@@ -569,6 +569,10 @@ onShareAppMessage(() => ({ title: '我的订单', path: '/pages/business/busines
 .preview-card, .invoice-card { margin-bottom: 18rpx; padding: 26rpx; }
 .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16rpx; }
 .section-title { display: block; color: $navy; font-size: 27rpx; font-weight: 900; }
+.required { color: #d95757; font-weight: 800; }
+.invoice-item { margin: 18rpx 30rpx 0; }
+.invoice-label { display: block; margin-bottom: 8rpx; color: $muted; font-size: 21rpx; }
+.invoice-item .invoice-field { width: 100%; margin: 0; }
 .section-caption { display: block; margin-top: 6rpx; color: $muted; font-size: 20rpx; line-height: 1.4; }
 .section-link { color: $blue; font-size: 21rpx; }
 .preview-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; padding: 22rpx 0; border-bottom: 1rpx solid #edf0f4; }

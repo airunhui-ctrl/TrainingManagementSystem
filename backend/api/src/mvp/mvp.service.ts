@@ -58,10 +58,17 @@ const stripRichText = (value: unknown) => String(value || '')
   .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
 const REGISTRATION_OPEN_STATUSES = new Set(['报名中', '名额紧张'])
 const PUBLIC_HIDDEN_COURSE_STATUSES = new Set(['待发布', '已下架'])
+const COURSE_TIMEZONE_SUFFIX = '+08:00'
+// 管理端提交的是北京时间墙钟时间（datetime-local）。SQLite 将它保存为不带时区的
+// 字符串；如果不显式补齐时区，部署在 UTC 的服务端会把它当作 UTC 时间，导致
+// C 端已到开始时间但后端仍判定“报名尚未开始”。
 const parseDateValue = (value: unknown) => {
   const raw = String(value || '').trim()
   if (!raw) return null
-  const parsed = Date.parse(raw.includes('T') ? raw : raw.replace(' ', 'T'))
+  let normalized = raw.includes('T') ? raw : raw.replace(' ', 'T')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) normalized = `${normalized}T00:00:00`
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2}|[+-]\d{4})$/i.test(normalized)
+  const parsed = Date.parse(hasTimezone ? normalized : `${normalized}${COURSE_TIMEZONE_SUFFIX}`)
   return Number.isFinite(parsed) ? parsed : null
 }
 const MAX_MESSAGE_TITLE_LENGTH = 120
@@ -98,6 +105,13 @@ export class MvpService {
     const ended = endAt !== null && endAt <= Date.now()
     const seatsAvailable = Number(course.enrolled || 0) < Number(course.capacity || 0)
     const registrationOpen = REGISTRATION_OPEN_STATUSES.has(String(course.status)) && !notStarted && !ended && seatsAvailable
+    const displayStatus = !REGISTRATION_OPEN_STATUSES.has(String(course.status))
+      ? String(course.status)
+      : notStarted
+        ? '等待开始报名'
+        : ended
+          ? '报名截止'
+          : (!seatsAvailable ? '名额已满' : String(course.status))
     return {
       ...base,
       registrationStartAt: course.registrationStartAt || null,
@@ -110,8 +124,9 @@ export class MvpService {
       description: hasRichText ? stripRichText(rawDescription) : rawDescription,
       ...(hasRichText ? { descriptionRichText: sanitizeRichText(rawDescription) } : {}),
       seatsLeft: Math.max(course.capacity - course.enrolled, 0),
+      displayStatus,
       registrationOpen,
-      registrationClosedReason: registrationOpen ? null : (notStarted ? '报名未开始' : ended ? '报名截止' : (!seatsAvailable ? '名额已满' : (REGISTRATION_OPEN_STATUSES.has(String(course.status)) ? '暂不可报名' : '课程未开放报名'))),
+      registrationClosedReason: registrationOpen ? null : (notStarted ? '等待开始报名' : ended ? '报名截止' : (!seatsAvailable ? '名额已满' : (REGISTRATION_OPEN_STATUSES.has(String(course.status)) ? '暂不可报名' : '课程未开放报名'))),
       registrationTemplateName: registrationTemplate?.name || '',
     }
   }
@@ -120,7 +135,7 @@ export class MvpService {
     if (!REGISTRATION_OPEN_STATUSES.has(String(course.status))) throw new BadRequestException('课程当前未开放报名')
     const startAt = parseDateValue(course.registrationStartAt)
     const endAt = parseDateValue(course.registrationEndAt ?? course.registrationDeadline)
-    if (startAt !== null && startAt > Date.now()) throw new BadRequestException('课程报名尚未开始')
+    if (startAt !== null && startAt > Date.now()) throw new BadRequestException('课程报名尚未开始，请等待开始报名')
     if (endAt !== null && endAt <= Date.now()) throw new BadRequestException('课程报名已截止')
     if (Number(course.enrolled || 0) >= Number(course.capacity || 0)) throw new BadRequestException('课程名额已满')
   }

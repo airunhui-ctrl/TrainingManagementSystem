@@ -8,6 +8,12 @@
       <button class="state-retry" @tap="load">重新加载</button>
     </view>
     <template v-else>
+    <view v-if="course && !registrationOpen" class="page-state registration-state">
+      <text class="state-title">{{ registrationDisplay }}</text>
+      <text class="state-hint">{{ registrationHint }}</text>
+      <button class="state-retry" @tap="backToRegister">返回</button>
+    </view>
+    <template v-if="registrationOpen">
     <view v-for="(participant,index) in participants" :key="index" class="card form-card">
       <view class="form-head"><text>报名人员 {{ index + 1 }}</text><text v-if="index" class="remove" @tap="remove(index)">删除</text></view>
       <view v-if="students.length" class="student-source">
@@ -27,6 +33,7 @@
     <view class="card total-card"><view><text class="muted">{{participants.length}} 人报名</text><text class="discount">优惠 ¥{{quote.discount || 0}}</text></view><view><text class="muted">应付金额</text><text class="total">¥{{quote.amount || 0}}</text></view></view>
     <view v-if="quoteError" class="quote-error"><text>{{ quoteError }}</text><button class="quote-retry" @tap="refreshQuote">重试</button></view>
     <button class="primary-btn submit" :loading="loading" @tap="submit">{{ isFreeQuote ? '免费报名' : '确认报名并生成账单' }}</button>
+    </template>
     </template>
     </view>
     <view v-if="paymentModalOpen" class="modal-mask" @tap.self="closePaymentModal">
@@ -64,7 +71,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { onLoad, onShareAppMessage, onUnload } from '@dcloudio/uni-app'
-import { api, apiAssetUrl } from '../../common/api'
+import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
+import { getCourseRegistrationState } from '../../common/course-registration'
 import { showClientConfirm } from '../../common/confirm'
 import { useNavLayout } from '../../common/nav-layout'
 import { requestNativePayment } from '../../common/payment'
@@ -72,7 +80,10 @@ import { bindWechatOpenIdSilently, isWeixinMiniProgram } from '../../common/wech
 type Field={key:string;label:string;type:'text'|'phone'|'select'|'radio'|'checkbox';required:boolean;options?:string[];maxLength?:number;maxSelect?:number}
 type StudentOption={id:string;name:string;phone?:string|null;gender?:string|null;email?:string|null;company?:string|null;department?:string|null;position?:string|null;isDefault?:boolean}
 const courseId=ref('course-1'), fields=ref<Field[]>([]), loading=ref(false), quote=reactive({amount:0,discount:0})
-const course=ref<Record<string, any>>({})
+const course=ref<ApiCourse | null>(null)
+const nowTick=ref(Date.now())
+let registrationTicker: ReturnType<typeof setInterval> | null = null
+registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 15000)
 const nav=useNavLayout()
 const loadError=ref(''), quoteError=ref(''), paymentInfoError=ref('')
 type PaymentMethod = 'wechat' | 'alipay' | 'offline'
@@ -82,6 +93,10 @@ const paymentModalOpen=ref(false), paying=ref(false), nativePaymentLoading=ref(f
 const paymentOptions=[{key:'wechat' as const,label:'微信支付',hint:'优先打开微信支付',icon:'微'},{key:'alipay' as const,label:'支付宝支付',hint:'优先打开支付宝支付',icon:'支'},{key:'offline' as const,label:'线下对公转账',hint:'转账后上传凭证审核',icon:'公'}]
 let pageUnloaded=false
 let paymentRedirectTimer: ReturnType<typeof setTimeout> | null = null
+const registrationState=computed(()=>course.value?getCourseRegistrationState(course.value,nowTick.value):null)
+const registrationOpen=computed(()=>Boolean(registrationState.value?.isOpen))
+const registrationDisplay=computed(()=>registrationState.value?.displayStatus||'暂不可报名')
+const registrationHint=computed(()=>registrationState.value?.reason||'当前课程暂不可报名')
 const availablePaymentOptions = computed(() => paymentOptions.filter((option) => option.key === 'offline' || (option.key === 'wechat' ? isWeixinMiniProgram() && paymentInfo.onlineWechatEnabled !== false : paymentInfo.onlineAlipayEnabled !== false)))
 const blank=()=>Object.fromEntries(fields.value.map(field=>[field.key,''])) as Record<string,string>
 const students=ref<StudentOption[]>([])
@@ -98,12 +113,12 @@ const selectStudent=(index:number, optionIndex:number)=>{
   const student=students.value[optionIndex-1]; if(!student)return
   participant.studentId=student.id; setMappedStudentFields(participant,student)
 }
-const load=async()=>{loadError.value='';try{const [result, courseResult]=await Promise.all([api.getRegistrationTemplate(courseId.value), api.getCourse(courseId.value)]);fields.value=result.fields as Field[];course.value=courseResult as Record<string, any>;try{students.value=(await api.listStudents()).items as StudentOption[]}catch(error:any){students.value=[];uni.showToast({title:error?.message||'学员档案加载失败，将使用临时填写',icon:'none'})};participants.splice(0,participants.length,blank());const defaultStudent=students.value.find((student)=>student.isDefault);if(defaultStudent){participants[0].studentId=defaultStudent.id;setMappedStudentFields(participants[0],defaultStudent)}await refreshQuote()}catch(error:any){fields.value=[];participants.splice(0,participants.length);loadError.value=error?.message||'网络异常，请检查网络后重试';uni.showToast({title:'报名模板加载失败，请点击重试',icon:'none'})}}
+const load=async()=>{loadError.value='';try{const [result, courseResult]=await Promise.all([api.getRegistrationTemplate(courseId.value), api.getCourse(courseId.value)]);fields.value=result.fields as Field[];course.value=courseResult as Record<string, any>;try{students.value=(await api.listStudents()).items as StudentOption[]}catch(error:any){students.value=[];uni.showToast({title:error?.message||'学员档案加载失败，将使用临时填写',icon:'none'})};participants.splice(0,participants.length,blank());const defaultStudent=students.value.find((student)=>student.isDefault);if(defaultStudent){participants[0].studentId=defaultStudent.id;setMappedStudentFields(participants[0],defaultStudent)}if(registrationOpen.value)await refreshQuote();else{quote.amount=0;quote.discount=0;quoteLoaded.value=false;quoteError.value="";registrationWatcherReady=true}}catch(error:any){fields.value=[];participants.splice(0,participants.length);loadError.value=error?.message||'网络异常，请检查网络后重试';uni.showToast({title:'报名模板加载失败，请点击重试',icon:'none'})}}
 const quoteLoaded=ref(false)
 const isFreeQuote=computed(()=>quoteLoaded.value&&!quoteError.value&&Number(quote.amount)<=0)
-const refreshQuote=async()=>{if(!participants.length)return;quoteError.value='';try{const result=await api.quoteOrder(courseId.value,participants.length);quote.amount=result.amount;quote.discount=result.discount;quoteLoaded.value=true}catch(error:any){quoteError.value=error?.message||'报价暂时无法获取，请重试'}}
+const refreshQuote=async()=>{if(!participants.length)return;if(!registrationOpen.value){quoteError.value=registrationHint.value;return}quoteError.value='';try{const result=await api.quoteOrder(courseId.value,participants.length);quote.amount=result.amount;quote.discount=result.discount;quoteLoaded.value=true}catch(error:any){quoteError.value=error?.message||'报价暂时无法获取，请重试'}}
 const confirmRegisterAction=async(options:{title:string;content:string})=>{try{return await showClientConfirm(options)}catch{uni.showToast({title:'确认弹窗打开失败，请重试',icon:'none'});return false}}
-const add=()=>{const max=Number(course.value?.maxParticipantsPerOrder||0);if(max&&participants.length>=max){uni.showToast({title:`该课程单次最多报名 ${max} 人`,icon:'none'});return}participants.push(blank());refreshQuote()};const remove=async(index:number)=>{const result=await confirmRegisterAction({title:'确认删除报名人员',content:'删除后该报名人员的填写内容将丢失，确定继续吗？'});if(!result)return;participants.splice(index,1);refreshQuote()}
+const add=()=>{if(!registrationOpen.value){uni.showToast({title:registrationHint.value,icon:'none'});return}const max=Number(course.value?.maxParticipantsPerOrder||0);if(max&&participants.length>=max){uni.showToast({title:`该课程单次最多报名 ${max} 人`,icon:'none'});return}participants.push(blank());refreshQuote()};const remove=async(index:number)=>{const result=await confirmRegisterAction({title:'确认删除报名人员',content:'删除后该报名人员的填写内容将丢失，确定继续吗？'});if(!result)return;participants.splice(index,1);refreshQuote()}
 const onCheckboxChange=(index:number,field:Field,event:any)=>{const selected=Array.isArray(event?.detail?.value)?event.detail.value.map(String):[];const max=Number(field.maxSelect||0);if(max&&selected.length>max){uni.showToast({title:`${field.label}最多选择 ${max} 项`,icon:'none'});const previous=String(participants[index][field.key]||'').split(',').filter(Boolean);participants[index][field.key]=previous.join(',');return}participants[index][field.key]=selected.join(',')}
 const validateParticipants=()=>{
   for(const [index, participant] of participants.entries()){
@@ -155,8 +170,9 @@ const copyPaymentCode=()=>{if(paymentCodeUrl.value)uni.setClipboardData({data:pa
 const goToBusiness=()=>{closePaymentModal();uni.switchTab({url:'/pages/business/business'})}
 const backToRegister=()=>uni.navigateBack()
 const confirmOnlinePayment=async()=>{if(!selectedPaymentMethod.value||selectedPaymentMethod.value==='offline'||paying.value)return;paying.value=true;try{for(let attempt=0;attempt<10;attempt+=1){if(pageUnloaded)return;const status=await api.paymentStatus(paymentOrder.id);if(pageUnloaded)return;if(status.paid){uni.showToast({title:'支付成功',icon:'none'});paymentModalOpen.value=false;paymentRedirectTimer=setTimeout(()=>{if(!pageUnloaded)uni.switchTab({url:'/pages/business/business'})},450);return}if(attempt<9)await new Promise((resolve)=>setTimeout(resolve,2000))}if(pageUnloaded)return;uni.showToast({title:'暂未收到支付平台回调，请稍后在订单页刷新',icon:'none'})}catch(error:any){if(!pageUnloaded)uni.showToast({title:error?.message||'支付状态查询失败',icon:'none'})}finally{paying.value=false}}
-const submit=async()=>{if(!validateParticipants())return;const isFreeOrder=isFreeQuote.value;const confirmed=await confirmRegisterAction(isFreeOrder?{title:'确认免费报名',content:`将为 ${participants.length} 位报名人员免费生成订单，无需支付，确定继续吗？`}:{title:'确认报名并生成账单',content:`将为 ${participants.length} 位报名人员生成订单，确定继续吗？`});if(!confirmed)return;loading.value=true;try{const order=await api.createOrder(courseId.value,participants);if(String(order.status)==='已支付'){paymentModalOpen.value=false;uni.showToast({title:'报名成功',icon:'none'});paymentRedirectTimer=setTimeout(()=>{if(!pageUnloaded)uni.switchTab({url:'/pages/business/business'})},600);return}await openPaymentModal(order);uni.showToast({title:'账单已生成，请选择支付方式',icon:'none'})}catch(error:any){uni.showToast({title:error?.message||'提交失败，请先登录',icon:'none'})}finally{loading.value=false}}
-watch(()=>participants.length,refreshQuote);onLoad(query=>{if(query?.id)courseId.value=String(query.id);load()});onUnload(()=>{pageUnloaded=true;if(paymentRedirectTimer)clearTimeout(paymentRedirectTimer);paymentRedirectTimer=null});onShareAppMessage(()=>({title:'填写报名信息',path:`/pages/register/register?id=${courseId.value}`}))
+const submit=async()=>{if(!registrationOpen.value){uni.showToast({title:registrationHint.value,icon:'none'});return}if(!validateParticipants())return;const isFreeOrder=isFreeQuote.value;const confirmed=await confirmRegisterAction(isFreeOrder?{title:'确认免费报名',content:`将为 ${participants.length} 位报名人员免费生成订单，无需支付，确定继续吗？`}:{title:'确认报名并生成账单',content:`将为 ${participants.length} 位报名人员生成订单，确定继续吗？`});if(!confirmed)return;loading.value=true;try{const order=await api.createOrder(courseId.value,participants);if(String(order.status)==='已支付'){paymentModalOpen.value=false;uni.showToast({title:'报名成功',icon:'none'});paymentRedirectTimer=setTimeout(()=>{if(!pageUnloaded)uni.switchTab({url:'/pages/business/business'})},600);return}await openPaymentModal(order);uni.showToast({title:'账单已生成，请选择支付方式',icon:'none'})}catch(error:any){uni.showToast({title:error?.message||'提交失败，请先登录',icon:'none'})}finally{loading.value=false}}
+const syncRegistrationWindow=async()=>{try{course.value=await api.getCourse(courseId.value);if(registrationOpen.value)await refreshQuote()}catch(error:any){uni.showToast({title:error?.message||'报名状态刷新失败，请重试',icon:'none'})}}
+watch(registrationOpen,(open,previous)=>{if(registrationWatcherReady&&open&&previous===false)void syncRegistrationWindow()});watch(()=>participants.length,refreshQuote);onLoad(query=>{if(query?.id)courseId.value=String(query.id);load()});onUnload(()=>{pageUnloaded=true;if(registrationTicker)clearInterval(registrationTicker);registrationTicker=null;if(paymentRedirectTimer)clearTimeout(paymentRedirectTimer);paymentRedirectTimer=null});onShareAppMessage(()=>({title:'填写报名信息',path:`/pages/register/register?id=${courseId.value}`}))
 </script>
 
 <style scoped lang="scss">

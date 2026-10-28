@@ -12,7 +12,7 @@ export const apiAssetUrl = (value?: string | null) => {
 }
 let refreshing: Promise<string> | null = null
 
-export interface ApiCourse { id: string; title: string; subtitle: string; category: string; date: string; location: string; instructor: string; image?: string | null; price: number; capacity: number; enrolled: number; seatsLeft: number; status: string; description: string; descriptionRichText?: string; registrationStartAt?: string | null; registrationEndAt?: string | null; maxParticipantsPerOrder?: number | null; specialPriceEndsAt?: string | null; specialPriceActive?: boolean }
+export interface ApiCourse { id: string; title: string; subtitle: string; category: string; date: string; location: string; instructor: string; image?: string | null; price: number; capacity: number; enrolled: number; seatsLeft: number; status: string; description: string; descriptionRichText?: string; displayStatus?: string; registrationStartAt?: string | null; registrationEndAt?: string | null; registrationOpen?: boolean; registrationClosedReason?: string | null; maxParticipantsPerOrder?: number | null; specialPriceEndsAt?: string | null; specialPriceActive?: boolean }
 export interface ApiBanner { id: string; title: string; courseId: string; sort: number; enabled: boolean; startsAt: string; endsAt: string }
 export interface ApiOrderQuote { courseId: string; participantCount: number; unitPrice: number; originalAmount: number; discount: number; amount: number; discountRate: number }
 export interface PaymentIntent { orderId: string; channel: 'wechat' | 'alipay'; provider: 'wxpay' | 'alipay'; amount: number; currency: string; ready: boolean; payload: Record<string, any> | null; message?: string }

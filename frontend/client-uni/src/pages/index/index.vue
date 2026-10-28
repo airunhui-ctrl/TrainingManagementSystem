@@ -43,10 +43,10 @@
       <view v-for="course in visibleCourses" :key="course.id" class="course-card" @tap="openDetail(course.id)">
         <image class="course-image" :src="course.image" mode="aspectFill" />
         <view class="course-info">
-          <view class="course-status"><text :class="['status-dot', course.seatsLeft ? 'on' : 'off']" />{{ course.status }}<text class="course-instructor">{{ course.instructor }}</text></view>
+          <view class="course-status"><text :class="['status-dot', courseOpen(course) ? 'on' : 'off']" />{{ courseStatus(course) }}<text class="course-instructor">{{ course.instructor }}</text></view>
           <text class="course-title">{{ course.title }}</text>
           <view class="course-meta"><text class="meta-item">◷ {{ shortDate(course.date) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text></view>
-          <view class="course-footer"><view><text class="nature">公益培训</text><text class="course-price">¥{{ course.price.toLocaleString() }}<text class="price-unit"> 起</text></text></view><button class="detail-btn" @tap.stop="openDetail(course.id)">{{ course.seatsLeft ? '查看详情' : '已结束' }}</button></view>
+          <view class="course-footer"><view><text class="nature">公益培训</text><text class="course-price">¥{{ course.price.toLocaleString() }}<text class="price-unit"> 起</text></text></view><button class="detail-btn" @tap.stop="openDetail(course.id)">{{ courseOpen(course) ? '查看详情' : courseStatus(course) }}</button></view>
         </view>
       </view>
     </view>
@@ -100,7 +100,11 @@ const bannerSlides = computed(() => {
   }))
 })
 
+const nowTick = ref(Date.now())
+setInterval(() => { nowTick.value = Date.now() }, 15000)
 const toDisplayCourse = (course: ApiCourse): DisplayCourse => ({ ...course, image: apiAssetUrl(course.image) || imageByCourseId[course.id] || bannerImage })
+const courseStatus = (course: DisplayCourse) => getCourseDisplayStatus(course, nowTick.value)
+const courseOpen = (course: DisplayCourse) => isCourseRegistrationOpen(course, nowTick.value)
 const shortDate = (date: string) => String(date || '').split(' ')[0].replace(/^\d{4}-/, '')
 const openDetail = (id: string) => uni.navigateTo({ url: `/pages/detail/detail?id=${id}` })
 const handleBannerTouchStart = (event: any) => {
