@@ -1986,10 +1986,29 @@ function ListState({ kind, message, onRetry }: { kind: 'loading' | 'error'; mess
   </div>
 }
 
+
+function DashboardTodoGroup({ title, description, todos, onNavigate }: { title: string; description: string; todos: any[]; onNavigate: (key: string, todo?: DashboardTodo) => void }) {
+  const [page, setPage] = useState(1)
+  const pageSize = 5
+  const totalPages = Math.max(1, Math.ceil(todos.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const rows = todos.slice((safePage - 1) * pageSize, safePage * pageSize)
+  return <section className="dashboard-todo-group">
+    <div className="dashboard-todo-group-head">
+      <div><h3>{title}</h3><small>{description}</small></div>
+      <span>{todos.length} 条待处理</span>
+    </div>
+    {rows.length ? <div className="dashboard-todo-list">{rows.map((todo: any) => <button type="button" className="dashboard-todo-item" key={`${todo.type}-${todo.id}`} onClick={() => onNavigate(todo.target, { type: todo.type, id: String(todo.id), target: todo.target })}>
+      <span className={`dashboard-todo-badge todo-${todo.type}`}>{todo.type === 'payment' ? '支付审核' : todo.type === 'invoice' ? '开票处理' : '用户反馈'}</span>
+      <span className="dashboard-todo-detail"><b>{todo.label}</b><small>{todo.detail}</small></span>
+      <b aria-hidden="true">→</b>
+    </button>)}</div> : <p className="detail-muted">当前没有待处理事项。</p>}
+    {todos.length > pageSize && <div className="list-footer"><span>共 {todos.length} 条</span><div className="pagination"><div><button type="button" disabled={safePage <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>上一页</button><button type="button" disabled={safePage >= totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>下一页</button></div><span>第 {safePage} / {totalPages} 页</span></div></div>}
+  </section>
+}
 function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; loading: boolean; error: string; onRetry: () => void; onNavigate: (key: string, todo?: DashboardTodo) => void }) {
   const [statsKeyword, setStatsKeyword] = useState('')
   const [statsPage, setStatsPage] = useState(1)
-  const [todoPage, setTodoPage] = useState(1)
   if (loading) return <div className="dashboard-stack"><ListState kind="loading" message="正在加载工作台…" /></div>
   if (error) return <div className="dashboard-stack"><ListState kind="error" message={error} onRetry={onRetry} /></div>
   const cards = [
@@ -2001,10 +2020,6 @@ function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; l
     { name: '待开票', value: data?.pendingInvoiceCount, target: 'invoices' },
   ]
   const todos = Array.isArray(data?.todos) ? data.todos : []
-  const todoPageSize = 5
-  const todoTotalPages = Math.max(1, Math.ceil(todos.length / todoPageSize))
-  const safeTodoPage = Math.min(todoPage, todoTotalPages)
-  const todoRows = todos.slice((safeTodoPage - 1) * todoPageSize, safeTodoPage * todoPageSize)
   const allStats = Array.isArray(data?.courseStats) ? data.courseStats : []
   const filteredStats = !statsKeyword.trim() ? allStats : allStats.filter((item: any) => {
     const keyword = statsKeyword.trim().toLowerCase()
@@ -2014,18 +2029,16 @@ function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; l
   const statsTotalPages = Math.max(1, Math.ceil(filteredStats.length / statsPageSize))
   const safeStatsPage = Math.min(statsPage, statsTotalPages)
   const statsRows = filteredStats.slice((safeStatsPage - 1) * statsPageSize, safeStatsPage * statsPageSize)
-  const todoTypeLabel: Record<string, string> = { payment: '支付审核', invoice: '开票处理', feedback: '用户反馈' }
   return <div className="dashboard-stack">
     <section className="kpis">{cards.map(card => <button className="kpi" type="button" key={card.name} onClick={() => onNavigate(card.target)}><span>{card.name}</span><strong>{card.value ?? '-'}</strong><small>查看对应业务 <b aria-hidden="true">→</b></small></button>)}</section>
     <section className="panel">
       <h2>运营待办</h2>
       <p>请依次处理线下支付审核、开票申请和用户反馈；所有处理结果将写入操作审计。</p>
-      {todos.length ? <div className="dashboard-todo-list">{todoRows.map((todo: any) => <button type="button" className="dashboard-todo-item" key={`${todo.type}-${todo.id}`} onClick={() => onNavigate(todo.target, { type: todo.type, id: String(todo.id), target: todo.target })}>
-        <span className={`dashboard-todo-badge todo-${todo.type}`}>{todoTypeLabel[todo.type] || '待处理'}</span>
-        <span className="dashboard-todo-detail"><b>{todo.label}</b><small>{todo.detail}</small></span>
-        <b aria-hidden="true">→</b>
-      </button>)}</div> : <p className="detail-muted">当前没有待处理事项。</p>}
-      {todos.length > todoPageSize && <div className="list-footer"><span>共 {todos.length} 条待办</span><div className="pagination"><div><button type="button" disabled={safeTodoPage <= 1} onClick={() => setTodoPage(value => Math.max(1, value - 1))}>上一页</button><button type="button" disabled={safeTodoPage >= todoTotalPages} onClick={() => setTodoPage(value => Math.min(todoTotalPages, value + 1))}>下一页</button></div><span>第 {safeTodoPage} / {todoTotalPages} 页</span></div></div>}
+      <div className="dashboard-todo-groups">
+        <DashboardTodoGroup title="支付审核" description="处理线下支付凭证和在线支付结果" todos={todos.filter((todo: any) => todo.type === 'payment')} onNavigate={onNavigate} />
+        <DashboardTodoGroup title="开票处理" description="处理开票申请并上传电子发票" todos={todos.filter((todo: any) => todo.type === 'invoice')} onNavigate={onNavigate} />
+        <DashboardTodoGroup title="用户反馈" description="处理用户建议、问题和体验反馈" todos={todos.filter((todo: any) => todo.type === 'feedback')} onNavigate={onNavigate} />
+      </div>
     </section>
     <section className="panel">
       <div className="panel-head"><h2>课程开展统计</h2></div>

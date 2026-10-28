@@ -205,6 +205,12 @@ button { cursor: pointer; }
 .dashboard-todo-detail b { color: #142b4a; font-size: 13px; }
 .dashboard-todo-detail small { color: #7d8da5; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-todo-item > b:last-child { flex: 0 0 auto; color: #2f6fc7; }
+.dashboard-todo-groups { display: grid; gap: 18px; margin-top: 16px; }
+.dashboard-todo-group { padding: 14px 16px; border: 1px solid #dbe9ff; border-radius: 18px; background: #fbfdff; }
+.dashboard-todo-group-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 4px; }
+.dashboard-todo-group-head h3 { margin: 0; color: #142b4a; font-size: 16px; }
+.dashboard-todo-group-head small { display: block; margin-top: 3px; color: #7d8da5; font-size: 12px; }
+.dashboard-todo-group-head > span { flex: 0 0 auto; padding: 4px 10px; border-radius: 999px; color: #33619a; background: #eef5ff; font-size: 12px; font-weight: 700; }
 .kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

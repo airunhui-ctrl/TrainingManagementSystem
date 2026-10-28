@@ -92,7 +92,7 @@
       <view v-if="invoices.length"><view v-for="invoice in invoices" :key="invoice.id" class="card invoice-card" @tap="openInvoiceDetail(invoice)">
         <view class="order-heading"><text class="order-title">{{ invoice.title || '企业发票' }}</text><text :class="['status', invoiceStatusClass(invoice)]">{{ invoiceStatusText(invoice) }}</text></view>
         <text class="invoice-meta">申请编号：{{ invoice.id }}</text><text v-if="invoice.retryOfInvoiceId" class="invoice-meta">来源申请：{{ invoice.retryOfInvoiceId }}</text><text v-if="invoice.invoiceNo" class="invoice-meta">发票号码：{{ invoice.invoiceNo }}</text><text v-if="invoice.status === '已驳回' && invoice.rejectReason" class="invoice-meta rejected">驳回理由：{{ invoice.rejectReason }}</text><text v-if="invoice.status === '已驳回' && !actionableRejectedIds.has(invoice.id)" class="invoice-meta">该申请已重新提交，历史记录保留</text><text v-if="invoice.invoiceFileStatus" class="invoice-meta">电子发票：{{ invoice.invoiceFileStatus }}<text v-if="invoice.invoiceFileName">（{{ invoice.invoiceFileName }}）</text></text>
-        <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap.stop="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="invoice-file-button" @tap.stop="openInvoiceFile(invoice)">查看电子发票</button><button class="invoice-detail-button" @tap.stop="openInvoiceDetail(invoice)">查看详情</button></view></view>
+        <view class="invoice-footer-row"><text class="invoice-meta invoice-time">申请时间：{{ formatDate(invoice.createdAt) }}</text><view class="invoice-card-actions"><button v-if="actionableRejectedIds.has(invoice.id)" class="retry-invoice-button" @tap.stop="openInvoiceReapply(invoice)">修改后重新申请</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="invoice-file-button" @tap.stop="openInvoiceFile(invoice)">下载电子发票</button><button v-if="invoice.invoiceFileStatus === '已上传'" class="invoice-file-button" @tap.stop="previewInvoiceFile(invoice)">预览电子发票</button><button class="invoice-detail-button" @tap.stop="openInvoiceDetail(invoice)">查看详情</button></view></view>
       </view></view>
       <view v-else-if="!loadError" class="card empty-state"><text>暂无开票记录</text></view>
     </template>
@@ -162,7 +162,21 @@
             <view v-if="invoiceDetail.processedAt" class="invoice-detail-row"><text class="invoice-detail-label">处理时间</text><text class="invoice-detail-value">{{ formatDate(invoiceDetail.processedAt) }}</text></view>
           </view>
         </view>
-        <view class="dialog-actions invoice-detail-actions"><button class="cancel-button" @tap="closeInvoiceDetail">关闭</button><button v-if="actionableRejectedIds.has(invoiceDetail.id)" class="submit-button" @tap="openReapplyFromDetail(invoiceDetail)">修改后重新申请</button><button v-if="invoiceDetail.invoiceFileStatus === '已上传'" class="outline-button" @tap="openFileFromDetail(invoiceDetail)">查看电子发票</button></view>
+        <view class="dialog-actions invoice-detail-actions"><button class="cancel-button" @tap="closeInvoiceDetail">关闭</button><button v-if="actionableRejectedIds.has(invoiceDetail.id)" class="submit-button" @tap="openReapplyFromDetail(invoiceDetail)">修改后重新申请</button><button v-if="invoiceDetail.invoiceFileStatus === '已上传'" class="outline-button" @tap="openFileFromDetail(invoiceDetail)">下载电子发票</button><button v-if="invoiceDetail.invoiceFileStatus === '已上传'" class="outline-button" @tap="previewFileFromDetail(invoiceDetail)">预览电子发票</button></view>
+      </view>
+    </view>
+
+    <view v-if="invoicePreview" class="modal-mask invoice-preview-mask" @tap.self="closeInvoicePreview">
+      <view class="invoice-preview-modal" @tap.stop>
+        <view class="modal-header"><view><text class="modal-title">电子发票预览</text><text class="modal-subtitle">{{ invoicePreview.title }}</text></view><text class="close-button" @tap="closeInvoicePreview">×</text></view>
+        <view class="invoice-preview-body">
+          <iframe v-if="invoicePreview.kind === 'pdf'" :src="invoicePreview.url" class="invoice-preview-frame" title="电子发票预览" />
+          <image v-else :src="invoicePreview.url" mode="aspectFit" class="invoice-preview-image" />
+        </view>
+        <view class="dialog-actions invoice-detail-actions">
+          <button class="cancel-button" @tap="closeInvoicePreview">关闭</button>
+          <button class="outline-button" @tap="openInvoiceFile({ ...invoices.find(item => item.id === invoicePreview.id) } as Invoice)">下载电子发票</button>
+        </view>
       </view>
     </view>
 
@@ -235,7 +249,7 @@ import { bindWechatOpenIdSilently, isWeixinMiniProgram } from '../../common/wech
 
 type TabKey = 'payments' | 'records' | 'orders' | 'invoices'
 type Order = { id: string; courseId: string; participantCount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; createdAt: string }
-type Invoice = { id: string; status: string; title?: string; taxNo?: string; email?: string; remark?: string; invoiceNo?: string; rejectReason?: string | null; retryOfInvoiceId?: string | null; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; createdAt: string; processedAt?: string }
+type Invoice = { id: string; status: string; title?: string; taxNo?: string; email?: string; remark?: string; invoiceNo?: string; rejectReason?: string | null; retryOfInvoiceId?: string | null; orderIds?: string[]; invoiceFileStatus?: string; invoiceFileName?: string | null; invoiceFileMimeType?: string | null; createdAt: string; processedAt?: string }
 type Preview = { id: string; courseId: string; courseTitle: string; viewedAt: string }
 type PaymentInfo = { accountName?: string; bankName?: string; accountNo?: string; qrCodeText?: string; wechatQrImage?: string; alipayQrImage?: string; onlineWechatEnabled?: boolean; onlineAlipayEnabled?: boolean }
 type OrderDetail = { id: string; courseId: string; courseTitle?: string; participantCount: number; originalAmount: number; discount: number; amount: number; status: string; paymentMethod?: string; paymentChannel?: string; paymentProofStatus?: string; paymentProofRemark?: string; participants: Array<Record<string, string>>; createdAt: string; paymentTransactions: Array<{ id: string; channel: string; provider: string; outTradeNo: string; providerTradeNo?: string | null; amount: number; status: string; paidAt?: string | null; createdAt: string }> }
@@ -253,6 +267,8 @@ const courses = ref<Record<string, ApiCourse>>({})
 const selectedInvoiceOrderIds = ref<string[]>([])
 const invoiceDialogOpen = ref(false)
 const invoiceDetail = ref<Invoice | null>(null)
+const invoicePreview = ref<{ id: string; title: string; url: string; kind: 'pdf' | 'image' } | null>(null)
+const invoicePreviewLoading = ref(false)
 const pendingInvoiceDetailId = ref('')
 const invoiceForm = reactive({ title: '', taxNo: '', email: '' })
 const invoiceSubmitting = ref(false)
@@ -446,6 +462,13 @@ const openInvoiceDetail = (invoice: Invoice) => { invoiceDetail.value = invoice 
 const closeInvoiceDetail = () => { invoiceDetail.value = null }
 const openReapplyFromDetail = (invoice: Invoice) => { closeInvoiceDetail(); openInvoiceReapply(invoice) }
 const openFileFromDetail = (invoice: Invoice) => { closeInvoiceDetail(); openInvoiceFile(invoice) }
+const previewFileFromDetail = (invoice: Invoice) => { closeInvoiceDetail(); previewInvoiceFile(invoice) }
+const closeInvoicePreview = () => { invoicePreview.value = null }
+const invoiceFileKind = (invoice: Invoice): 'pdf' | 'image' => {
+  const mimeType = String(invoice.invoiceFileMimeType || '').toLowerCase()
+  if (mimeType) return mimeType.includes('pdf') ? 'pdf' : 'image'
+  return /.(pdf)$/i.test(invoice.invoiceFileName || '') ? 'pdf' : 'image'
+}
 const submitInvoice = async () => {
   if (invoiceSubmitting.value || invoiceConfirming.value) return
   if (!invoiceForm.title.trim() || !invoiceForm.taxNo.trim() || !invoiceForm.email.trim()) return uni.showToast({ title: '请填写完整开票信息', icon: 'none' })
@@ -498,6 +521,25 @@ const openInvoiceFile = async (invoice: Invoice) => {
     uni.openDocument({ filePath, showMenu: true, fail: () => uni.showToast({ title: '当前设备无法打开该发票文件', icon: 'none' }) })
   } catch (error: any) { uni.showToast({ title: error?.message || '电子发票下载失败', icon: 'none' }) }
 }
+
+const previewInvoiceFile = async (invoice: Invoice) => {
+  if (invoice.invoiceFileStatus !== '已上传') return uni.showToast({ title: '电子发票文件尚未上传', icon: 'none' })
+  if (invoicePreviewLoading.value) return
+  invoicePreviewLoading.value = true
+  try {
+    const filePath = await downloadInvoiceFile(invoice.id)
+    const kind = invoiceFileKind(invoice)
+    if (isMiniProgramPlatform()) {
+      if (kind === 'image') {
+        uni.previewImage({ urls: [filePath], fail: () => uni.showToast({ title: '当前设备无法预览该发票', icon: 'none' }) })
+      } else {
+        uni.openDocument({ filePath, showMenu: true, fail: () => uni.showToast({ title: '当前设备无法预览该发票文件', icon: 'none' }) })
+      }
+      return
+    }
+    invoicePreview.value = { id: invoice.id, title: invoice.invoiceFileName || '电子发票', url: filePath, kind }
+  } catch (error: any) { uni.showToast({ title: error?.message || '电子发票预览失败', icon: 'none' }) } finally { invoicePreviewLoading.value = false }
+}
 const openCourseDetail = (courseId: string) => { uni.navigateTo({ url: '/pages/detail/detail?id=' + courseId }) }
 const goOrderLogin = () => goLogin('/pages/business/business')
 const showBusinessPage = () => {
@@ -528,6 +570,10 @@ onShareAppMessage(() => ({ title: '我的订单', path: '/pages/business/busines
 .retry-invoice-button { box-sizing: border-box; width: fit-content !important; height: 54rpx; margin: 0; padding: 0 20rpx; border: 1rpx solid #b9d2f5; border-radius: 999rpx; color: $blue; background: #f5f9ff; font-size: 21rpx; line-height: 52rpx; }
 .retry-invoice-button::after { border: 0; }
 .invoice-file-button { min-height: 48rpx; margin: 0; padding: 0 14rpx; align-self: center; border: 1rpx solid #b9d7ff; border-radius: $radius-pill; color: $blue; background: #f4f9ff; font-size: 20rpx; line-height: 46rpx; }
+.invoice-preview-mask { z-index: 30; }
+.invoice-preview-modal { box-sizing: border-box; display: flex; flex-direction: column; width: min(920rpx, calc(100vw - 48rpx)); height: min(1180rpx, calc(100vh - 72rpx)); border-radius: 28rpx; background: #fff; overflow: hidden; }
+.invoice-preview-body { flex: 1 1 auto; min-height: 0; margin: 0 30rpx; border: 1rpx solid #e4eaf2; border-radius: 18rpx; overflow: hidden; background: #f7fafd; }
+.invoice-preview-frame, .invoice-preview-image { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
 .tabs { display: flex; gap: 12rpx; margin: 28rpx 0 20rpx; overflow-x: auto; white-space: nowrap; }
 .tab { padding: 16rpx 24rpx; border-radius: $radius-pill; color: $muted; background: #edf0f4; font-size: 22rpx; }
 .tab.active { color: $navy; background: $yellow; font-weight: 800; }

@@ -43,7 +43,7 @@
         <view v-if="shouldCollapseIntro" class="intro-toggle" @tap="toggleIntro"><text>{{ introExpanded ? '收起课程简介' : '展开完整简介' }}</text><text class="intro-toggle-icon">{{ introExpanded ? '⌃' : '⌄' }}</text></view>
       </view>
       <view v-if="canRegister" class="bottom-cta"><view><text class="cta-label">课程费用</text><text class="cta-price">¥{{ course.price.toLocaleString() }}<text> / 人</text></text></view><button class="register-btn" @tap="register">我要报名</button></view>
-      <view v-else class="bottom-cta ended"><text>{{ registrationState?.displayStatus || '暂不可报名' }}<text v-if="registrationState?.reason">：{{ registrationState.reason }}</text></text></view>
+      <view v-else class="bottom-cta ended"><text>{{ registrationState?.displayStatus || '暂不可报名' }}<text v-if="registrationState?.reason && registrationState.reason !== registrationState.displayStatus">：{{ registrationState.reason }}</text></text></view>
     </view>
     <view v-if="!loading && !course && !loadError" class="page-state">课程不存在或已下架</view>
   </view>

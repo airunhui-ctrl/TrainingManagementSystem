@@ -41,12 +41,12 @@
         <text class="state-hint">{{ loadError }}</text><button class="state-retry" @tap="loadHome">重新加载</button>
       </view>
       <view v-for="course in visibleCourses" :key="course.id" class="course-card" @tap="openDetail(course.id)">
+        <text :class="['course-status-badge', courseStatusClass(course)]">{{ courseStatus(course) }}</text>
         <image class="course-image" :src="course.image" mode="aspectFill" />
         <view class="course-info">
-          <view class="course-status"><text :class="['status-dot', courseOpen(course) ? 'on' : 'off']" />{{ courseStatus(course) }}<text class="course-instructor">{{ course.instructor }}</text></view>
           <text class="course-title">{{ course.title }}</text>
-          <view class="course-meta"><text class="meta-item">◷ {{ shortDate(course.date) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text></view>
-          <view class="course-footer"><view><text class="nature">公益培训</text><text class="course-price">¥{{ course.price.toLocaleString() }}<text class="price-unit"> 起</text></text></view><button class="detail-btn" @tap.stop="openDetail(course.id)">{{ courseOpen(course) ? '查看详情' : courseStatus(course) }}</button></view>
+          <view class="course-meta"><text class="meta-item">◷ {{ shortDate(course.date) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text><text class="meta-item capacity">共{{ course.capacity }}人</text></view>
+          <view class="course-footer"><view><text class="nature">公益培训</text><text class="course-price">¥{{ course.price.toLocaleString() }}<text class="price-unit"> 起</text></text></view><button class="detail-btn" @tap.stop="openDetail(course.id)">查看课程详情</button></view>
         </view>
       </view>
     </view>
@@ -62,6 +62,7 @@ import managementImage from '../../assets/courses/course-management.svg'
 import leanImage from '../../assets/courses/course-lean.svg'
 import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
 import { useNavLayout } from '../../common/nav-layout'
+import { getCourseDisplayStatus, isCourseRegistrationOpen } from '../../common/course-registration'
 
 type DisplayCourse = ApiCourse & { image: string }
 
@@ -105,6 +106,15 @@ setInterval(() => { nowTick.value = Date.now() }, 15000)
 const toDisplayCourse = (course: ApiCourse): DisplayCourse => ({ ...course, image: apiAssetUrl(course.image) || imageByCourseId[course.id] || bannerImage })
 const courseStatus = (course: DisplayCourse) => getCourseDisplayStatus(course, nowTick.value)
 const courseOpen = (course: DisplayCourse) => isCourseRegistrationOpen(course, nowTick.value)
+const courseStatusClass = (course: DisplayCourse) => {
+  const status = courseStatus(course)
+  if (courseOpen(course)) return status === '名额紧张' ? 'tight' : 'open'
+  if (status === '等待开始报名') return 'waiting'
+  if (status === '报名截止') return 'closed'
+  if (status === '名额已满') return 'full'
+  if (status === '已结束') return 'ended'
+  return 'neutral'
+}
 const shortDate = (date: string) => String(date || '').split(' ')[0].replace(/^\d{4}-/, '')
 const openDetail = (id: string) => uni.navigateTo({ url: `/pages/detail/detail?id=${id}` })
 const handleBannerTouchStart = (event: any) => {
@@ -159,4 +169,14 @@ onShareAppMessage(() => ({ title: '六边形培训 · 课程活动', path: '/pag
 .search-box { display:flex; align-items:center; gap:14rpx; margin:44rpx 28rpx 0; padding:0 24rpx; height:76rpx; border-radius:18rpx; color:#92a0b2; background:#fff; box-shadow:0 6rpx 18rpx rgba(32,62,113,.06); font-size:28rpx; }.search-box input { flex:1; height:76rpx; color:#243956; font-size:24rpx; }.section-head { display: flex; align-items: center; justify-content: space-between; margin:42rpx 20rpx 0; padding: 34rpx 32rpx 20rpx; border-radius:24rpx 24rpx 0 0; background: #fff; }.section-title { display: block; font-size: 38rpx; font-weight: 900; letter-spacing: 1rpx; }.section-caption { display: block; margin-top: 8rpx; color: #8a98aa; font-size: 21rpx; }.section-more { color: #e58419; font-size: 25rpx; }
 .chips { box-sizing: border-box; width: calc(100% - 40rpx); margin:0 20rpx; padding: 0 32rpx 30rpx; white-space: nowrap; border-radius:0 0 24rpx 24rpx; background: #fff; }.chip { display: inline-block; margin-right: 16rpx; padding: 16rpx 28rpx; border-radius: 999rpx; color: #7d8da5; background: #f0f3f7; font-size: 23rpx; }.chip.active { color: #163a84; background: #ffd21f; font-weight: 800; }
 .course-list { padding: 46rpx 24rpx 0; }.empty-state { padding: 80rpx 32rpx; color: #8492a7; text-align: center; font-size: 25rpx; }.state-card { box-sizing: border-box; padding: 52rpx 32rpx; border-radius: 20rpx; color: #8492a7; background: #fff; text-align: center; font-size: 24rpx; }.state-title { display: block; color: #243956; font-size: 28rpx; font-weight: 800; }.state-hint { display: block; margin-top: 10rpx; line-height: 1.5; }.state-retry { width: 220rpx; height: 64rpx; margin: 22rpx auto 0; border: 0; border-radius: 999rpx; color: #17366d; background: #ffd21f; font-size: 22rpx; line-height: 64rpx; font-weight: 800; }.state-retry::after { border: 0; }.inline-error { margin-bottom: 24rpx; padding: 22rpx 28rpx; text-align: left; }.inline-error .state-retry { display: inline-block; width: auto; margin: 12rpx 0 0; padding: 0 24rpx; }.course-card { overflow: hidden; margin-bottom: 40rpx; border-radius: 20rpx; background: #fff; box-shadow: 0 8rpx 28rpx rgba(32, 62, 113, .1); }.course-image { display: block; width: 100%; height: 360rpx; background: #dcecff; }.course-info { padding: 26rpx 24rpx 24rpx; }.course-status { display: flex; align-items: center; color: #718096; font-size: 22rpx; }.status-dot { display: inline-block; width: 13rpx; height: 13rpx; margin-right: 10rpx; border-radius: 50%; background: #2ebd7f; }.status-dot.off { background: #a8b2c0; }.course-instructor { margin-left: auto; color: #8492a7; }.course-title { display: block; margin-top: 16rpx; color: #142b4a; font-size: 31rpx; line-height: 1.35; font-weight: 900; }.course-meta { display: flex; flex-wrap: wrap; gap: 10rpx 22rpx; margin-top: 18rpx; color: #7a899c; font-size: 21rpx; }.course-footer { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 26rpx; padding-top: 20rpx; border-top: 1rpx solid #edf0f4; }.nature { display: block; width: fit-content; margin-bottom: 6rpx; padding: 4rpx 13rpx; border-radius: 7rpx; color: #f0781b; background: #fff2e5; font-size: 19rpx; }.course-price { color: #f0781b; font-size: 37rpx; font-weight: 900; }.price-unit { color: #8795a7; font-size: 20rpx; font-weight: 400; }.detail-btn { margin: 0; padding: 0 25rpx; height: 66rpx; line-height: 66rpx; border: 1rpx solid #2f80ed; border-radius: 999rpx; color: #2f80ed; background: #fff; font-size: 23rpx; }.detail-btn::after { border: 0; }
+.course-card { position: relative; }
+.course-status-badge { position: absolute; z-index: 3; top: 20rpx; left: 20rpx; padding: 7rpx 18rpx; border-radius: 999rpx; color: #fff; font-size: 21rpx; line-height: 1.35; font-weight: 800; box-shadow: 0 6rpx 16rpx rgba(20, 43, 74, .18); }
+.course-status-badge.open { background: #21a665; }
+.course-status-badge.tight { background: #ef8a1d; }
+.course-status-badge.waiting { background: #3d7fe0; }
+.course-status-badge.closed { background: #d9a126; }
+.course-status-badge.full { background: #e05252; }
+.course-status-badge.ended { background: #78859a; }
+.course-status-badge.neutral { background: #78859a; }
+.meta-item.capacity { color: #8a99ac; }
 </style>
