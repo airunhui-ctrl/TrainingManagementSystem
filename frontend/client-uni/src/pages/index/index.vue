@@ -45,7 +45,7 @@
         <image class="course-image" :src="course.image" mode="aspectFill" />
         <view class="course-info">
           <text class="course-title">{{ course.title }}</text>
-          <view class="course-meta"><text class="meta-item">◷ 课程 {{ shortDate(course.date) }}</text><text class="meta-item">✎ 报名 {{ registrationShort(course) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text><text class="meta-item capacity">共{{ course.capacity }}人</text></view>
+          <view class="course-meta"><text class="meta-item">◷ 课程 {{ courseRange(course.date) }}</text><text class="meta-item">✎ 报名 {{ registrationShort(course) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text><text class="meta-item capacity">共{{ course.capacity }}人</text></view>
           <view class="course-footer"><view><text class="nature">公益培训</text><text class="course-price">¥{{ course.price.toLocaleString() }}<text class="price-unit"> 起</text></text></view><button class="detail-btn" @tap.stop="openDetail(course.id)">查看课程详情</button></view>
         </view>
       </view>
@@ -117,6 +117,15 @@ const courseStatusClass = (course: DisplayCourse) => {
 }
 const shortDate = (date: string) => String(date || '').split(' ')[0].replace(/^\d{4}-/, '')
 const shortStamp = (value?: string | null) => String(value || '').trim().split(/[\sT]/)[0].replace(/^\d{4}-/, '')
+const courseRange = (date: string) => {
+  const raw = String(date || '').trim()
+  if (!raw) return ''
+  const separatorIndex = raw.indexOf(' - ')
+  if (separatorIndex <= 0) return shortDate(raw)
+  const head = shortStamp(raw.slice(0, separatorIndex))
+  const tail = shortStamp(raw.slice(separatorIndex + 3))
+  return tail ? `${head}~${tail}` : head
+}
 const registrationShort = (course: ApiCourse) => {
   const start = shortStamp(course.registrationStartAt)
   const end = shortStamp(course.registrationEndAt)
