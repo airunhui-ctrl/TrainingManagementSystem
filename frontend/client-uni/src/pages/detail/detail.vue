@@ -16,7 +16,8 @@
       <view class="summary">
         <text class="course-title">{{ course.title }}</text>
         <text class="course-subtitle">{{ course.subtitle }}</text>
-        <view class="summary-time"><text class="time-dot">●</text><text>{{ course.date }}</text></view>
+      <view class="summary-time"><text class="time-dot">●</text><text class="time-label">课程时间</text><text>{{ course.date }}</text></view>
+      <view class="summary-time summary-time-last"><text class="time-dot">●</text><text class="time-label">报名时间</text><text>{{ registrationRangeText }}</text></view>
         <view class="summary-grid">
           <view class="summary-item"><text class="item-icon">⌖</text><view><text class="item-label">培训地点</text><text class="item-value">{{ course.location }}</text></view></view>
           <view class="summary-item"><text class="item-icon">♙</text><view><text class="item-label">报名人数</text><text class="item-value">已报名 {{ course.enrolled }} 人</text></view></view>
@@ -118,6 +119,16 @@ const introBlocks = computed<IntroBlock[]>(() => {
   ]
 })
 const registrationState = computed(() => course.value ? getCourseRegistrationState(course.value, nowTick.value) : null)
+const registrationRangeText = computed(() => {
+  if (!course.value) return ''
+  const fmt = (value?: string | null) => String(value || '').trim().replace('T', ' ')
+  const start = fmt(course.value.registrationStartAt)
+  const end = fmt(course.value.registrationEndAt)
+  if (start && end) return `${start} - ${end}`
+  if (start) return `${start} 起`
+  if (end) return `截止 ${end}`
+  return '未设置（开放至课程结束）'
+})
 const canRegister = computed(() => Boolean(registrationState.value?.isOpen))
 const shouldCollapseIntro = computed(() => introBlocks.value.length > 3 || Boolean(course.value?.descriptionRichText && course.value.descriptionRichText.length > 520))
 
@@ -167,7 +178,7 @@ const register = () => {
 <style scoped lang="scss">
 .detail-page { min-height: 100vh; padding-bottom: 190rpx; background: #f5f7fa; }.detail-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: calc(92rpx + var(--status-bar-height)); padding: var(--status-bar-height) 30rpx 0; color: #243956; background: rgba(255, 255, 255, .82); backdrop-filter: blur(18px); box-shadow: 0 4rpx 16rpx rgba(21, 70, 158, .08); }.back { width: 100rpx; margin-top: -36rpx; color: #243956; font-size: 64rpx; line-height: 1; font-weight: 200; }.detail-topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 20rpx; min-width: 220rpx; }.detail-refresh { width: 90rpx; color: #2f80ed; text-align: right; font-size: 23rpx; font-weight: 800; }.detail-refresh.disabled { opacity: .55; }.detail-topbar-title { position: absolute; left: 0; right: 0; top: calc(var(--status-bar-height) + 12rpx); bottom: -12rpx; display: flex; align-items: center; justify-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #243956; font-size: 30rpx; font-weight: 800; letter-spacing: 0; pointer-events: none; }.topbar-share { margin: 0; padding: 0 8rpx; border: 0; border-radius: 999rpx; color: #1742a5; background: rgba(47, 128, 237, .1); font-size: 22rpx; line-height: 52rpx; font-weight: 800; }.topbar-share::after { border: 0; }.page-state { display: flex; flex-direction: column; align-items: center; box-sizing: border-box; min-height: calc(100vh - 92rpx); padding: 180rpx 40rpx; color: #8492a7; text-align: center; font-size: 26rpx; }.state-title { display: block; color: #243956; font-size: 30rpx; font-weight: 800; }.state-hint { display: block; margin-top: 12rpx; line-height: 1.5; }.state-retry { width: 220rpx; height: 64rpx; margin-top: 24rpx; border: 0; border-radius: 999rpx; color: #17366d; background: #ffd21f; font-size: 22rpx; line-height: 64rpx; font-weight: 800; }.state-retry::after { border: 0; }
 .hero-wrap { position: relative; width: 100%; height: 430rpx; overflow: hidden; }.hero-image { display: block; width: 100%; height: 100%; }.hero-gradient { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(12, 31, 92, .62), rgba(12, 31, 92, 0) 58%); }.hero-category { position: absolute; left: 32rpx; bottom: 28rpx; padding: 8rpx 18rpx; border: 1rpx solid rgba(255,255,255,.6); border-radius: 999rpx; color: #fff; background: rgba(16, 54, 145, .35); font-size: 21rpx; }
-.summary { padding: 28rpx 32rpx 30rpx; background: #fff; }.course-title { display: block; color: #172e51; font-size: 37rpx; line-height: 1.35; font-weight: 900; }.course-subtitle { display: block; margin-top: 9rpx; color: #76879c; font-size: 23rpx; }.summary-time { display: flex; align-items: center; gap: 10rpx; margin-top: 24rpx; padding-bottom: 22rpx; border-bottom: 1rpx solid #edf0f4; color: #2e3e52; font-size: 23rpx; }.time-dot { color: #2f80ed; font-size: 22rpx; }.summary-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16rpx; padding-top: 22rpx; }.summary-item { display: flex; gap: 10rpx; min-width: 0; }.item-icon { flex: 0 0 auto; width: 40rpx; height: 40rpx; line-height: 40rpx; border-radius: 12rpx; color: #2f80ed; background: #eaf3ff; text-align: center; font-size: 23rpx; }.item-label, .item-value { display: block; }.item-label { color: #8996a8; font-size: 18rpx; }.item-value { margin-top: 8rpx; overflow: hidden; color: #3d4d61; font-size: 21rpx; line-height: 1.35; text-overflow: ellipsis; }.price-value { color: #ed781d; }
+.summary { padding: 28rpx 32rpx 30rpx; background: #fff; }.course-title { display: block; color: #172e51; font-size: 37rpx; line-height: 1.35; font-weight: 900; }.course-subtitle { display: block; margin-top: 9rpx; color: #76879c; font-size: 23rpx; }.summary-time { display: flex; align-items: center; gap: 10rpx; margin-top: 24rpx; color: #2e3e52; font-size: 23rpx; }.time-dot { color: #2f80ed; font-size: 22rpx; }.time-label { color: #8996a8; }.summary-time-last { padding-bottom: 22rpx; border-bottom: 1rpx solid #edf0f4; }.summary-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 16rpx; padding-top: 22rpx; }.summary-item { display: flex; gap: 10rpx; min-width: 0; }.item-icon { flex: 0 0 auto; width: 40rpx; height: 40rpx; line-height: 40rpx; border-radius: 12rpx; color: #2f80ed; background: #eaf3ff; text-align: center; font-size: 23rpx; }.item-label, .item-value { display: block; }.item-label { color: #8996a8; font-size: 18rpx; }.item-value { margin-top: 8rpx; overflow: hidden; color: #3d4d61; font-size: 21rpx; line-height: 1.35; text-overflow: ellipsis; }.price-value { color: #ed781d; }
 .bottom-cta { position: fixed; right: 0; bottom: 0; left: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 24rpx; min-height: 112rpx; padding: 16rpx 28rpx calc(16rpx + env(safe-area-inset-bottom)); border-top: 1rpx solid #e6ebf2; background: rgba(255, 255, 255, .97); box-shadow: 0 -8rpx 28rpx rgba(20, 43, 74, .12); backdrop-filter: blur(12px); }
 .cta-label { display: block; color: #8996a8; font-size: 20rpx; line-height: 1.3; }
 .cta-price { display: block; margin-top: 4rpx; color: #ed781d; font-size: 36rpx; line-height: 1.15; font-weight: 900; }

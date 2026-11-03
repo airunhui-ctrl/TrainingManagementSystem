@@ -45,7 +45,7 @@
         <image class="course-image" :src="course.image" mode="aspectFill" />
         <view class="course-info">
           <text class="course-title">{{ course.title }}</text>
-          <view class="course-meta"><text class="meta-item">◷ {{ shortDate(course.date) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text><text class="meta-item capacity">共{{ course.capacity }}人</text></view>
+          <view class="course-meta"><text class="meta-item">◷ 课程 {{ shortDate(course.date) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text><text class="meta-item capacity">共{{ course.capacity }}人</text></view>
           <view class="course-footer"><view><text class="nature">公益培训</text><text class="course-price">¥{{ course.price.toLocaleString() }}<text class="price-unit"> 起</text></text></view><button class="detail-btn" @tap.stop="openDetail(course.id)">查看课程详情</button></view>
         </view>
       </view>
