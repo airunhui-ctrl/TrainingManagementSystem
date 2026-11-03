@@ -71,6 +71,22 @@ const parseDateValue = (value: unknown) => {
   const parsed = Date.parse(hasTimezone ? normalized : `${normalized}${COURSE_TIMEZONE_SUFFIX}`)
   return Number.isFinite(parsed) ? parsed : null
 }
+
+// 从课程展示时间（如 "2026-10-15 09:00 - 2026-10-31 09:28"）解析课程结束时间。
+// 结束日期缺少年份时（如 "08-08 17:00"）沿用开始日期的年份。
+const parseCourseSessionEnd = (value: unknown) => {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const separatorIndex = raw.indexOf(' - ')
+  if (separatorIndex <= 0) return null
+  const tail = raw.slice(separatorIndex + 3).trim()
+  if (!tail) return null
+  if (/^\d{4}-\d{2}-\d{2}/.test(tail)) return parseDateValue(tail)
+  const head = raw.slice(0, separatorIndex).trim()
+  const headYear = /^(\d{4})-/.exec(head)
+  if (!headYear) return null
+  return parseDateValue(`${headYear[1]}-${tail}`)
+}
 const MAX_MESSAGE_TITLE_LENGTH = 120
 const MAX_MESSAGE_CONTENT_LENGTH = 10_000
 const MAX_MESSAGE_TARGETS = 500
@@ -102,18 +118,23 @@ export class MvpService {
     const startAt = parseDateValue(course.registrationStartAt)
     const endAt = parseDateValue(course.registrationEndAt ?? course.registrationDeadline)
     const notStarted = startAt !== null && startAt > Date.now()
-    const ended = endAt !== null && endAt <= Date.now()
+    const sessionEndAt = parseCourseSessionEnd(course.date)
+    const sessionEnded = sessionEndAt !== null && sessionEndAt <= Date.now()
+    const ended = sessionEnded || (endAt !== null && endAt <= Date.now())
     const seatsAvailable = Number(course.enrolled || 0) < Number(course.capacity || 0)
-    const registrationOpen = REGISTRATION_OPEN_STATUSES.has(String(course.status)) && !notStarted && !ended && seatsAvailable
-    const displayStatus = !REGISTRATION_OPEN_STATUSES.has(String(course.status))
-      ? String(course.status)
+    // 课程时间已过时，开放状态课程对外统一呈现为已结束（数据库原值不变，展示与下单全端同步）
+    const effectiveStatus = sessionEnded && REGISTRATION_OPEN_STATUSES.has(String(course.status)) ? '已结束' : String(course.status)
+    const registrationOpen = REGISTRATION_OPEN_STATUSES.has(effectiveStatus) && !notStarted && !ended && seatsAvailable
+    const displayStatus = !REGISTRATION_OPEN_STATUSES.has(effectiveStatus)
+      ? effectiveStatus
       : notStarted
         ? '等待开始报名'
         : ended
           ? '报名截止'
-          : (!seatsAvailable ? '名额已满' : String(course.status))
+          : (!seatsAvailable ? '名额已满' : effectiveStatus)
     return {
       ...base,
+      status: effectiveStatus,
       registrationStartAt: course.registrationStartAt || null,
       registrationEndAt: course.registrationEndAt || course.registrationDeadline || null,
       maxParticipantsPerOrder: course.maxParticipantsPerOrder ?? null,
@@ -126,7 +147,7 @@ export class MvpService {
       seatsLeft: Math.max(course.capacity - course.enrolled, 0),
       displayStatus,
       registrationOpen,
-      registrationClosedReason: registrationOpen ? null : (notStarted ? '等待开始报名' : ended ? '报名截止' : (!seatsAvailable ? '名额已满' : (REGISTRATION_OPEN_STATUSES.has(String(course.status)) ? '暂不可报名' : '课程未开放报名'))),
+      registrationClosedReason: registrationOpen ? null : (sessionEnded ? '课程已结束' : notStarted ? '等待开始报名' : ended ? '报名截止' : (!seatsAvailable ? '名额已满' : (REGISTRATION_OPEN_STATUSES.has(effectiveStatus) ? '暂不可报名' : '课程未开放报名'))),
       registrationTemplateName: registrationTemplate?.name || '',
     }
   }
@@ -137,6 +158,8 @@ export class MvpService {
     const endAt = parseDateValue(course.registrationEndAt ?? course.registrationDeadline)
     if (startAt !== null && startAt > Date.now()) throw new BadRequestException('课程报名尚未开始，请等待开始报名')
     if (endAt !== null && endAt <= Date.now()) throw new BadRequestException('课程报名已截止')
+    const sessionEndAt = parseCourseSessionEnd(course.date)
+    if (sessionEndAt !== null && sessionEndAt <= Date.now()) throw new BadRequestException('课程已结束，无法报名')
     if (Number(course.enrolled || 0) >= Number(course.capacity || 0)) throw new BadRequestException('课程名额已满')
   }
 
