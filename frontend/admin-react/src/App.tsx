@@ -1586,7 +1586,7 @@ function CourseModal({ form, templates, categories, submitting, onChange, onUplo
         <label>课程标题<span className="required-mark" aria-hidden="true">*</span><input value={form.title} onChange={event => onChange('title', event.target.value)} placeholder="请输入课程标题" /></label>
         <label>课程副标题<input value={form.subtitle} onChange={event => onChange('subtitle', event.target.value)} placeholder="请输入课程副标题" /></label>
         <label>课程分类<span className="required-mark" aria-hidden="true">*</span><select value={form.category} onChange={event => onChange('category', event.target.value)}>{[...(categories.length ? categories : courseCategoryFallback), ...(categories.some(option => option.value === form.category) ? [] : [{ value: form.category, label: `${form.category}（历史分类）` }])].map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small className="field-hint">分类来自系统数字字典，选择后展示标准名称</small></label>
-        <label>课程状态<span className="required-mark" aria-hidden="true">*</span><select value={form.status} onChange={event => onChange('status', event.target.value)}><option value="待发布">待发布</option><option value="报名中">报名中</option><option value="名额紧张">名额紧张</option><option value="已结束">已结束</option><option value="已下架">已下架</option></select></label>
+        <label>课程状态<span className="required-mark" aria-hidden="true">*</span><select value={form.status} onChange={event => onChange('status', event.target.value)}><option value="待发布">待发布</option><option value="报名中">报名中</option><option value="名额紧张">名额紧张</option><option value="已结束">已结束</option><option value="已下架">已下架</option></select><small className="field-hint">待发布不会出现在 C 端；改为报名中/名额紧张后才对外展示，并按报名时间自动控制能否报名。</small></label>
         <label>关联报名模板<span className="required-mark" aria-hidden="true">*</span><select required value={form.registrationTemplateId} onChange={event => onChange('registrationTemplateId', event.target.value)}><option value="">请选择已创建的报名模板</option>{templates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><small className="field-hint">一个课程必须选择一个模板；同一模板可复用于多个课程</small></label>
         <div className="wide-field course-schedule-field"><span className="form-label">上课时间</span><div className="course-schedule-grid"><label>课程开始时间<span className="required-mark" aria-hidden="true">*</span><input type="datetime-local" required value={form.courseStartAt} onChange={event => updateSchedule('courseStartAt', event.target.value)} /></label><label>课程结束时间<span className="required-mark" aria-hidden="true">*</span><input type="datetime-local" required value={form.courseEndAt} onChange={event => updateSchedule('courseEndAt', event.target.value)} /></label></div><small className="field-hint">点击日期输入框右侧日历图标选择开始和结束时间；保存时将自动生成课程时间段。</small><div className="course-date-summary">当前时间段：{form.courseStartAt && form.courseEndAt ? formatCourseSchedule(form.courseStartAt, form.courseEndAt) : '请选择完整的开始和结束时间'}</div></div>
         <label>上课地点<span className="required-mark" aria-hidden="true">*</span><input value={form.location} onChange={event => onChange('location', event.target.value)} placeholder="请输入上课地点" /></label>
@@ -1909,15 +1909,20 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
   const imageInputRef = useRef<HTMLInputElement>(null)
   const selectionRef = useRef<Range | null>(null)
   const [imageUrl, setImageUrl] = useState('')
+  const [imageUploading, setImageUploading] = useState(false)
 
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== value) editorRef.current.innerHTML = value || '<p><br /></p>'
+    const editor = editorRef.current
+    // 正在编辑时不要用受控值回写 DOM，避免浏览器序列化差异导致刚插入的节点被重置。
+    if (editor && document.activeElement !== editor && editor.innerHTML !== value) editor.innerHTML = value || '<p><br /></p>'
   }, [value])
+
+  const commit = () => onChange(editorRef.current?.innerHTML || '')
 
   const runCommand = (command: string, argument?: string) => {
     editorRef.current?.focus()
     document.execCommand(command, false, argument)
-    onChange(editorRef.current?.innerHTML || '')
+    commit()
   }
 
   const rememberSelection = () => {
@@ -1927,15 +1932,20 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
     if (editorRef.current.contains(range.commonAncestorContainer)) selectionRef.current = range.cloneRange()
   }
 
-  const restoreSelection = () => {
+  const focusEditorAndRestoreRange = () => {
     const editor = editorRef.current
-    if (!editor) return
+    if (!editor) throw new Error('富文本编辑器未准备好')
     editor.focus()
     const selection = window.getSelection()
-    const range = selectionRef.current
-    if (!selection || !range || !editor.contains(range.commonAncestorContainer)) return
-    selection.removeAllRanges()
-    selection.addRange(range)
+    let range = selectionRef.current
+    if (!range || !editor.contains(range.commonAncestorContainer)) {
+      range = document.createRange()
+      range.selectNodeContents(editor)
+      range.collapse(false)
+    }
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    return range
   }
 
   const addLink = async () => {
@@ -1943,15 +1953,34 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
     if (url?.trim()) runCommand('createLink', url.trim())
   }
 
+  const insertImageNode = (src: string) => {
+    const range = focusEditorAndRestoreRange()
+    range.deleteContents()
+    const image = document.createElement('img')
+    image.src = src
+    image.alt = '课程简介图片'
+    range.insertNode(image)
+    range.setStartAfter(image)
+    range.collapse(true)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    selectionRef.current = range.cloneRange()
+    commit()
+  }
+
   const addImageFromUrl = () => {
     const url = imageUrl.trim()
     if (!url) return
-    restoreSelection()
-    runCommand('insertImage', url)
+    if (!/^(https?:\/\/|\/)/i.test(url)) {
+      onNotify('图片 URL 必须以 / 或 http(s):// 开头')
+      return
+    }
+    insertImageNode(url)
     setImageUrl('')
   }
 
-  const addLocalImage = (file?: File) => {
+  const addLocalImage = async (file?: File) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
       onNotify('请选择图片文件')
@@ -1961,19 +1990,88 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
       onNotify('图片大小不能超过 5MB')
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-      if (!dataUrl) return
-      restoreSelection()
-      runCommand('insertImage', dataUrl)
+    setImageUploading(true)
+    try {
+      const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', file)
+      insertImageNode(result.url)
+      onNotify('图片已上传并插入')
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : '图片上传失败，请稍后重试')
+    } finally {
+      setImageUploading(false)
     }
-    reader.readAsDataURL(file)
   }
 
   const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    addLocalImage(event.target.files?.[0])
+    void addLocalImage(event.target.files?.[0])
     event.target.value = ''
+  }
+
+  const clearFormatting = () => {
+    const editor = editorRef.current
+    if (!editor) return
+    const selection = window.getSelection()
+    let range = selection && selection.rangeCount && editor.contains(selection.getRangeAt(0).commonAncestorContainer)
+      ? selection.getRangeAt(0)
+      : document.createRange()
+    if (range.collapsed) {
+      range = document.createRange()
+      range.selectNodeContents(editor)
+    }
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+
+    const cleaned = document.createElement('div')
+    cleaned.appendChild(range.cloneContents())
+
+    const unwrapElement = (element: Element) => {
+      const parent = element.parentNode
+      if (!parent) return
+      while (element.firstChild) parent.insertBefore(element.firstChild, element)
+      parent.removeChild(element)
+    }
+    Array.from(cleaned.querySelectorAll('span,font,strong,b,i,em,u,s,strike,mark,code,pre,a')).forEach(unwrapElement)
+    Array.from(cleaned.querySelectorAll('li')).forEach(item => {
+      const paragraph = document.createElement('p')
+      while (item.firstChild) paragraph.appendChild(item.firstChild)
+      item.replaceWith(paragraph)
+    })
+    Array.from(cleaned.querySelectorAll('ul,ol')).forEach(list => {
+      if (!list.firstChild) list.remove()
+    })
+    Array.from(cleaned.querySelectorAll('h1,h2,h3,h4,h5,h6,blockquote')).forEach(block => {
+      const paragraph = document.createElement('p')
+      while (block.firstChild) paragraph.appendChild(block.firstChild)
+      block.replaceWith(paragraph)
+    })
+    Array.from(cleaned.querySelectorAll('*')).forEach(element => {
+      Array.from(element.attributes).forEach(attribute => {
+        if (!(element instanceof HTMLImageElement && ['src', 'alt'].includes(attribute.name))) element.removeAttribute(attribute.name)
+      })
+    })
+    Array.from(cleaned.childNodes).forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+        const paragraph = document.createElement('p')
+        node.replaceWith(paragraph)
+        paragraph.appendChild(node)
+      }
+    })
+
+    editor.focus()
+    const target = document.createRange()
+    target.selectNodeContents(editor)
+    target.deleteContents()
+    const fragment = document.createDocumentFragment()
+    while (cleaned.firstChild) fragment.appendChild(cleaned.firstChild)
+    target.insertNode(fragment)
+    if (!editor.firstChild) editor.innerHTML = '<p><br /></p>'
+    const finalRange = document.createRange()
+    finalRange.selectNodeContents(editor)
+    finalRange.collapse(false)
+    selection?.removeAllRanges()
+    selection?.addRange(finalRange)
+    selectionRef.current = finalRange.cloneRange()
+    commit()
   }
 
   return <div className="rich-editor">
@@ -1984,17 +2082,16 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('italic')}><i>I</i></button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('insertUnorderedList')}>项目符号</button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('insertOrderedList')}>编号列表</button>
-      <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => { void addLink() }}>链接</button>
-      <button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={() => imageInputRef.current?.click()}>插入图片</button>
-      <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('removeFormat')}>清除格式</button>
+      <button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={() => { void addLink() }}>链接</button>
+      <button type="button" disabled={imageUploading} onMouseDown={event => event.preventDefault()} onClick={() => imageInputRef.current?.click()}>插入图片</button>
+      <button type="button" onMouseDown={event => event.preventDefault()} onClick={clearFormatting}>清除格式</button>
     </div>
     <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={handleImageFileChange} />
-    <div className="rich-image-row"><input value={imageUrl} onChange={event => setImageUrl(event.target.value)} placeholder="可选：粘贴图片 URL" /><button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={addImageFromUrl}>插入 URL</button><span>本地图片会以内嵌方式写入课程简介，单张不超过 5MB</span></div>
-    <div ref={editorRef} className="rich-editor-content" contentEditable suppressContentEditableWarning onInput={() => onChange(editorRef.current?.innerHTML || '')} data-placeholder="请输入课程简介、适用对象和学习收益" />
+    <div className="rich-image-row"><input value={imageUrl} onChange={event => setImageUrl(event.target.value)} placeholder="可选：粘贴图片 URL" /><button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={addImageFromUrl}>插入 URL</button><span>本地图片自动上传后插入，单张不超过 5MB</span></div>
+    <div ref={editorRef} className="rich-editor-content" contentEditable suppressContentEditableWarning onInput={commit} data-placeholder="请输入课程简介、适用对象和学习收益" />
     <small className="rich-editor-hint">可编辑标题、段落、加粗、列表、链接和图片；保存后 C 端按富文本展示。</small>
   </div>
 }
-
 function ListState({ kind, message, onRetry }: { kind: 'loading' | 'error'; message: string; onRetry?: () => void }) {
   return <div className={`list-state ${kind}-state`} role={kind === 'loading' ? 'status' : 'alert'}>
     <p>{message}</p>
