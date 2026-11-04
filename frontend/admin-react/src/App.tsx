@@ -1904,12 +1904,16 @@ function TemplateModal({ form, onChange, onFieldChange, onFieldRemove, onClose, 
   </div>
 }
 
-function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string; onChange: (value: string) => void; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void }) {
+function RichTextEditor({ value, onChange, onNotify }: { value: string; onChange: (value: string) => void; onPrompt?: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void }) {
   const editorRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const selectionRef = useRef<Range | null>(null)
   const [imageUrl, setImageUrl] = useState('')
   const [imageUploading, setImageUploading] = useState(false)
+  const [linkModalOpen, setLinkModalOpen] = useState(false)
+  const [linkTitle, setLinkTitle] = useState('')
+  const [linkAddress, setLinkAddress] = useState('')
+  const [linkError, setLinkError] = useState('')
 
   useEffect(() => {
     const editor = editorRef.current
@@ -1948,17 +1952,72 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
     return range
   }
 
-  const addLink = async () => {
-    const url = await onPrompt('请输入链接地址', '', '插入链接')
-    if (url?.trim()) runCommand('createLink', url.trim())
+  const openLinkDialog = () => {
+    rememberSelection()
+    const selectedText = window.getSelection()?.toString().trim() || ''
+    setLinkTitle(selectedText)
+    setLinkAddress('')
+    setLinkError('')
+    setLinkModalOpen(true)
+  }
+
+  const normalizeLinkAddress = (value: string) => {
+    const trimmed = value.trim()
+    if (/^(https?:\/\/|\/|#|mailto:|tel:)/i.test(trimmed)) return trimmed
+    if (/^[\w.-]+\.[a-z]{2,}(?:[/?#].*)?$/i.test(trimmed)) return `https://${trimmed}`
+    return ''
+  }
+
+  const insertLink = () => {
+    const title = linkTitle.trim()
+    const address = normalizeLinkAddress(linkAddress)
+    if (!title) {
+      setLinkError('请输入链接文字')
+      return
+    }
+    if (!address) {
+      setLinkError('请输入有效的链接地址，例如 https://www.example.com')
+      return
+    }
+
+    const range = focusEditorAndRestoreRange()
+    range.deleteContents()
+    const anchor = document.createElement('a')
+    anchor.href = address
+    anchor.textContent = title
+    anchor.target = '_blank'
+    anchor.rel = 'noopener noreferrer'
+    range.insertNode(anchor)
+    range.setStartAfter(anchor)
+    range.collapse(true)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    selectionRef.current = range.cloneRange()
+    setLinkModalOpen(false)
+    commit()
   }
 
   const insertImageNode = (src: string) => {
     const range = focusEditorAndRestoreRange()
     range.deleteContents()
     const image = document.createElement('img')
-    image.src = src
     image.alt = '课程简介图片'
+    image.loading = 'lazy'
+    image.className = 'rich-editor-image'
+    image.style.display = 'block'
+    image.style.maxWidth = '100%'
+    image.style.height = 'auto'
+    image.onerror = () => {
+      const fallback = assetUrl(src)
+      if (fallback && image.getAttribute('src') !== fallback) {
+        image.setAttribute('src', fallback)
+        return
+      }
+      image.onerror = null
+      onNotify('图片已上传，但预览加载失败，请检查文件地址')
+    }
+    image.src = src
     range.insertNode(image)
     range.setStartAfter(image)
     range.collapse(true)
@@ -1993,6 +2052,7 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
     setImageUploading(true)
     try {
       const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', file)
+      if (!result?.url) throw new Error('图片上传接口未返回图片地址')
       insertImageNode(result.url)
       onNotify('图片已上传并插入')
     } catch (error) {
@@ -2075,7 +2135,7 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
     commit()
   }
 
-  return <div className="rich-editor">
+  return <><div className="rich-editor">
     <div className="rich-toolbar" role="toolbar" aria-label="课程简介富文本工具栏">
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('formatBlock', 'p')}>正文</button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('formatBlock', 'h3')}>标题</button>
@@ -2083,8 +2143,8 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('italic')}><i>I</i></button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('insertUnorderedList')}>项目符号</button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => runCommand('insertOrderedList')}>编号列表</button>
-      <button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={() => { void addLink() }}>链接</button>
-      <button type="button" disabled={imageUploading} onMouseDown={event => event.preventDefault()} onClick={() => imageInputRef.current?.click()}>插入图片</button>
+      <button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={openLinkDialog}>链接</button>
+      <button type="button" disabled={imageUploading} onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={() => imageInputRef.current?.click()}>{imageUploading ? '上传中…' : '插入图片'}</button>
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={clearFormatting}>清除格式</button>
     </div>
     <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={handleImageFileChange} />
@@ -2092,6 +2152,16 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
     <div ref={editorRef} className="rich-editor-content" contentEditable suppressContentEditableWarning onInput={commit} data-placeholder="请输入课程简介、适用对象和学习收益" />
     <small className="rich-editor-hint">可编辑标题、段落、加粗、列表、链接和图片；保存后 C 端按富文本展示。</small>
   </div>
+  {linkModalOpen && <SimpleModal title="插入链接" description="分别填写用户看到的文字和实际跳转地址" onClose={() => setLinkModalOpen(false)}>
+    <form onSubmit={event => { event.preventDefault(); insertLink() }}>
+      <div className="course-form-grid">
+        <label className="wide-field">链接文字<span className="required-mark" aria-hidden="true">*</span><input autoFocus value={linkTitle} onChange={event => { setLinkTitle(event.target.value); setLinkError('') }} placeholder="例如：查看课程详情" /></label>
+        <label className="wide-field">链接地址<span className="required-mark" aria-hidden="true">*</span><input value={linkAddress} onChange={event => { setLinkAddress(event.target.value); setLinkError('') }} placeholder="例如：https://www.example.com" /></label>
+        {linkError && <p className="wide-field" role="alert" style={{ margin: 0, color: '#c4314b', fontSize: 13 }}>{linkError}</p>}
+      </div>
+      <div className="modal-actions"><button type="button" onClick={() => setLinkModalOpen(false)}>取消</button><button className="primary" type="submit">插入链接</button></div>
+    </form>
+  </SimpleModal>}</>
 }
 function ListState({ kind, message, onRetry }: { kind: 'loading' | 'error'; message: string; onRetry?: () => void }) {
   return <div className={`list-state ${kind}-state`} role={kind === 'loading' ? 'status' : 'alert'}>
