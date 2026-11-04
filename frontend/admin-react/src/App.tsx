@@ -2037,7 +2037,8 @@ function RichTextEditor({ value, onChange, onPrompt, onNotify }: { value: string
       item.replaceWith(paragraph)
     })
     Array.from(cleaned.querySelectorAll('ul,ol')).forEach(list => {
-      if (!list.firstChild) list.remove()
+      // li 已转换为段落，这里必须把列表容器本身也解开，否则会残留 ol 包 p 的无效结构。
+      unwrapElement(list)
     })
     Array.from(cleaned.querySelectorAll('h1,h2,h3,h4,h5,h6,blockquote')).forEach(block => {
       const paragraph = document.createElement('p')
