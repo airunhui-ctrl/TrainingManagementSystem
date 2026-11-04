@@ -140,6 +140,18 @@ describe('Prisma 业务仓储', () => {
     await expect(mvp.saveTemplate('tpl-duplicate-keys', { name: '重复字段模板', fields: [{ key: 'name', label: '姓名', type: 'text', required: true }, { key: ' name ', label: '姓名二', type: 'text', required: false }] }, 'admin')).rejects.toThrow('重复')
   })
 
+  test('Banner 排序按位置插入并自动顺延为连续序号', async () => {
+    await mvp.saveBanner({ id: 'banner-sort-test', title: '排序测试 Banner', courseId: 'course-1', sort: 2 }, 'admin')
+    let items = await mvp.listBanners()
+    expect(items.slice(0, 3).map((item) => item.id)).toEqual(['banner-1', 'banner-sort-test', 'banner-2'])
+    expect(items.map((item) => item.sort)).toEqual(items.map((_, index) => index + 1))
+
+    await mvp.saveBanner({ id: 'banner-1', title: '人才选拔实战公开课', courseId: 'course-1', sort: 3 }, 'admin')
+    items = await mvp.listBanners()
+    expect(items.slice(0, 3).map((item) => item.id)).toEqual(['banner-sort-test', 'banner-2', 'banner-1'])
+    expect(items.map((item) => item.sort)).toEqual(items.map((_, index) => index + 1))
+  })
+
   test('优惠规则支持冲突提示、停用和删除', async () => {
     const first = await mvp.saveDiscountRule({ id: 'rule-p1-a', minPeople: 4, discountRate: 0.9, courseIds: ['course-1'], enabled: true }, 'admin')
     expect(first.conflicts).toEqual([])

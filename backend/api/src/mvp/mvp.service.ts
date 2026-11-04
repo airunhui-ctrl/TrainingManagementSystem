@@ -672,15 +672,33 @@ export class MvpService {
     merged.title = title
     merged.startsAt = startsAt || null
     merged.endsAt = endsAt || null
-    // 新增 Banner 时允许显式指定排序位置；未显式提供时仍默认追加到现有列表末尾。
     const hasExplicitSort = payload.sort !== undefined && payload.sort !== null && String(payload.sort).trim() !== ''
-    const nextSort = existing
-      ? sort
-      : hasExplicitSort && Number.isInteger(sort) && sort >= 0
-        ? sort
-        : Number((await this.db.banner.aggregate({ _max: { sort: true } }))._max.sort || 0) + 1
-    merged.sort = nextSort
-    const item = await this.db.banner.upsert({ where: { id: bannerId }, create: { id: bannerId, payload: JSON.stringify(merged), enabled: merged.enabled !== false, sort: nextSort }, update: { payload: JSON.stringify(merged), enabled: merged.enabled !== false, sort: nextSort } })
+    const item = await this.db.$transaction(async (tx) => {
+      const banners = await tx.banner.findMany({ orderBy: [{ sort: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] })
+      const others = banners.filter((banner) => banner.id !== bannerId)
+      const requestedSort = existing ? sort : hasExplicitSort ? sort : banners.length + 1
+      const insertIndex = Math.max(0, Math.min(requestedSort - 1, others.length))
+      const orderedIds = others.map((banner) => banner.id)
+      orderedIds.splice(insertIndex, 0, bannerId)
+      const sortById = new Map(orderedIds.map((itemId, index) => [itemId, index + 1] as const))
+
+      for (const banner of banners) {
+        const nextSort = sortById.get(banner.id)
+        if (nextSort !== undefined && banner.sort !== nextSort) {
+          const bannerPayload = json<Record<string, any>>(banner.payload, {})
+          bannerPayload.sort = nextSort
+          await tx.banner.update({ where: { id: banner.id }, data: { sort: nextSort, payload: JSON.stringify(bannerPayload) } })
+        }
+      }
+
+      const finalSort = sortById.get(bannerId)!
+      merged.sort = finalSort
+      return tx.banner.upsert({
+        where: { id: bannerId },
+        create: { id: bannerId, payload: JSON.stringify(merged), enabled: merged.enabled !== false, sort: finalSort },
+        update: { payload: JSON.stringify(merged), enabled: merged.enabled !== false, sort: finalSort },
+      })
+    })
     const before = existing ? { ...json<Record<string, any>>(existing.payload, {}), id: existing.id, enabled: existing.enabled, sort: existing.sort } : null
     const after = { ...merged, enabled: item.enabled, sort: item.sort }
     await this.audit(actor, 'Banner维护', String(merged.title || bannerId), before, after)
