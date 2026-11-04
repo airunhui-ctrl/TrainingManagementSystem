@@ -2027,10 +2027,9 @@ function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; l
   const [statsPage, setStatsPage] = useState(1)
   if (loading) return <div className="dashboard-stack"><ListState kind="loading" message="正在加载工作台…" /></div>
   if (error) return <div className="dashboard-stack"><ListState kind="error" message={error} onRetry={onRetry} /></div>
-  const cards: Array<{ name: string; value?: number; target: 'courses' | 'enrollments' | 'orders' | 'invoices'; statNavigation?: DashboardStatNavigation }> = [
-    { name: '课程数量', value: data?.courseCount, target: 'courses' },
-    { name: '报名人数', value: data?.enrollmentCount, target: 'enrollments' },
-    { name: '课程预览', value: data?.previewCount, target: 'courses' },
+  const cards: Array<{ name: string; value?: number; target: 'courses' | 'enrollments' | 'orders' | 'invoices'; statNavigation?: DashboardStatNavigation; actionLabel?: string }> = [
+    { name: '课程数量', value: data?.courseCount, target: 'courses', actionLabel: '查看课程列表' },
+    { name: '报名人次', value: data?.enrollmentCount, target: 'enrollments', actionLabel: '查看报名汇总' },
     { name: '已支付订单', value: data?.paidCount, target: 'orders', statNavigation: { target: 'orders', status: '已支付' } },
     { name: '待支付', value: data?.pendingPaymentCount, target: 'orders', statNavigation: { target: 'orders', status: '待支付' } },
     { name: '待开票', value: data?.pendingInvoiceCount, target: 'invoices', statNavigation: { target: 'invoices', status: '待处理' } },
@@ -2046,7 +2045,7 @@ function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; l
   const safeStatsPage = Math.min(statsPage, statsTotalPages)
   const statsRows = filteredStats.slice((safeStatsPage - 1) * statsPageSize, safeStatsPage * statsPageSize)
   return <div className="dashboard-stack">
-    <section className="kpis">{cards.map(card => <button className="kpi" type="button" key={card.name} onClick={() => onNavigate(card.target, undefined, card.statNavigation)}><span>{card.name}</span><strong>{card.value ?? '-'}</strong><small>查看对应业务 <b aria-hidden="true">→</b></small></button>)}</section>
+    <section className="kpis">{cards.map(card => <button className="kpi" type="button" key={card.name} onClick={() => onNavigate(card.target, undefined, card.statNavigation)}><span>{card.name}</span><strong>{card.value ?? '-'}</strong><small>{card.actionLabel || '查看对应业务'} <b aria-hidden="true">→</b></small></button>)}</section>
     <section className="panel">
       <h2>运营待办</h2>
       <p>请依次处理线下支付审核、开票申请和用户反馈；所有处理结果将写入操作审计。</p>

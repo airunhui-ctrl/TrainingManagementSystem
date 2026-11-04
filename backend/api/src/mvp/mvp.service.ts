@@ -595,7 +595,7 @@ export class MvpService {
     ]
     return {
       courseCount: courses.length,
-      enrollmentCount: orders.reduce((sum, item) => sum + item.participantCount, 0),
+      enrollmentCount: orders.filter((item) => item.status !== '已取消').reduce((sum, item) => sum + item.participantCount, 0),
       previewCount: previews.length,
       paidCount: orders.filter((item) => item.status === '已支付').length,
       pendingPaymentCount: orders.filter((item) => item.status === '待支付').length,
