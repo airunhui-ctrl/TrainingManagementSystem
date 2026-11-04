@@ -2039,22 +2039,59 @@ function RichTextEditor({ value, onChange, onNotify }: { value: string; onChange
     setImageUrl('')
   }
 
+  const prepareImageForUpload = async (file: File) => {
+    const maxBytes = 5 * 1024 * 1024
+    if (file.size <= maxBytes) return file
+
+    const objectUrl = URL.createObjectURL(file)
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image()
+        element.onload = () => resolve(element)
+        element.onerror = () => reject(new Error('图片无法读取，请换一张图片重试'))
+        element.src = objectUrl
+      })
+      const maxEdge = 1920
+      const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight))
+      const width = Math.max(1, Math.round(image.naturalWidth * scale))
+      const height = Math.max(1, Math.round(image.naturalHeight * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('当前浏览器无法处理这张图片')
+      context.fillStyle = '#fff'
+      context.fillRect(0, 0, width, height)
+      context.drawImage(image, 0, 0, width, height)
+
+      let quality = 0.88
+      let compressed = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+      while (compressed && compressed.size > maxBytes && quality > 0.5) {
+        quality = Math.max(0.5, quality - 0.1)
+        compressed = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+      }
+      if (!compressed) throw new Error('图片压缩失败，请换一张图片重试')
+      if (compressed.size > maxBytes) throw new Error('图片压缩后仍超过 5MB，请选择尺寸更小的图片')
+      const baseName = file.name.replace(/\.[^.]+$/, '') || 'course-image'
+      return new File([compressed], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() })
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+
   const addLocalImage = async (file?: File) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
       onNotify('请选择图片文件')
       return
     }
-    if (file.size > 5 * 1024 * 1024) {
-      onNotify('图片大小不能超过 5MB')
-      return
-    }
     setImageUploading(true)
     try {
-      const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', file)
+      const uploadFile = await prepareImageForUpload(file)
+      const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', uploadFile)
       if (!result?.url) throw new Error('图片上传接口未返回图片地址')
       insertImageNode(result.url)
-      onNotify('图片已上传并插入')
+      onNotify(uploadFile !== file ? '图片已自动压缩、上传并插入' : '图片已上传并插入')
     } catch (error) {
       onNotify(error instanceof Error ? error.message : '图片上传失败，请稍后重试')
     } finally {
@@ -2148,7 +2185,7 @@ function RichTextEditor({ value, onChange, onNotify }: { value: string; onChange
       <button type="button" onMouseDown={event => event.preventDefault()} onClick={clearFormatting}>清除格式</button>
     </div>
     <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={handleImageFileChange} />
-    <div className="rich-image-row"><input value={imageUrl} onChange={event => setImageUrl(event.target.value)} placeholder="可选：粘贴图片 URL" /><button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={addImageFromUrl}>插入 URL</button><span>本地图片自动上传后插入，单张不超过 5MB</span></div>
+    <div className="rich-image-row"><input value={imageUrl} onChange={event => setImageUrl(event.target.value)} placeholder="可选：粘贴图片 URL" /><button type="button" onMouseDown={event => { event.preventDefault(); rememberSelection() }} onClick={addImageFromUrl}>插入 URL</button><span>本地图片自动上传，超过 5MB 会先压缩再插入</span></div>
     <div ref={editorRef} className="rich-editor-content" contentEditable suppressContentEditableWarning onInput={commit} data-placeholder="请输入课程简介、适用对象和学习收益" />
     <small className="rich-editor-hint">可编辑标题、段落、加粗、列表、链接和图片；保存后 C 端按富文本展示。</small>
   </div>
