@@ -257,6 +257,45 @@ const assetUrl = (value: unknown) => {
   const path = source.startsWith('/api') ? source.slice(4) : source.startsWith('/') ? source : `/${source}`
   return `${API_BASE_URL.replace(/\/$/, '')}${path}`
 }
+const COURSE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+const prepareImageForUpload = async (file: File) => {
+  if (file.size <= COURSE_IMAGE_MAX_BYTES) return file
+
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image()
+      element.onload = () => resolve(element)
+      element.onerror = () => reject(new Error('图片无法读取，请换一张图片重试'))
+      element.src = objectUrl
+    })
+    const maxEdge = 1920
+    const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight))
+    const width = Math.max(1, Math.round(image.naturalWidth * scale))
+    const height = Math.max(1, Math.round(image.naturalHeight * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('当前浏览器无法处理这张图片')
+    context.fillStyle = '#fff'
+    context.fillRect(0, 0, width, height)
+    context.drawImage(image, 0, 0, width, height)
+
+    let quality = 0.88
+    let compressed = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+    while (compressed && compressed.size > COURSE_IMAGE_MAX_BYTES && quality > 0.5) {
+      quality = Math.max(0.5, quality - 0.1)
+      compressed = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
+    }
+    if (!compressed) throw new Error('图片压缩失败，请换一张图片重试')
+    if (compressed.size > COURSE_IMAGE_MAX_BYTES) throw new Error('图片压缩后仍超过 5MB，请选择尺寸更小的图片')
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'course-image'
+    return new File([compressed], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
 
 function Login({ done }: { done: () => void }) {
   const [username, setUsername] = useState('')
@@ -690,12 +729,12 @@ function App() {
   }
   const uploadCourseImage = async (file: File) => {
     if (!file.type.startsWith('image/')) return flash('请选择图片文件')
-    if (file.size > 5 * 1024 * 1024) return flash('课程图片不能超过 5MB')
     await runOperation('course-image-upload', async () => {
-      const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', file)
+      const uploadFile = await prepareImageForUpload(file)
+      const result = await apiUpload<{ url: string }>('/admin/uploads/course-image', uploadFile)
       updateCourseField('image', result.url)
       return result
-    }, '课程图片已上传')
+    }, file.size > COURSE_IMAGE_MAX_BYTES ? '课程图片已自动压缩并上传' : '课程图片已上传')
   }
   const uploadPaymentQr = async (channel: 'wechat' | 'alipay', file: File) => {
     if (!file.type.startsWith('image/')) return flash('请选择图片文件')
@@ -1591,7 +1630,7 @@ function CourseModal({ form, templates, categories, submitting, onChange, onUplo
         <div className="wide-field course-schedule-field"><span className="form-label">上课时间</span><div className="course-schedule-grid"><label>课程开始时间<span className="required-mark" aria-hidden="true">*</span><input type="datetime-local" required value={form.courseStartAt} onChange={event => updateSchedule('courseStartAt', event.target.value)} /></label><label>课程结束时间<span className="required-mark" aria-hidden="true">*</span><input type="datetime-local" required value={form.courseEndAt} onChange={event => updateSchedule('courseEndAt', event.target.value)} /></label></div><small className="field-hint">点击日期输入框右侧日历图标选择开始和结束时间；保存时将自动生成课程时间段。</small><div className="course-date-summary">当前时间段：{form.courseStartAt && form.courseEndAt ? formatCourseSchedule(form.courseStartAt, form.courseEndAt) : '请选择完整的开始和结束时间'}</div></div>
         <label>上课地点<span className="required-mark" aria-hidden="true">*</span><input value={form.location} onChange={event => onChange('location', event.target.value)} placeholder="请输入上课地点" /></label>
         <label>讲师<span className="required-mark" aria-hidden="true">*</span><input value={form.instructor} onChange={event => onChange('instructor', event.target.value)} placeholder="请输入讲师" /></label>
-<div className="wide-field course-image-field upload-field"><span className="form-label">课程图片</span><UploadButton label="选择文件" accept="image/*" disabled={submitting} onFile={file => { setImageFileName(file.name); void onUploadImage(file) }} /><small className="field-hint">用于 C 端首页课程卡片、首页轮播和课程详情顶部；建议上传 16:9 图片，单张不超过 5MB。</small>{imageFileName && form.image && <div className="invoice-file-selected upload-status-row"><b>已上传：{imageFileName}</b><button type="button" className="upload-remove-button" disabled={submitting} onClick={() => { setImageFileName(''); onChange('image', '') }}>删除</button></div>}{form.image && <img className="course-image-preview" src={assetUrl(form.image)} alt="课程图片预览" />}</div>
+<div className="wide-field course-image-field upload-field"><span className="form-label">课程图片</span><UploadButton label="选择文件" accept="image/*" disabled={submitting} onFile={file => { setImageFileName(file.name); void onUploadImage(file) }} /><small className="field-hint">用于 C 端首页课程卡片、首页轮播和课程详情顶部；建议上传 16:9 图片，超过 5MB 会自动压缩。</small>{imageFileName && form.image && <div className="invoice-file-selected upload-status-row"><b>已上传：{imageFileName}</b><button type="button" className="upload-remove-button" disabled={submitting} onClick={() => { setImageFileName(''); onChange('image', '') }}>删除</button></div>}{form.image && <img className="course-image-preview" src={assetUrl(form.image)} alt="课程图片预览" />}</div>
         <label>课程原价<span className="required-mark" aria-hidden="true">*</span><input type="number" min="0" value={form.originalPrice} onChange={event => onChange('originalPrice', event.target.value)} /></label>
         <label>课程售价<span className="required-mark" aria-hidden="true">*</span><input type="number" min="0" value={form.price} onChange={event => onChange('price', event.target.value)} /></label>
         <label>课程特价<input type="number" min="0" value={form.specialPrice} onChange={event => onChange('specialPrice', event.target.value)} placeholder="可选" /></label>
@@ -2037,46 +2076,6 @@ function RichTextEditor({ value, onChange, onNotify }: { value: string; onChange
     }
     insertImageNode(url)
     setImageUrl('')
-  }
-
-  const prepareImageForUpload = async (file: File) => {
-    const maxBytes = 5 * 1024 * 1024
-    if (file.size <= maxBytes) return file
-
-    const objectUrl = URL.createObjectURL(file)
-    try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const element = new Image()
-        element.onload = () => resolve(element)
-        element.onerror = () => reject(new Error('图片无法读取，请换一张图片重试'))
-        element.src = objectUrl
-      })
-      const maxEdge = 1920
-      const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight))
-      const width = Math.max(1, Math.round(image.naturalWidth * scale))
-      const height = Math.max(1, Math.round(image.naturalHeight * scale))
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const context = canvas.getContext('2d')
-      if (!context) throw new Error('当前浏览器无法处理这张图片')
-      context.fillStyle = '#fff'
-      context.fillRect(0, 0, width, height)
-      context.drawImage(image, 0, 0, width, height)
-
-      let quality = 0.88
-      let compressed = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
-      while (compressed && compressed.size > maxBytes && quality > 0.5) {
-        quality = Math.max(0.5, quality - 0.1)
-        compressed = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality))
-      }
-      if (!compressed) throw new Error('图片压缩失败，请换一张图片重试')
-      if (compressed.size > maxBytes) throw new Error('图片压缩后仍超过 5MB，请选择尺寸更小的图片')
-      const baseName = file.name.replace(/\.[^.]+$/, '') || 'course-image'
-      return new File([compressed], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() })
-    } finally {
-      URL.revokeObjectURL(objectUrl)
-    }
   }
 
   const addLocalImage = async (file?: File) => {
