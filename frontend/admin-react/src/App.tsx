@@ -25,6 +25,7 @@ type StudentProfileForm = { id: string; name: string; phone: string; email: stri
 type UserProfileForm = { id: string; name: string; phone: string; email: string; company: string; gender: string }
 type ReviewState = { order: TableItem; proof: TableItem; imageUrl: string }
 type DashboardTodo = { type: 'payment' | 'invoice' | 'feedback'; id: string; target: 'orders' | 'invoices' | 'feedbacks' }
+type DashboardStatNavigation = { target: 'orders' | 'invoices'; status: string }
 type EnrollmentSummaryDetailState = { summary: TableItem; items: TableItem[] }
 type PointLedgerDetailState = { user: TableItem; items: TableItem[]; page: number; pageSize: number; total: number }
 type DialogRequest = { kind: 'confirm' | 'prompt'; title: string; message: string; value: string; placeholder: string; confirmLabel: string; danger?: boolean }
@@ -349,6 +350,7 @@ function App() {
   const [feedbackForm, setFeedbackForm] = useState<FeedbackForm>(emptyFeedbackForm)
   const [feedbackItem, setFeedbackItem] = useState<TableItem | null>(null)
   const [pendingTodo, setPendingTodo] = useState<DashboardTodo | null>(null)
+  const [pendingStatNavigation, setPendingStatNavigation] = useState<DashboardStatNavigation | null>(null)
   const [studentEditModalOpen, setStudentEditModalOpen] = useState(false)
   const [studentProfileForm, setStudentProfileForm] = useState<StudentProfileForm>(emptyStudentProfileForm)
   const [userEditModalOpen, setUserEditModalOpen] = useState(false)
@@ -456,21 +458,26 @@ function App() {
     setSelectedDetail(snapshot.selectedDetail ?? null); setEnrollmentSummaryDetail(snapshot.enrollmentSummaryDetail ?? null); setPointLedgerDetail(snapshot.pointLedgerDetail ?? null); setReviewState(snapshot.reviewState ?? null); setReviewRemark(snapshot.reviewRemark || ''); setSelectedRows(Array.isArray(snapshot.selectedRows) ? snapshot.selectedRows : []); setTableKeyword(snapshot.tableKeyword || ''); setQueryKeyword(snapshot.queryKeyword || ''); setStatusFilter(snapshot.statusFilter || ''); setAuditActionFilter(snapshot.auditActionFilter || ''); setAuditActorFilter(snapshot.auditActorFilter || ''); setAuditFrom(snapshot.auditFrom || ''); setAuditTo(snapshot.auditTo || ''); setPage(Number(snapshot.page) || 1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
   const navigate = (moduleKey: string) => {
+    setPendingStatNavigation(null)
     if (moduleKey !== active) rememberActiveTab()
     setVisitedTabs(currentTabs => currentTabs.includes(moduleKey) ? currentTabs : [...currentTabs, moduleKey])
     setActive(moduleKey)
     setSidebarOpen(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-  const navigateToTodo = (moduleKey: string, todo?: DashboardTodo) => {
-    if (!todo) return navigate(moduleKey)
-    navigate(todo.target)
-    setPendingTodo(todo)
-    setTableKeyword(todo.id)
-    setQueryKeyword(todo.id)
-    setStatusFilter('')
-    setUserStatusFilter('')
-    setPage(1)
+  const navigateToTodo = (moduleKey: string, todo?: DashboardTodo, statNavigation?: DashboardStatNavigation) => {
+    if (!todo && !statNavigation) return navigate(moduleKey)
+    navigate(todo?.target || moduleKey)
+    if (todo) {
+      setPendingTodo(todo)
+      setTableKeyword(todo.id)
+      setQueryKeyword(todo.id)
+      setStatusFilter('')
+      setUserStatusFilter('')
+      setPage(1)
+      return
+    }
+    setPendingStatNavigation(statNavigation || null)
   }
   const logout = () => {
     authStorage.clear()
@@ -568,6 +575,15 @@ function App() {
 
   useEffect(() => {
     restoreTabState(tabCacheRef.current[active])
+    if (pendingStatNavigation && pendingStatNavigation.target === active) {
+      setTableKeyword('')
+      setQueryKeyword('')
+      setStatusFilter(pendingStatNavigation.status)
+      setUserStatusFilter('')
+      setPage(1)
+      setPendingStatNavigation(null)
+      return
+    }
     // 待办跳转使用目标记录 ID 作为服务端关键字，避免目标记录不在第一页时找不到。
     if (pendingTodo && pendingTodo.target === active) {
       setTableKeyword(pendingTodo.id)
@@ -1987,7 +2003,7 @@ function ListState({ kind, message, onRetry }: { kind: 'loading' | 'error'; mess
 }
 
 
-function DashboardTodoGroup({ title, description, todos, onNavigate }: { title: string; description: string; todos: any[]; onNavigate: (key: string, todo?: DashboardTodo) => void }) {
+function DashboardTodoGroup({ title, description, todos, onNavigate }: { title: string; description: string; todos: any[]; onNavigate: (key: string, todo?: DashboardTodo, statNavigation?: DashboardStatNavigation) => void }) {
   const [page, setPage] = useState(1)
   const pageSize = 5
   const totalPages = Math.max(1, Math.ceil(todos.length / pageSize))
@@ -2006,18 +2022,18 @@ function DashboardTodoGroup({ title, description, todos, onNavigate }: { title: 
     {todos.length > pageSize && <div className="list-footer"><span>共 {todos.length} 条</span><div className="pagination"><div><button type="button" disabled={safePage <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>上一页</button><button type="button" disabled={safePage >= totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>下一页</button></div><span>第 {safePage} / {totalPages} 页</span></div></div>}
   </section>
 }
-function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; loading: boolean; error: string; onRetry: () => void; onNavigate: (key: string, todo?: DashboardTodo) => void }) {
+function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; loading: boolean; error: string; onRetry: () => void; onNavigate: (key: string, todo?: DashboardTodo, statNavigation?: DashboardStatNavigation) => void }) {
   const [statsKeyword, setStatsKeyword] = useState('')
   const [statsPage, setStatsPage] = useState(1)
   if (loading) return <div className="dashboard-stack"><ListState kind="loading" message="正在加载工作台…" /></div>
   if (error) return <div className="dashboard-stack"><ListState kind="error" message={error} onRetry={onRetry} /></div>
-  const cards = [
+  const cards: Array<{ name: string; value?: number; target: 'courses' | 'enrollments' | 'orders' | 'invoices'; statNavigation?: DashboardStatNavigation }> = [
     { name: '课程数量', value: data?.courseCount, target: 'courses' },
     { name: '报名人数', value: data?.enrollmentCount, target: 'enrollments' },
     { name: '课程预览', value: data?.previewCount, target: 'courses' },
-    { name: '已支付订单', value: data?.paidCount, target: 'orders' },
-    { name: '待支付', value: data?.pendingPaymentCount, target: 'orders' },
-    { name: '待开票', value: data?.pendingInvoiceCount, target: 'invoices' },
+    { name: '已支付订单', value: data?.paidCount, target: 'orders', statNavigation: { target: 'orders', status: '已支付' } },
+    { name: '待支付', value: data?.pendingPaymentCount, target: 'orders', statNavigation: { target: 'orders', status: '待支付' } },
+    { name: '待开票', value: data?.pendingInvoiceCount, target: 'invoices', statNavigation: { target: 'invoices', status: '待处理' } },
   ]
   const todos = Array.isArray(data?.todos) ? data.todos : []
   const allStats = Array.isArray(data?.courseStats) ? data.courseStats : []
@@ -2030,7 +2046,7 @@ function Dashboard({ data, loading, error, onRetry, onNavigate }: { data: any; l
   const safeStatsPage = Math.min(statsPage, statsTotalPages)
   const statsRows = filteredStats.slice((safeStatsPage - 1) * statsPageSize, safeStatsPage * statsPageSize)
   return <div className="dashboard-stack">
-    <section className="kpis">{cards.map(card => <button className="kpi" type="button" key={card.name} onClick={() => onNavigate(card.target)}><span>{card.name}</span><strong>{card.value ?? '-'}</strong><small>查看对应业务 <b aria-hidden="true">→</b></small></button>)}</section>
+    <section className="kpis">{cards.map(card => <button className="kpi" type="button" key={card.name} onClick={() => onNavigate(card.target, undefined, card.statNavigation)}><span>{card.name}</span><strong>{card.value ?? '-'}</strong><small>查看对应业务 <b aria-hidden="true">→</b></small></button>)}</section>
     <section className="panel">
       <h2>运营待办</h2>
       <p>请依次处理线下支付审核、开票申请和用户反馈；所有处理结果将写入操作审计。</p>
