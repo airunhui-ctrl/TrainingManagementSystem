@@ -70,7 +70,8 @@ type IntroBlock =
   | { type: 'image'; src: string }
   | { type: 'list'; items: string[] }
   | { type: 'rich'; html: string }
-type RichTextItemClickEvent = { detail?: { href?: string } }
+type RichTextClickNode = { name?: string; attrs?: Record<string, string | string[]> }
+type RichTextItemClickEvent = { detail?: { href?: string; node?: RichTextClickNode } }
 const course = ref<DisplayCourse | null>(null)
 const nav = useNavLayout()
 const loading = ref(true)
@@ -166,7 +167,11 @@ const normalizeRichTextLink = (value?: string) => {
   return ''
 }
 const openRichTextLink = (event: RichTextItemClickEvent) => {
-  const address = normalizeRichTextLink(event?.detail?.href)
+  const node = event?.detail?.node
+  if (node?.name === 'img') return
+  const nodeHref = node?.attrs?.href
+  const rawHref = event?.detail?.href || (Array.isArray(nodeHref) ? nodeHref[0] : nodeHref)
+  const address = normalizeRichTextLink(rawHref)
   if (!address) {
     uni.showToast({ title: '链接地址无效', icon: 'none' })
     return
