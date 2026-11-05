@@ -1,4 +1,6 @@
 export const COURSE_REGISTRATION_OPEN_STATUSES = new Set(['报名中', '名额紧张'])
+const COURSE_PUBLISH_STATUSES = new Set(['待发布', '已发布', '已下架'])
+const LEGACY_PUBLISHED_COURSE_STATUSES = new Set(['报名中', '名额紧张', '已结束'])
 
 export type CourseRegistrationState = {
   isOpen: boolean
@@ -31,20 +33,29 @@ export const parseCourseSessionEnd = (value?: string | null): number | null => {
   return matches.length >= 2 ? parseCourseTime(matches[matches.length - 1]) : null
 }
 
+export const getCoursePublishStatus = (course?: Partial<Pick<ApiCourseLike, 'status' | 'publishStatus'>> | null) => {
+  const rawStatus = String(course?.publishStatus || course?.status || '').trim()
+  if (COURSE_PUBLISH_STATUSES.has(rawStatus)) return rawStatus
+  if (LEGACY_PUBLISHED_COURSE_STATUSES.has(rawStatus)) return '已发布'
+  return rawStatus || '待发布'
+}
+
 export const getCourseRegistrationState = (
-  course?: Partial<Pick<ApiCourseLike, 'status' | 'date' | 'registrationStartAt' | 'registrationEndAt' | 'registrationDeadline' | 'seatsLeft' | 'registrationOpen'>> | null,
+  course?: Partial<Pick<ApiCourseLike, 'status' | 'publishStatus' | 'date' | 'registrationStartAt' | 'registrationEndAt' | 'registrationDeadline' | 'capacity' | 'seatsLeft' | 'registrationOpen'>> | null,
   now = Date.now(),
 ): CourseRegistrationState => {
-  const rawStatus = String(course?.status || '')
-  if (!COURSE_REGISTRATION_OPEN_STATUSES.has(rawStatus)) {
-    const terminalReason = rawStatus === '已结束' || rawStatus === '已下架' ? null : '课程未开放报名'
-    return { isOpen: false, displayStatus: rawStatus || '暂不可报名', reason: terminalReason }
+  const publishStatus = getCoursePublishStatus(course)
+  if (publishStatus !== '已发布') {
+    return { isOpen: false, displayStatus: publishStatus, reason: publishStatus === '待发布' ? '课程待发布' : '课程已下架' }
   }
 
   const startAt = parseCourseTime(course?.registrationStartAt)
   const endAt = parseCourseTime(course?.registrationEndAt ?? course?.registrationDeadline)
   const sessionEndAt = parseCourseSessionEnd(course?.date)
   const seatsAvailable = Number(course?.seatsLeft ?? 0) > 0
+  const seatsLeft = Number(course?.seatsLeft ?? 0)
+  const capacity = Number(course?.capacity ?? 0)
+  const tightThreshold = Math.max(1, Math.ceil(capacity * 0.2))
   const notStarted = startAt !== null && startAt > now
   const ended = endAt !== null && endAt <= now
   const sessionEnded = sessionEndAt !== null && sessionEndAt <= now
@@ -53,7 +64,7 @@ export const getCourseRegistrationState = (
   if (notStarted) return { isOpen: false, displayStatus: '等待开始报名', reason: '等待开始报名' }
   if (ended) return { isOpen: false, displayStatus: '报名截止', reason: '报名截止' }
   if (!seatsAvailable) return { isOpen: false, displayStatus: '名额已满', reason: '名额已满' }
-  return { isOpen: true, displayStatus: rawStatus, reason: null }
+  return { isOpen: true, displayStatus: seatsLeft <= tightThreshold ? '名额紧张' : '报名中', reason: null }
 }
 
 export const getCourseSpecialPriceState = (
@@ -81,11 +92,13 @@ export const isCourseRegistrationOpen = (course?: Parameters<typeof getCourseReg
 
 type ApiCourseLike = {
   status?: string
+  publishStatus?: string
   date?: string
   registrationStartAt?: string | null
   registrationEndAt?: string | null
   registrationDeadline?: string | null
   seatsLeft?: number
+  capacity?: number
   registrationOpen?: boolean
   price?: number
   specialPrice?: number | null

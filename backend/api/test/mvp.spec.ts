@@ -103,10 +103,10 @@ describe('Prisma 业务仓储', () => {
     await mvp.saveCourse({ id: 'course-6', status: '已下架', registrationDeadline: future }, 'admin')
     await expect(mvp.quote('course-6', 1)).rejects.toThrow('未开放报名')
 
-    await mvp.saveCourse({ id: 'course-6', status: '报名中', registrationDeadline: past }, 'admin')
+    await mvp.saveCourse({ id: 'course-6', status: '已发布', registrationDeadline: past }, 'admin')
     await expect(mvp.createOrder('u-demo', 'course-6', [{ name: '截止学员', phone: '13900000008', company: '截止企业' }], 'offline')).rejects.toThrow('报名已截止')
 
-    await mvp.saveCourse({ id: 'course-6', status: '报名中', registrationDeadline: future }, 'admin')
+    await mvp.saveCourse({ id: 'course-6', status: '已发布', registrationDeadline: future }, 'admin')
     await expect(mvp.quote('course-6', 1)).resolves.toMatchObject({ courseId: 'course-6' })
     await expect(mvp.getCourse('course-6')).resolves.toMatchObject({ registrationOpen: true, registrationClosedReason: null })
   })
@@ -116,10 +116,10 @@ describe('Prisma 业务仓储', () => {
     expect((await mvp.listCoursesPage(undefined, undefined, 1, 100)).items.some((item) => item.id === 'course-6')).toBe(false)
     await expect(mvp.getCourse('course-6')).rejects.toThrow('课程不存在')
     expect((await mvp.listAdminCoursesPage(undefined, undefined, 1, 100)).items.find((item) => item.id === 'course-6')?.status).toBe('待发布')
-    await mvp.saveCourse({ id: 'course-6', status: '报名中' }, 'admin')
+    await mvp.saveCourse({ id: 'course-6', status: '已发布' }, 'admin')
   })
 
-  test('课程结束后管理端保留原始状态，C 端显示已结束，报名窗口不能越过课程结束时间', async () => {
+  test('课程结束后保留发布状态，C 端显示已结束，报名窗口不能越过课程结束时间', async () => {
     await mvp.saveCourse({
       id: 'course-session-edge',
       title: '课程结束边界测试',
@@ -130,16 +130,16 @@ describe('Prisma 业务仓储', () => {
       price: 0,
       originalPrice: 0,
       capacity: 10,
-      status: '报名中',
+      status: '已发布',
       registrationStartAt: '2026-11-01T08:00',
       registrationEndAt: '2026-11-02T09:00',
       registrationTemplateId: 'tpl-basic',
     }, 'admin')
 
     const adminCourse = (await mvp.listAdminCoursesPage(undefined, undefined, 1, 100)).items.find((item) => item.id === 'course-session-edge')
-    expect(adminCourse).toMatchObject({ status: '报名中', displayStatus: '已结束', registrationOpen: false })
+    expect(adminCourse).toMatchObject({ status: '已发布', publishStatus: '已发布', displayStatus: '已结束', registrationOpen: false })
     const publicCourse = (await mvp.listCoursesPage(undefined, undefined, 1, 100)).items.find((item) => item.id === 'course-session-edge')
-    expect(publicCourse).toMatchObject({ status: '已结束', displayStatus: '已结束', registrationOpen: false })
+    expect(publicCourse).toMatchObject({ status: '已发布', publishStatus: '已发布', displayStatus: '已结束', registrationOpen: false })
 
     await expect(mvp.saveCourse({
       id: 'course-session-edge',
@@ -399,6 +399,9 @@ describe('Prisma 业务仓储', () => {
     await mvp.saveCourse({ id: 'course-time-window', registrationEndAt: past }, 'admin')
     await expect(mvp.quote('course-time-window', 1)).rejects.toThrow('已截止')
     await mvp.saveCourse({ id: 'course-time-window', registrationEndAt: future }, 'admin')
+    await mvp.saveCourse({ id: 'course-time-window', capacity: 10 }, 'admin')
+    await db.course.update({ where: { id: 'course-time-window' }, data: { enrolled: 8 } })
+    await expect(mvp.getCourse('course-time-window')).resolves.toMatchObject({ status: '已发布', displayStatus: '名额紧张', registrationOpen: true })
   })
 
   test('报名模板支持启停、字段长度/选择数量规则，并在报名时生效', async () => {

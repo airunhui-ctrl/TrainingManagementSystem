@@ -1,4 +1,4 @@
-export type CourseStatus = '报名中' | '名额紧张' | '已结束'
+export type CourseStatus = '待发布' | '已发布' | '已下架'
 
 export interface Course {
   id: string
@@ -13,6 +13,7 @@ export interface Course {
   seatsLeft: number
   capacity: number
   status: CourseStatus
+  publishStatus?: CourseStatus
   nature: string
   description: string
   descriptionRichText: string

@@ -56,7 +56,8 @@ const stripRichText = (value: unknown) => String(value || '')
   .replace(/&nbsp;/gi, ' ')
   .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
   .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
-const REGISTRATION_OPEN_STATUSES = new Set(['报名中', '名额紧张'])
+const COURSE_PUBLISH_STATUSES = new Set(['待发布', '已发布', '已下架'])
+const LEGACY_PUBLISHED_COURSE_STATUSES = new Set(['报名中', '名额紧张', '已结束'])
 const PUBLIC_HIDDEN_COURSE_STATUSES = new Set(['待发布', '已下架'])
 const COURSE_TIMEZONE_SUFFIX = '+08:00'
 // 管理端提交的是北京时间墙钟时间（datetime-local）。SQLite 将它保存为不带时区的
@@ -86,6 +87,12 @@ const parseCourseSessionEnd = (value: unknown) => {
   const headYear = /^(\d{4})-/.exec(head)
   if (!headYear) return null
   return parseDateValue(`${headYear[1]}-${tail}`)
+}
+const normalizeCoursePublishStatus = (value: unknown) => {
+  const status = String(value || '').trim()
+  if (PUBLIC_HIDDEN_COURSE_STATUSES.has(status)) return status
+  if (LEGACY_PUBLISHED_COURSE_STATUSES.has(status) || status === '已发布') return '已发布'
+  return status || '待发布'
 }
 const MAX_MESSAGE_TITLE_LENGTH = 120
 const MAX_MESSAGE_CONTENT_LENGTH = 10_000
@@ -117,24 +124,32 @@ export class MvpService {
     const hasRichText = /<\/?(p|div|h[1-6]|ul|ol|li|strong|em|a|img|blockquote|br)(\s|>)/i.test(rawDescription)
     const startAt = parseDateValue(course.registrationStartAt)
     const endAt = parseDateValue(course.registrationEndAt ?? course.registrationDeadline)
+    const publishStatus = normalizeCoursePublishStatus(course.status)
     const notStarted = startAt !== null && startAt > Date.now()
     const sessionEndAt = parseCourseSessionEnd(course.date)
     const sessionEnded = sessionEndAt !== null && sessionEndAt <= Date.now()
     const ended = sessionEnded || (endAt !== null && endAt <= Date.now())
     const seatsAvailable = Number(course.enrolled || 0) < Number(course.capacity || 0)
-    // 课程时间已过时，开放状态课程对外统一呈现为已结束（数据库原值不变，展示与下单全端同步）
-    const effectiveStatus = sessionEnded && REGISTRATION_OPEN_STATUSES.has(String(course.status)) ? '已结束' : String(course.status)
-    const registrationOpen = REGISTRATION_OPEN_STATUSES.has(effectiveStatus) && !notStarted && !ended && seatsAvailable
-    const displayStatus = !REGISTRATION_OPEN_STATUSES.has(effectiveStatus)
-      ? effectiveStatus
-      : notStarted
-        ? '等待开始报名'
-        : ended
-          ? '报名截止'
-          : (!seatsAvailable ? '名额已满' : effectiveStatus)
+    const seatsLeft = Math.max(Number(course.capacity || 0) - Number(course.enrolled || 0), 0)
+    const tightThreshold = Math.max(1, Math.ceil(Number(course.capacity || 0) * 0.2))
+    const displayStatus = publishStatus !== '已发布'
+      ? publishStatus
+      : sessionEnded
+        ? '已结束'
+        : notStarted
+          ? '等待开始报名'
+          : ended
+            ? '报名截止'
+            : !seatsAvailable
+              ? '名额已满'
+              : seatsLeft <= tightThreshold
+                ? '名额紧张'
+                : '报名中'
+    const registrationOpen = displayStatus === '报名中' || displayStatus === '名额紧张'
     return {
       ...base,
-      status: effectiveStatus,
+      status: publishStatus,
+      publishStatus,
       registrationStartAt: course.registrationStartAt || null,
       registrationEndAt: course.registrationEndAt || course.registrationDeadline || null,
       maxParticipantsPerOrder: course.maxParticipantsPerOrder ?? null,
@@ -144,28 +159,26 @@ export class MvpService {
       categoryCode: normalizeCourseCategory(course.category) || String(course.category || ''),
       description: hasRichText ? stripRichText(rawDescription) : rawDescription,
       ...(hasRichText ? { descriptionRichText: sanitizeRichText(rawDescription) } : {}),
-      seatsLeft: Math.max(course.capacity - course.enrolled, 0),
+      seatsLeft,
       displayStatus,
       registrationOpen,
-      registrationClosedReason: registrationOpen ? null : (sessionEnded ? '课程已结束' : notStarted ? '等待开始报名' : ended ? '报名截止' : (!seatsAvailable ? '名额已满' : (REGISTRATION_OPEN_STATUSES.has(effectiveStatus) ? '暂不可报名' : '课程未开放报名'))),
+      registrationClosedReason: registrationOpen ? null : (sessionEnded ? '课程已结束' : notStarted ? '等待开始报名' : ended ? '报名截止' : (!seatsAvailable ? '名额已满' : publishStatus === '待发布' ? '课程待发布' : publishStatus === '已下架' ? '课程已下架' : '暂不可报名')),
       registrationTemplateName: registrationTemplate?.name || '',
     }
   }
 
   private adminCourseView(course: any) {
-    const view = this.courseView(course)
-    return { ...view, status: String(course.status || ''), displayStatus: view.displayStatus }
+    return this.courseView(course)
   }
 
   private assertCourseRegistrationOpen(course: any) {
-    if (!REGISTRATION_OPEN_STATUSES.has(String(course.status))) throw new BadRequestException('课程当前未开放报名')
-    const startAt = parseDateValue(course.registrationStartAt)
-    const endAt = parseDateValue(course.registrationEndAt ?? course.registrationDeadline)
-    if (startAt !== null && startAt > Date.now()) throw new BadRequestException('课程报名尚未开始，请等待开始报名')
-    if (endAt !== null && endAt <= Date.now()) throw new BadRequestException('课程报名已截止')
-    const sessionEndAt = parseCourseSessionEnd(course.date)
-    if (sessionEndAt !== null && sessionEndAt <= Date.now()) throw new BadRequestException('课程已结束，无法报名')
-    if (Number(course.enrolled || 0) >= Number(course.capacity || 0)) throw new BadRequestException('课程名额已满')
+    const view = this.courseView(course)
+    if (view.registrationOpen) return
+    if (view.displayStatus === '已结束') throw new BadRequestException('课程已结束，无法报名')
+    if (view.displayStatus === '等待开始报名') throw new BadRequestException('课程报名尚未开始，请等待开始报名')
+    if (view.displayStatus === '报名截止') throw new BadRequestException('课程报名已截止')
+    if (view.displayStatus === '名额已满') throw new BadRequestException('课程名额已满')
+    throw new BadRequestException('课程当前未开放报名')
   }
 
   private orderView(order: any) {
@@ -230,7 +243,11 @@ export class MvpService {
     const where = {
       ...(keyword ? { OR: [{ id: { contains: keyword } }, { title: { contains: keyword } }, { subtitle: { contains: keyword } }, { instructor: { contains: keyword } }] } : {}),
       ...(normalizedCategory ? { category: normalizedCategory } : {}),
-      ...(requestedStatus ? { status: requestedStatus } : { status: { notIn: [...PUBLIC_HIDDEN_COURSE_STATUSES] } }),
+      ...(requestedStatus === '已发布'
+        ? { status: { in: ['已发布', ...LEGACY_PUBLISHED_COURSE_STATUSES] } }
+        : requestedStatus
+          ? { status: requestedStatus }
+          : { status: { notIn: [...PUBLIC_HIDDEN_COURSE_STATUSES] } }),
     }
     const [items, total] = await this.db.$transaction([
       this.db.course.findMany({ where, include: { registrationTemplate: { select: { id: true, name: true } } }, orderBy: { createdAt: 'asc' }, skip: args.skip, take: args.take }),
@@ -242,10 +259,15 @@ export class MvpService {
   async listAdminCoursesPage(keyword?: string, category?: string, page = 1, pageSize = 20, status?: string) {
     const args = pageArgs(page, pageSize)
     const normalizedCategory = category ? (normalizeCourseCategory(category) || category) : category
+    const normalizedStatus = status ? normalizeCoursePublishStatus(status) : ''
     const where = {
       ...(keyword ? { OR: [{ id: { contains: keyword } }, { title: { contains: keyword } }, { subtitle: { contains: keyword } }, { instructor: { contains: keyword } }] } : {}),
       ...(normalizedCategory ? { category: normalizedCategory } : {}),
-      ...(status ? { status } : {}),
+      ...(normalizedStatus === '已发布'
+        ? { status: { in: ['已发布', ...LEGACY_PUBLISHED_COURSE_STATUSES] } }
+        : normalizedStatus
+          ? { status: normalizedStatus }
+          : {}),
     }
     const [items, total] = await this.db.$transaction([
       this.db.course.findMany({ where, include: { registrationTemplate: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, skip: args.skip, take: args.take }),
@@ -723,11 +745,13 @@ export class MvpService {
     const courseId = String(payload.id || id('course'))
     const existing = await this.db.course.findUnique({ where: { id: courseId } })
     if (requireExisting && !existing) throw new NotFoundException('课程不存在')
-    const source: Record<string, any> = { title: '新建课程', subtitle: '', category: '综合管理', date: '2026-12-01 09:00', location: '待定', instructor: '待定', image: null, price: 0, originalPrice: 0, specialPrice: null, specialPriceEndsAt: null, allowMultiParticipant: true, maxParticipantsPerOrder: null, registrationStartAt: null, registrationEndAt: null, registrationDeadline: null, capacity: 30, enrolled: 0, status: '报名中', description: '', descriptionRichText: '', registrationTemplateId: null, ...existing, ...payload }
+    const source: Record<string, any> = { title: '新建课程', subtitle: '', category: '综合管理', date: '2026-12-01 09:00', location: '待定', instructor: '待定', image: null, price: 0, originalPrice: 0, specialPrice: null, specialPriceEndsAt: null, allowMultiParticipant: true, maxParticipantsPerOrder: null, registrationStartAt: null, registrationEndAt: null, registrationDeadline: null, capacity: 30, enrolled: 0, status: '待发布', description: '', descriptionRichText: '', registrationTemplateId: null, ...existing, ...payload }
     const registrationTemplateId = String(source.registrationTemplateId || '').trim()
     if (!registrationTemplateId) throw new BadRequestException('课程必须关联一个已创建的报名模板')
     if (!(await this.db.registrationTemplate.findUnique({ where: { id: registrationTemplateId }, select: { id: true } }))) throw new BadRequestException('关联报名模板不存在')
-    if (!['待发布', '报名中', '名额紧张', '已结束', '已下架'].includes(String(source.status))) throw new BadRequestException('课程状态不合法')
+    const requestedPublishStatus = String(source.status || '').trim()
+    if (!COURSE_PUBLISH_STATUSES.has(requestedPublishStatus) && !LEGACY_PUBLISHED_COURSE_STATUSES.has(requestedPublishStatus)) throw new BadRequestException('课程发布状态不合法')
+    const publishStatus = normalizeCoursePublishStatus(requestedPublishStatus)
     if (source.registrationStartAt && parseDateValue(source.registrationStartAt) === null) throw new BadRequestException('报名开始时间格式不合法')
     if (source.registrationEndAt && parseDateValue(source.registrationEndAt) === null) throw new BadRequestException('报名结束时间格式不合法')
     if (source.registrationDeadline && parseDateValue(source.registrationDeadline) === null) throw new BadRequestException('报名截止时间格式不合法')
@@ -761,7 +785,7 @@ export class MvpService {
     const sessionEndAt = parseCourseSessionEnd(date)
     if (registrationStartAt && sessionEndAt !== null && Number(parseDateValue(registrationStartAt)) >= sessionEndAt) throw new BadRequestException('报名开始时间必须早于课程结束时间')
     if (registrationEndAt && sessionEndAt !== null && Number(parseDateValue(registrationEndAt)) > sessionEndAt) throw new BadRequestException('报名结束时间不能晚于课程结束时间')
-    const data = { title, subtitle: String(source.subtitle || '').trim(), category: normalizedCategory, date, location, instructor, image: source.image ? String(source.image) : null, price, originalPrice, specialPrice, specialPriceEndsAt: source.specialPriceEndsAt ? String(source.specialPriceEndsAt).trim() : null, allowMultiParticipant: source.allowMultiParticipant !== false, maxParticipantsPerOrder, registrationStartAt, registrationEndAt, registrationDeadline: registrationEndAt || (source.registrationDeadline ? String(source.registrationDeadline).trim() : null), capacity, enrolled, status: String(source.status), description: richDescription, registrationTemplateId }
+    const data = { title, subtitle: String(source.subtitle || '').trim(), category: normalizedCategory, date, location, instructor, image: source.image ? String(source.image) : null, price, originalPrice, specialPrice, specialPriceEndsAt: source.specialPriceEndsAt ? String(source.specialPriceEndsAt).trim() : null, allowMultiParticipant: source.allowMultiParticipant !== false, maxParticipantsPerOrder, registrationStartAt, registrationEndAt, registrationDeadline: registrationEndAt || (source.registrationDeadline ? String(source.registrationDeadline).trim() : null), capacity, enrolled, status: publishStatus, description: richDescription, registrationTemplateId }
     const item = await this.db.course.upsert({ where: { id: courseId }, create: { id: courseId, ...data }, update: data })
     await this.audit(actor, '课程维护', item.title, existing ? this.courseView(existing) : null, this.courseView(item))
     return this.courseView(item)
@@ -770,7 +794,7 @@ export class MvpService {
   async removeCourse(courseId: string, actor = 'admin') {
     const item = await this.db.course.findUnique({ where: { id: courseId } })
     if (!item) throw new NotFoundException('课程不存在')
-    if (await this.db.order.count({ where: { courseId } })) throw new BadRequestException('已有订单的课程不能删除，可改为已结束')
+    if (await this.db.order.count({ where: { courseId } })) throw new BadRequestException('已有订单的课程不能删除，可改为已下架')
     await this.db.course.delete({ where: { id: courseId } })
     await this.audit(actor, '课程删除', item.title, this.courseView(item), null)
     return this.courseView(item)
@@ -778,7 +802,7 @@ export class MvpService {
 
   async listTemplates() {
     const items = await this.db.registrationTemplate.findMany({ include: { courses: { select: { id: true, title: true, status: true } } }, orderBy: { updatedAt: 'desc' } })
-    return items.map((item) => ({ id: item.id, name: item.name, version: item.version, enabled: item.enabled !== false, courseCount: item.courses.length, courseIds: item.courses.map(course => course.id), courseNames: item.courses.map(course => course.title), courses: item.courses, locked: item.courses.some(course => REGISTRATION_OPEN_STATUSES.has(String(course.status))), fields: json<RegistrationField[]>(item.payload, []) }))
+    return items.map((item) => ({ id: item.id, name: item.name, version: item.version, enabled: item.enabled !== false, courseCount: item.courses.length, courseIds: item.courses.map(course => course.id), courseNames: item.courses.map(course => course.title), courses: item.courses.map(course => ({ ...course, status: normalizeCoursePublishStatus(course.status) })), locked: item.courses.some(course => normalizeCoursePublishStatus(course.status) === '已发布'), fields: json<RegistrationField[]>(item.payload, []) }))
   }
 
   async saveTemplate(templateId: string | undefined, payload: { name?: string; fields?: RegistrationField[]; enabled?: boolean }, actor = 'admin', requireExisting = false) {
@@ -807,7 +831,7 @@ export class MvpService {
     if (requireExisting && !current) throw new NotFoundException('报名模板不存在')
     if (current) {
       const linkedCourses = await this.db.course.findMany({ where: { registrationTemplateId: idValue }, select: { id: true, status: true } })
-      if (linkedCourses.some(course => REGISTRATION_OPEN_STATUSES.has(String(course.status)))) throw new BadRequestException('该报名模板已关联报名中的课程，暂不可修改；请先结束或下架相关课程')
+      if (linkedCourses.some(course => normalizeCoursePublishStatus(course.status) === '已发布')) throw new BadRequestException('该报名模板已关联已发布课程，暂不可修改；请先下架相关课程')
     }
     const name = String(payload.name || current?.name || '报名模板').trim()
     if (!name) throw new BadRequestException('报名模板名称不能为空')
