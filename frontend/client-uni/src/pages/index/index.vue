@@ -46,7 +46,7 @@
         <view class="course-info">
           <text class="course-title">{{ course.title }}</text>
           <view class="course-meta"><text class="meta-item">◷ 课程 {{ courseRange(course.date) }}</text><text class="meta-item">✎ 报名 {{ registrationShort(course) }}</text><text class="meta-item">👥 {{ course.enrolled }}人已报名</text><text class="meta-item capacity">共{{ course.capacity }}人</text></view>
-          <view class="course-footer"><view><text class="nature">公益培训</text><text class="course-price">¥{{ course.price.toLocaleString() }}<text class="price-unit"> 起</text></text></view><button class="detail-btn" @tap.stop="openDetail(course.id)">查看课程详情</button></view>
+          <view class="course-footer"><view><view class="course-price-label"><text class="nature">{{ course.category }}</text><text v-if="coursePricing(course).active" class="special-price-badge">限时特价</text></view><view class="course-price-line"><text class="course-price">¥{{ coursePricing(course).price.toLocaleString() }}<text class="price-unit"> 起</text></text><text v-if="coursePricing(course).active" class="course-original-price">¥{{ course.price.toLocaleString() }}</text></view></view><button class="detail-btn" @tap.stop="openDetail(course.id)">查看课程详情</button></view>
         </view>
       </view>
     </view>
@@ -55,14 +55,14 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onShareAppMessage, onShow } from '@dcloudio/uni-app'
+import { onShareAppMessage, onShow, onUnload } from '@dcloudio/uni-app'
 import bannerImage from '../../assets/courses/banner-training.svg'
 import talentImage from '../../assets/courses/course-talent.svg'
 import managementImage from '../../assets/courses/course-management.svg'
 import leanImage from '../../assets/courses/course-lean.svg'
-import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
+import { api, apiAssetUrl, type ApiBanner, type ApiCourse } from '../../common/api'
 import { useNavLayout } from '../../common/nav-layout'
-import { getCourseDisplayStatus, isCourseRegistrationOpen } from '../../common/course-registration'
+import { getCourseDisplayStatus, getCourseSpecialPriceState, isCourseRegistrationOpen, parseCourseTime } from '../../common/course-registration'
 
 type DisplayCourse = ApiCourse & { image: string }
 
@@ -70,7 +70,7 @@ const category = ref('全部')
 const nav = useNavLayout()
 const keyword = ref('')
 const courses = ref<DisplayCourse[]>([])
-const bannerIds = ref<string[]>([])
+const banners = ref<ApiBanner[]>([])
 const loading = ref(false)
 const loadError = ref('')
 const bannerTouchStartX = ref(0)
@@ -86,11 +86,20 @@ const imageByCourseId: Record<string, string> = {
 const categories = computed(() => ['全部', ...new Set(courses.value.map((course) => course.category))])
 const visibleCourses = computed(() => courses.value.filter((course) => (category.value === '全部' || course.category === category.value) && (!keyword.value.trim() || `${course.title}${course.subtitle}${course.category}`.includes(keyword.value.trim()))))
 const BANNER_SLIDE_LIMIT = 5
+const nowTick = ref(Date.now())
+const statusTicker = setInterval(() => { nowTick.value = Date.now() }, 1000)
 
 const bannerSlides = computed(() => {
-  const candidates = (bannerIds.value.length ? bannerIds.value : courses.value.map((course) => course.id))
+  const configured = banners.value.filter((banner) => {
+    const startsAt = parseCourseTime(banner.startsAt)
+    const endsAt = parseCourseTime(banner.endsAt)
+    return (startsAt === null || startsAt <= nowTick.value) && (endsAt === null || endsAt > nowTick.value)
+  })
+  const ids = banners.value.length ? configured.map((banner) => banner.courseId) : courses.value.map((course) => course.id)
+  const candidates = [...new Set(ids)]
     .map((id) => courses.value.find((course) => course.id === id))
     .filter((course): course is DisplayCourse => Boolean(course))
+    .filter((course) => courseOpen(course) || courseStatus(course) === '等待开始报名')
   return candidates.slice(0, BANNER_SLIDE_LIMIT).map((course) => ({
     id: `banner-${course.id}`,
     courseId: course.id,
@@ -101,11 +110,10 @@ const bannerSlides = computed(() => {
   }))
 })
 
-const nowTick = ref(Date.now())
-setInterval(() => { nowTick.value = Date.now() }, 15000)
 const toDisplayCourse = (course: ApiCourse): DisplayCourse => ({ ...course, image: apiAssetUrl(course.image) || imageByCourseId[course.id] || bannerImage })
 const courseStatus = (course: DisplayCourse) => getCourseDisplayStatus(course, nowTick.value)
 const courseOpen = (course: DisplayCourse) => isCourseRegistrationOpen(course, nowTick.value)
+const coursePricing = (course: DisplayCourse) => getCourseSpecialPriceState(course, nowTick.value)
 const courseStatusClass = (course: DisplayCourse) => {
   const status = courseStatus(course)
   if (courseOpen(course)) return status === '名额紧张' ? 'tight' : 'open'
@@ -163,7 +171,7 @@ const loadHome = async () => {
   try {
     const [courseResult, bannerResult] = await Promise.all([api.listCourses(), api.listBanners()])
     courses.value = courseResult.items.map(toDisplayCourse)
-    bannerIds.value = bannerResult.items.map((banner) => banner.courseId)
+    banners.value = bannerResult.items
     if (!categories.value.includes(category.value)) category.value = '全部'
   } catch (error: any) {
     loadError.value = error?.message || '网络异常，请检查网络后重试'
@@ -174,6 +182,7 @@ const loadHome = async () => {
 }
 
 onShow(loadHome)
+onUnload(() => clearInterval(statusTicker))
 onShareAppMessage(() => ({ title: '六边形培训 · 课程活动', path: '/pages/index/index' }))
 </script>
 
@@ -197,4 +206,8 @@ onShareAppMessage(() => ({ title: '六边形培训 · 课程活动', path: '/pag
 .course-status-badge.ended { background: #78859a; }
 .course-status-badge.neutral { background: #78859a; }
 .meta-item.capacity { color: #8a99ac; }
+.course-price-label { display: flex; align-items: center; gap: 10rpx; }
+.special-price-badge { padding: 4rpx 12rpx; border-radius: 7rpx; color: #d54520; background: #fff0e8; font-size: 19rpx; font-weight: 800; }
+.course-price-line { display: flex; align-items: baseline; gap: 12rpx; margin-top: 4rpx; }
+.course-original-price { color: #9aa7b8; font-size: 21rpx; text-decoration: line-through; }
 </style>

@@ -119,6 +119,34 @@ describe('Prisma 业务仓储', () => {
     await mvp.saveCourse({ id: 'course-6', status: '报名中' }, 'admin')
   })
 
+  test('课程结束后管理端保留原始状态，C 端显示已结束，报名窗口不能越过课程结束时间', async () => {
+    await mvp.saveCourse({
+      id: 'course-session-edge',
+      title: '课程结束边界测试',
+      category: '01',
+      date: '2026-11-01 09:00 - 2026-11-02 09:00',
+      location: '线上',
+      instructor: '测试讲师',
+      price: 0,
+      originalPrice: 0,
+      capacity: 10,
+      status: '报名中',
+      registrationStartAt: '2026-11-01T08:00',
+      registrationEndAt: '2026-11-02T09:00',
+      registrationTemplateId: 'tpl-basic',
+    }, 'admin')
+
+    const adminCourse = (await mvp.listAdminCoursesPage(undefined, undefined, 1, 100)).items.find((item) => item.id === 'course-session-edge')
+    expect(adminCourse).toMatchObject({ status: '报名中', displayStatus: '已结束', registrationOpen: false })
+    const publicCourse = (await mvp.listCoursesPage(undefined, undefined, 1, 100)).items.find((item) => item.id === 'course-session-edge')
+    expect(publicCourse).toMatchObject({ status: '已结束', displayStatus: '已结束', registrationOpen: false })
+
+    await expect(mvp.saveCourse({
+      id: 'course-session-edge',
+      registrationEndAt: '2026-11-03T09:00',
+    }, 'admin')).rejects.toThrow('不能晚于课程结束时间')
+  })
+
   test('报名模板支持复制并阻止删除正在使用的模板', async () => {
     const fields = [{ key: 'name', label: '姓名', type: 'text' as const, required: true }]
     await mvp.saveTemplate('tpl-delete-test', { name: '待删除模板', fields }, 'admin')

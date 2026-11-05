@@ -21,7 +21,7 @@
         <view class="summary-grid">
           <view class="summary-item"><text class="item-icon">⌖</text><view><text class="item-label">培训地点</text><text class="item-value">{{ course.location }}</text></view></view>
           <view class="summary-item"><text class="item-icon">♙</text><view><text class="item-label">报名人数</text><text class="item-value">已报名 {{ course.enrolled }} 人</text></view></view>
-          <view class="summary-item"><text class="item-icon">¥</text><view><text class="item-label">课程费用</text><text class="item-value price-value">¥{{ course.price.toLocaleString() }}/人</text></view></view>
+          <view class="summary-item"><text class="item-icon">¥</text><view><view class="price-title-row"><text class="item-label">{{ pricing.active ? '限时特价' : '课程费用' }}</text><text v-if="pricing.active" class="detail-special-badge">限时</text></view><text class="item-value price-value">¥{{ pricing.price.toLocaleString() }}/人</text><text v-if="pricing.active" class="price-original">原价 ¥{{ pricing.regularPrice.toLocaleString() }}</text><text v-if="pricing.active && pricing.endsAt" class="price-deadline">截止 {{ formatSpecialEnd(pricing.endsAt) }}</text></view></view>
         </view>
       </view>
       <view class="intro-card">
@@ -43,7 +43,7 @@
         </view>
         <view v-if="shouldCollapseIntro" class="intro-toggle" @tap="toggleIntro"><text>{{ introExpanded ? '收起课程简介' : '展开完整简介' }}</text><text class="intro-toggle-icon">{{ introExpanded ? '⌃' : '⌄' }}</text></view>
       </view>
-      <view v-if="canRegister" class="bottom-cta"><view><text class="cta-label">课程费用</text><text class="cta-price">¥{{ course.price.toLocaleString() }}<text> / 人</text></text></view><button class="register-btn" @tap="register">我要报名</button></view>
+      <view v-if="canRegister" class="bottom-cta"><view><text class="cta-label">{{ pricing.active ? '限时特价' : '课程费用' }}</text><view class="cta-price-row"><text class="cta-price">¥{{ pricing.price.toLocaleString() }}<text> / 人</text></text><text v-if="pricing.active" class="cta-original-price">原价 ¥{{ pricing.regularPrice.toLocaleString() }}</text></view></view><button class="register-btn" @tap="register">我要报名</button></view>
       <view v-else class="bottom-cta ended"><text>{{ registrationState?.displayStatus || '暂不可报名' }}<text v-if="registrationState?.reason && registrationState.reason !== registrationState.displayStatus">：{{ registrationState.reason }}</text></text></view>
     </view>
     <view v-if="!loading && !course && !loadError" class="page-state">课程不存在或已下架</view>
@@ -62,7 +62,7 @@ import { tokenStorage } from '../../common/auth'
 import { showClientConfirm } from '../../common/confirm'
 import { goLogin } from '../../common/login-redirect'
 import { useNavLayout } from '../../common/nav-layout'
-import { getCourseRegistrationState } from '../../common/course-registration'
+import { getCourseRegistrationState, getCourseSpecialPriceState } from '../../common/course-registration'
 
 type DisplayCourse = ApiCourse & { image: string; descriptionRichText?: string }
 type IntroBlock =
@@ -78,7 +78,7 @@ const currentCourseId = ref('course-1')
 const introExpanded = ref(false)
 const nowTick = ref(Date.now())
 let registrationTicker: ReturnType<typeof setInterval> | null = null
-registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 15000)
+registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 1000)
 const imageByCourseId: Record<string, string> = { 'course-1': talentImage, 'course-2': managementImage, 'course-3': leanImage }
 const introBlocksByCourseId: Record<string, IntroBlock[]> = {
   'course-1': [
@@ -119,6 +119,8 @@ const introBlocks = computed<IntroBlock[]>(() => {
   ]
 })
 const registrationState = computed(() => course.value ? getCourseRegistrationState(course.value, nowTick.value) : null)
+const pricing = computed(() => getCourseSpecialPriceState(course.value, nowTick.value))
+const formatSpecialEnd = (value: string) => String(value || '').trim().replace('T', ' ')
 const registrationRangeText = computed(() => {
   if (!course.value) return ''
   const fmt = (value?: string | null) => String(value || '').trim().replace('T', ' ')
@@ -219,4 +221,10 @@ const register = () => {
   .intro-block-image { height: 260px; }
   .intro-card { max-width: none; margin-right: 0; margin-left: 0; }
 }
+.price-title-row { display: flex; align-items: center; gap: 8rpx; }
+.detail-special-badge { padding: 2rpx 8rpx; border-radius: 6rpx; color: #d54520; background: #fff0e8; font-size: 16rpx; font-weight: 800; }
+.price-original { display: block; margin-top: 4rpx; color: #99a6b7; font-size: 18rpx; text-decoration: line-through; }
+.price-deadline { display: block; margin-top: 3rpx; color: #b87855; font-size: 17rpx; }
+.cta-price-row { display: flex; align-items: baseline; gap: 10rpx; }
+.cta-original-price { color: #99a6b7; font-size: 19rpx; text-decoration: line-through; }
 </style>

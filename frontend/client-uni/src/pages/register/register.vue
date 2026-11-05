@@ -83,7 +83,7 @@ const courseId=ref('course-1'), fields=ref<Field[]>([]), loading=ref(false), quo
 const course=ref<ApiCourse | null>(null)
 const nowTick=ref(Date.now())
 let registrationTicker: ReturnType<typeof setInterval> | null = null
-registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 15000)
+registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 1000)
 const nav=useNavLayout()
 const loadError=ref(''), quoteError=ref(''), paymentInfoError=ref('')
 type PaymentMethod = 'wechat' | 'alipay' | 'offline'

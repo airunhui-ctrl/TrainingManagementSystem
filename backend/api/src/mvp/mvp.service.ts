@@ -152,6 +152,11 @@ export class MvpService {
     }
   }
 
+  private adminCourseView(course: any) {
+    const view = this.courseView(course)
+    return { ...view, status: String(course.status || ''), displayStatus: view.displayStatus }
+  }
+
   private assertCourseRegistrationOpen(course: any) {
     if (!REGISTRATION_OPEN_STATUSES.has(String(course.status))) throw new BadRequestException('课程当前未开放报名')
     const startAt = parseDateValue(course.registrationStartAt)
@@ -246,7 +251,7 @@ export class MvpService {
       this.db.course.findMany({ where, include: { registrationTemplate: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, skip: args.skip, take: args.take }),
       this.db.course.count({ where }),
     ])
-    return { items: items.map((item) => this.courseView(item)), page: args.page, pageSize: args.pageSize, total }
+    return { items: items.map((item) => this.adminCourseView(item)), page: args.page, pageSize: args.pageSize, total }
   }
 
   async listCourseMessageRecipients(courseId: string) {
@@ -751,8 +756,12 @@ export class MvpService {
     const enrolled = existing ? Number(existing.enrolled || 0) : 0
     if (enrolled > capacity) throw new BadRequestException('课程名额不能小于当前已报名人数')
     const richDescription = sanitizeRichText(source.descriptionRichText || source.description)
+    const registrationStartAt = source.registrationStartAt ? String(source.registrationStartAt).trim() : null
     const registrationEndAt = source.registrationEndAt ? String(source.registrationEndAt).trim() : null
-    const data = { title, subtitle: String(source.subtitle || '').trim(), category: normalizedCategory, date, location, instructor, image: source.image ? String(source.image) : null, price, originalPrice, specialPrice, specialPriceEndsAt: source.specialPriceEndsAt ? String(source.specialPriceEndsAt).trim() : null, allowMultiParticipant: source.allowMultiParticipant !== false, maxParticipantsPerOrder, registrationStartAt: source.registrationStartAt ? String(source.registrationStartAt).trim() : null, registrationEndAt, registrationDeadline: registrationEndAt || (source.registrationDeadline ? String(source.registrationDeadline).trim() : null), capacity, enrolled, status: String(source.status), description: richDescription, registrationTemplateId }
+    const sessionEndAt = parseCourseSessionEnd(date)
+    if (registrationStartAt && sessionEndAt !== null && Number(parseDateValue(registrationStartAt)) >= sessionEndAt) throw new BadRequestException('报名开始时间必须早于课程结束时间')
+    if (registrationEndAt && sessionEndAt !== null && Number(parseDateValue(registrationEndAt)) > sessionEndAt) throw new BadRequestException('报名结束时间不能晚于课程结束时间')
+    const data = { title, subtitle: String(source.subtitle || '').trim(), category: normalizedCategory, date, location, instructor, image: source.image ? String(source.image) : null, price, originalPrice, specialPrice, specialPriceEndsAt: source.specialPriceEndsAt ? String(source.specialPriceEndsAt).trim() : null, allowMultiParticipant: source.allowMultiParticipant !== false, maxParticipantsPerOrder, registrationStartAt, registrationEndAt, registrationDeadline: registrationEndAt || (source.registrationDeadline ? String(source.registrationDeadline).trim() : null), capacity, enrolled, status: String(source.status), description: richDescription, registrationTemplateId }
     const item = await this.db.course.upsert({ where: { id: courseId }, create: { id: courseId, ...data }, update: data })
     await this.audit(actor, '课程维护', item.title, existing ? this.courseView(existing) : null, this.courseView(item))
     return this.courseView(item)

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { adminLogin, apiFetch, apiFetchBlob, apiUpload, API_BASE_URL } from './api'
 import { authStorage } from './auth'
-import { getCourseDisplayStatus } from '../../shared/course-registration'
 
 type Module = { key: string; label: string; endpoint?: string; editable?: boolean }
 type NavGroup = { key: string; label: string; icon: string; moduleKeys: string[] }
@@ -183,11 +182,11 @@ const columnLabels: Record<string, string> = {
   before: '变更前', after: '变更后',
   accountName: '收款户名', bankName: '开户银行', accountNo: '银行账号', qrCodeText: '收款码',
   onlineWechatEnabled: '微信支付', onlineAlipayEnabled: '支付宝支付', conflicts: '冲突规则',
-  paymentProofStatus: '凭证状态', originalName: '原始文件名', mimeType: '文件类型', size: '文件大小', path: '访问路径', reviewedAt: '审核时间', department: '部门', position: '职务', orderStatus: '订单状态', templateId: '模板编号', templateVersion: '模板版本', formPayload: '报名表单快照', cancelledAt: '取消时间',
+  paymentProofStatus: '凭证状态', originalName: '原始文件名', mimeType: '文件类型', size: '文件大小', path: '访问路径', reviewedAt: '审核时间', department: '部门', position: '职务', orderStatus: '订单状态', templateId: '模板编号', templateVersion: '模板版本', formPayload: '报名表单快照', cancelledAt: '取消时间', displayStatus: 'C端展示',
 }
 
 const moduleColumns: Record<string, string[]> = {
-  courses: ['id', 'title', 'subtitle', 'category', 'date', 'location', 'instructor', 'registrationTemplateName', 'status'],
+  courses: ['id', 'title', 'subtitle', 'category', 'date', 'location', 'instructor', 'registrationTemplateName', 'status', 'displayStatus'],
   banners: ['id', 'title', 'courseTitle', 'sort', 'enabled', 'startsAt', 'endsAt'],
   templates: ['id', 'courseIds', 'courseNames', 'name', 'courseCount', 'fields'],
   enrollments: ['courseId', 'courseTitle', 'registrationDeadline', 'enrollmentCount', 'paidCount', 'unpaidCount'],
@@ -956,6 +955,7 @@ function App() {
     if (numericFields.capacity < numericFields.enrolled) return flash('课程名额不能少于已报名人数')
     if (form.maxParticipantsPerOrder.trim() && (!Number.isInteger(Number(form.maxParticipantsPerOrder)) || Number(form.maxParticipantsPerOrder) < 1)) return flash('单次报名人数上限必须是不小于 1 的整数')
     if (form.registrationStartAt && form.registrationEndAt && new Date(form.registrationStartAt).getTime() >= new Date(form.registrationEndAt).getTime()) return flash('报名开始时间必须早于结束时间')
+    if (form.registrationEndAt && new Date(form.registrationEndAt).getTime() > new Date(form.courseEndAt).getTime()) return flash('报名结束时间不能晚于课程结束时间')
     if (!await confirmAction(`${form.id ? '确认保存对课程的修改' : '确认创建课程'}“${form.title.trim()}”吗？`)) return
     setCourseSubmitting(true)
     try {
@@ -1637,7 +1637,7 @@ function CourseModal({ form, templates, categories, submitting, onChange, onUplo
         <label>课程名额<span className="required-mark" aria-hidden="true">*</span><input type="number" min="0" value={form.capacity} onChange={event => onChange('capacity', event.target.value)} /></label>
         <label>已报名人数<input type="number" min="0" value={form.enrolled} readOnly aria-readonly="true" /><small className="field-hint">由报名、取消报名和退款自动维护，不可手动修改</small></label>
         <label>报名开始时间<input type="datetime-local" value={form.registrationStartAt} onChange={event => onChange('registrationStartAt', event.target.value)} /><small className="field-hint">可选；开始时间前不能报名</small></label>
-        <label>报名结束时间<input type="datetime-local" value={form.registrationEndAt} onChange={event => onChange('registrationEndAt', event.target.value)} /><small className="field-hint">可选；结束时间后自动截止报名</small></label>
+        <label>报名结束时间<input type="datetime-local" value={form.registrationEndAt} onChange={event => onChange('registrationEndAt', event.target.value)} /><small className="field-hint">可选；结束时间后自动截止报名，且不能晚于课程结束时间</small></label>
         <label>单次报名人数上限<input type="number" min="1" value={form.maxParticipantsPerOrder} onChange={event => onChange('maxParticipantsPerOrder', event.target.value)} placeholder="不限" /><small className="field-hint">可选；限制一笔订单最多报名人数</small></label>
         <label>特价有效期<input type="datetime-local" value={form.specialPriceEndsAt} onChange={event => onChange('specialPriceEndsAt', event.target.value)} /><small className="field-hint">可选；过期后按课程售价计算</small></label>
         <label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.allowMultiParticipant} onChange={event => onChange('allowMultiParticipant', event.target.checked)} /><span>支持多人报名</span></label>
@@ -2348,11 +2348,6 @@ function EnrollmentSummaryDetailPanel({ detail, onClose }: { detail: EnrollmentS
 }
 
 function DataTable({ moduleKey, items, onOperate, onDetail, actionLabel = '处理', canOperate, showAction = true, secondaryActionLabel, onSecondary, canSecondary, extraActions, selectable = false, selectedKeys = new Set<string>(), onToggleSelect, onToggleAll, busy = false }: { moduleKey: string; items: TableItem[]; onOperate: (item: TableItem) => void; onDetail?: (item: TableItem) => void; actionLabel?: RowActionLabel; canOperate?: (item: TableItem) => boolean; showAction?: boolean; secondaryActionLabel?: RowActionLabel; onSecondary?: (item: TableItem) => void; canSecondary?: (item: TableItem) => boolean; extraActions?: (item: TableItem) => RowExtraAction[]; selectable?: boolean; selectedKeys?: Set<string>; onToggleSelect?: (item: TableItem, checked: boolean) => void; onToggleAll?: (items: TableItem[], checked: boolean) => void; busy?: boolean }) {
-  const [statusNow, setStatusNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = window.setInterval(() => setStatusNow(Date.now()), 15000)
-    return () => window.clearInterval(timer)
-  }, [])
   if (!items.length) return <p className="empty">暂无数据，可通过 C 端提交报名、支付、开票或反馈来生成记录。</p>
   const preferred = moduleColumns[moduleKey] || []
   const available = Array.from(new Set(items.flatMap(item => Object.keys(item))))
@@ -2360,7 +2355,7 @@ function DataTable({ moduleKey, items, onOperate, onDetail, actionLabel = '处�
   if (!columns.length) columns.push(...available.filter(key => Boolean(columnLabels[key])).slice(0, 8))
   if (!columns.length) columns.push(...available.slice(0, 8))
   const allSelected = selectable && items.length > 0 && items.every(item => selectedKeys.has(selectionKey(item)))
-  return <div className="table-scroll"><table><thead><tr>{selectable && <th className="select-column"><input type="checkbox" aria-label="全选当前列表" checked={allSelected} onChange={event => onToggleAll?.(items, event.target.checked)} /></th>}{columns.map(key => <th key={key}>{displayTableColumnLabel(moduleKey, key)}</th>)}{showAction && <th className="action-column">操作</th>}</tr></thead><tbody>{items.map((item, index) => { const operationAllowed = canOperate ? canOperate(item) : true; const secondaryAllowed = canSecondary ? canSecondary(item) : true; const resolvedLabel = typeof actionLabel === 'function' ? actionLabel(item) : actionLabel; const resolvedSecondaryLabel = typeof secondaryActionLabel === 'function' ? secondaryActionLabel(item) : secondaryActionLabel; const key = selectionKey(item) || `${moduleKey}-${index}`; return <tr key={item.id || `${moduleKey}-${index}`}>{selectable && <td className="select-cell"><input type="checkbox" aria-label={`选择第 ${index + 1} 条`} checked={selectedKeys.has(key)} onChange={event => onToggleSelect?.(item, event.target.checked)} /></td>}{columns.map(key => <td key={key} title={formatTableValue(moduleKey, key, key === 'status' && moduleKey === 'courses' ? getCourseDisplayStatus(item, statusNow) : item[key])}>{formatTableValue(moduleKey, key, key === 'status' && moduleKey === 'courses' ? getCourseDisplayStatus(item, statusNow) : item[key])}</td>)}{showAction && <td className="action-cell"><div>{onDetail && <button type="button" disabled={busy} onClick={() => onDetail(item)}>查看详情</button>}{operationAllowed && <button type="button" disabled={busy} onClick={() => onOperate(item)}>{busy ? '处理中…' : resolvedLabel}</button>}{resolvedSecondaryLabel && onSecondary && secondaryAllowed && <button type="button" disabled={busy} onClick={() => onSecondary(item)}>{resolvedSecondaryLabel}</button>}{(extraActions?.(item) || []).map(action => <button key={action.key} type="button" className={action.className} disabled={busy || action.disabled} onClick={() => action.onRun()}>{action.label}</button>)}</div></td>}</tr> })}</tbody></table></div>
+  return <div className="table-scroll"><table><thead><tr>{selectable && <th className="select-column"><input type="checkbox" aria-label="全选当前列表" checked={allSelected} onChange={event => onToggleAll?.(items, event.target.checked)} /></th>}{columns.map(key => <th key={key}>{displayTableColumnLabel(moduleKey, key)}</th>)}{showAction && <th className="action-column">操作</th>}</tr></thead><tbody>{items.map((item, index) => { const operationAllowed = canOperate ? canOperate(item) : true; const secondaryAllowed = canSecondary ? canSecondary(item) : true; const resolvedLabel = typeof actionLabel === 'function' ? actionLabel(item) : actionLabel; const resolvedSecondaryLabel = typeof secondaryActionLabel === 'function' ? secondaryActionLabel(item) : secondaryActionLabel; const key = selectionKey(item) || `${moduleKey}-${index}`; return <tr key={item.id || `${moduleKey}-${index}`}>{selectable && <td className="select-cell"><input type="checkbox" aria-label={`选择第 ${index + 1} 条`} checked={selectedKeys.has(key)} onChange={event => onToggleSelect?.(item, event.target.checked)} /></td>}{columns.map(key => <td key={key} title={formatTableValue(moduleKey, key, item[key])}>{formatTableValue(moduleKey, key, item[key])}</td>)}{showAction && <td className="action-cell"><div>{onDetail && <button type="button" disabled={busy} onClick={() => onDetail(item)}>查看详情</button>}{operationAllowed && <button type="button" disabled={busy} onClick={() => onOperate(item)}>{busy ? '处理中…' : resolvedLabel}</button>}{resolvedSecondaryLabel && onSecondary && secondaryAllowed && <button type="button" disabled={busy} onClick={() => onSecondary(item)}>{resolvedSecondaryLabel}</button>}{(extraActions?.(item) || []).map(action => <button key={action.key} type="button" className={action.className} disabled={busy || action.disabled} onClick={() => action.onRun()}>{action.label}</button>)}</div></td>}</tr> })}</tbody></table></div>
 }
 
 function DetailPanel({ detail, onClose, onStudentEdit, onStudentStatus, onStudentGrant, onStudentDefault, onStudentRevoke, onStudentMerge, onStudentReload, busy = false }: { detail: { module: string; item: TableItem; proof?: TableItem | null; relatedOrder?: TableItem; intent?: 'view' | 'process' }; onClose: () => void; onStudentEdit?: (item: TableItem) => void; onStudentStatus?: (item: TableItem) => void; onStudentGrant?: (studentId: string) => void; onStudentDefault?: (studentId: string, userId: string) => void; onStudentRevoke?: (studentId: string, userId: string, username: string) => void; onStudentMerge?: (item: TableItem) => void; onStudentReload?: (studentId: string) => void; busy?: boolean }) {
@@ -2438,6 +2433,8 @@ function displayColumnLabel(key: string) {
 }
 
 function displayTableColumnLabel(moduleKey: string, key: string) {
+  if (moduleKey === 'courses' && key === 'status') return '管理状态'
+  if (moduleKey === 'courses' && key === 'displayStatus') return 'C端展示'
   if (moduleKey === 'templates' && key === 'name') return '模板名称'
   if (moduleKey === 'templates' && key === 'courseNames') return '课程名称'
   if (moduleKey === 'templates' && key === 'courseCount') return '适用课程数'
