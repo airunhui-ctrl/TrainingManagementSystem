@@ -47,6 +47,19 @@
       <view v-else class="bottom-cta ended"><text>{{ registrationState?.displayStatus || '暂不可报名' }}<text v-if="registrationState?.reason && registrationState.reason !== registrationState.displayStatus">：{{ registrationState.reason }}</text></text></view>
     </view>
     <view v-if="!loading && !course && !loadError" class="page-state">课程不存在或已下架</view>
+    <view v-if="holdModalOpen" class="hold-modal-mask" @tap.self="closeHoldDialog">
+      <view class="hold-modal" @tap.stop>
+        <view class="hold-modal-head"><text class="hold-modal-title">选择报名人数</text><text class="hold-modal-close" @tap="closeHoldDialog">×</text></view>
+        <text class="hold-modal-hint">确认后将为你保留对应名额 15 分钟，请在倒计时结束前提交报名信息。</text>
+        <view class="hold-count-row">
+          <button class="hold-count-btn" :disabled="holdCount <= 1" @tap="changeHoldCount(-1)">−</button>
+          <view class="hold-count-value"><text class="hold-count-number">{{ holdCount }}</text><text class="hold-count-unit">人</text></view>
+          <button class="hold-count-btn" :disabled="holdCount >= maxHoldCount" @tap="changeHoldCount(1)">＋</button>
+        </view>
+        <view class="hold-meta"><text>当前剩余 {{ course?.seatsLeft || 0 }} 个名额</text><text v-if="maxParticipantsPerOrder">单次最多 {{ maxParticipantsPerOrder }} 人</text></view>
+        <view class="hold-modal-actions"><button class="hold-cancel-btn" @tap="closeHoldDialog">取消</button><button class="hold-confirm-btn" :loading="creatingHold" @tap="confirmRegistrationHold">确认并填写信息</button></view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -79,6 +92,9 @@ const loadError = ref('')
 const currentCourseId = ref('course-1')
 const introExpanded = ref(false)
 const nowTick = ref(Date.now())
+const holdModalOpen = ref(false)
+const holdCount = ref(1)
+const creatingHold = ref(false)
 let registrationTicker: ReturnType<typeof setInterval> | null = null
 registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 1000)
 const imageByCourseId: Record<string, string> = { 'course-1': talentImage, 'course-2': managementImage, 'course-3': leanImage }
@@ -134,6 +150,14 @@ const registrationRangeText = computed(() => {
   return '未设置（开放至课程结束）'
 })
 const canRegister = computed(() => Boolean(registrationState.value?.isOpen))
+const maxParticipantsPerOrder = computed(() => Number(course.value?.maxParticipantsPerOrder || 0))
+const maxHoldCount = computed(() => {
+  if (!course.value) return 0
+  const seatLimit = Math.max(Number(course.value.seatsLeft || 0), 0)
+  const orderLimit = maxParticipantsPerOrder.value > 0 ? maxParticipantsPerOrder.value : seatLimit
+  const multiLimit = course.value.allowMultiParticipant === false ? 1 : orderLimit
+  return Math.max(0, Math.min(seatLimit, multiLimit))
+})
 const shouldCollapseIntro = computed(() => introBlocks.value.length > 3 || Boolean(course.value?.descriptionRichText && course.value.descriptionRichText.length > 520))
 
 const loadCourse = async (id: string) => {
@@ -208,7 +232,29 @@ const register = () => {
     }).catch(() => { uni.showToast({ title: '确认弹窗打开失败，请重试', icon: 'none' }) })
     return
   }
-  uni.navigateTo({ url: `/pages/register/register?id=${course.value.id}` })
+  holdCount.value = 1
+  holdModalOpen.value = true
+}
+const closeHoldDialog = () => {
+  if (creatingHold.value) return
+  holdModalOpen.value = false
+}
+const changeHoldCount = (delta: number) => {
+  holdCount.value = Math.min(maxHoldCount.value, Math.max(1, holdCount.value + delta))
+}
+const confirmRegistrationHold = async () => {
+  if (!course.value || creatingHold.value) return
+  creatingHold.value = true
+  try {
+    const hold = await api.createRegistrationHold(course.value.id, holdCount.value)
+    holdModalOpen.value = false
+    uni.navigateTo({ url: `/pages/register/register?id=${encodeURIComponent(course.value.id)}&holdId=${encodeURIComponent(hold.id)}` })
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '名额保留失败，请重试', icon: 'none' })
+    void loadCourse(course.value.id)
+  } finally {
+    creatingHold.value = false
+  }
 }
 </script>
 
@@ -263,4 +309,11 @@ const register = () => {
 .price-deadline { display: block; margin-top: 3rpx; color: #b87855; font-size: 17rpx; }
 .cta-price-row { display: flex; align-items: baseline; gap: 10rpx; }
 .cta-original-price { color: #99a6b7; font-size: 19rpx; text-decoration: line-through; }
+.hold-modal-mask { position: fixed; inset: 0; z-index: 80; display: flex; align-items: flex-end; justify-content: center; background: rgba(12, 31, 65, .48); }
+.hold-modal { box-sizing: border-box; width: 100%; padding: 32rpx 30rpx calc(30rpx + env(safe-area-inset-bottom)); border-radius: 28rpx 28rpx 0 0; background: #fff; }
+.hold-modal-head { display: flex; align-items: center; justify-content: space-between; }.hold-modal-title { color: #172e51; font-size: 34rpx; font-weight: 900; }.hold-modal-close { color: #8391a3; font-size: 44rpx; line-height: 1; }
+.hold-modal-hint { display: block; margin-top: 16rpx; color: #718096; font-size: 22rpx; line-height: 1.6; }
+.hold-count-row { display: flex; align-items: center; justify-content: center; gap: 34rpx; margin: 34rpx 0 22rpx; }.hold-count-btn { width: 76rpx; height: 76rpx; margin: 0; padding: 0; border: 1rpx solid #d8e4f2; border-radius: 50%; color: #2f80ed; background: #f4f8ff; font-size: 40rpx; line-height: 70rpx; }.hold-count-btn[disabled] { color: #b8c2cf; background: #f5f7fa; }.hold-count-btn::after { border: 0; }.hold-count-value { display: flex; align-items: baseline; min-width: 150rpx; justify-content: center; color: #172e51; }.hold-count-number { font-size: 60rpx; line-height: 1; font-weight: 900; }.hold-count-unit { margin-left: 8rpx; color: #718096; font-size: 24rpx; }
+.hold-meta { display: flex; justify-content: center; gap: 26rpx; color: #8996a8; font-size: 21rpx; }.hold-modal-actions { display: flex; gap: 18rpx; margin-top: 32rpx; }.hold-cancel-btn,.hold-confirm-btn { flex: 1; height: 78rpx; margin: 0; border: 0; border-radius: 999rpx; font-size: 25rpx; line-height: 78rpx; font-weight: 800; }.hold-cancel-btn { color: #52647a; background: #eef3f8; }.hold-confirm-btn { color: #163a84; background: #ffd21f; }.hold-cancel-btn::after,.hold-confirm-btn::after { border: 0; }
+@media (min-width: 700px) { .hold-modal-mask { align-items: center; padding: 30rpx; }.hold-modal { max-width: 660rpx; border-radius: 28rpx; } }
 </style>

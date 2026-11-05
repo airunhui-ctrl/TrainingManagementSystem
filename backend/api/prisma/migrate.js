@@ -11,7 +11,7 @@ const value = raw.replace(/^file:/, '')
 const dbPath = isAbsolute(value) ? value : resolve(process.cwd(), value)
 mkdirSync(dirname(dbPath), { recursive: true })
 const db = new DatabaseSync(dbPath)
-const migrationFiles = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql', '0004_password_reset/migration.sql', '0005_payment_transactions/migration.sql', '0006_message_reads/migration.sql', '0007_phone_registration/migration.sql', '0008_auth_session_version/migration.sql', '0009_p0_internal_loop/migration.sql', '0010_username_case_phone/migration.sql', '0011_phone_unique/migration.sql', '0012_username_case_sensitive/migration.sql']
+const migrationFiles = ['0001_init/migration.sql', '0002_student_domain/migration.sql', '0003_student_backfill_ops/migration.sql', '0004_password_reset/migration.sql', '0005_payment_transactions/migration.sql', '0006_message_reads/migration.sql', '0007_phone_registration/migration.sql', '0008_auth_session_version/migration.sql', '0009_p0_internal_loop/migration.sql', '0010_username_case_phone/migration.sql', '0011_phone_unique/migration.sql', '0012_username_case_sensitive/migration.sql', '0013_course_held_seats/migration.sql', '0014_registration_holds/migration.sql']
 const readMigrations = (files) => files.map((file) => readFileSync(resolve(__dirname, 'migrations', file), 'utf8')).join('\n')
 const migration = readMigrations(migrationFiles)
 
@@ -50,6 +50,8 @@ if (normalized) {
   if (exists('Course') && !has('Course', 'maxParticipantsPerOrder')) db.exec(`ALTER TABLE "Course" ADD COLUMN "maxParticipantsPerOrder" INTEGER`)
   if (exists('Course') && !has('Course', 'registrationStartAt')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationStartAt" TEXT`)
   if (exists('Course') && !has('Course', 'registrationEndAt')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationEndAt" TEXT`)
+  if (exists('Course') && !has('Course', 'heldSeats')) db.exec(`ALTER TABLE "Course" ADD COLUMN "heldSeats" INTEGER NOT NULL DEFAULT 0`)
+  if (!exists('RegistrationHold')) db.exec(readFileSync(resolve(__dirname, 'migrations', '0014_registration_holds/migration.sql'), 'utf8'))
   if (exists('DiscountRule') && !has('DiscountRule', 'scopeCourseIds')) db.exec(`ALTER TABLE "DiscountRule" ADD COLUMN "scopeCourseIds" TEXT NOT NULL DEFAULT '[]'`)
   if (exists('Course') && !has('Course', 'registrationTemplateId')) db.exec(`ALTER TABLE "Course" ADD COLUMN "registrationTemplateId" TEXT`)
   if (exists('RegistrationTemplate') && !has('RegistrationTemplate', 'name')) db.exec(`ALTER TABLE "RegistrationTemplate" ADD COLUMN "name" TEXT NOT NULL DEFAULT '报名模板'`)
@@ -73,10 +75,10 @@ if (normalized) {
     : ''
   // The auth session column is added conditionally above for existing databases;
   // omit its non-idempotent ALTER statement from the repeatable migration batch.
-  const repeatableMigration = readMigrations(migrationFiles.filter((file) => file !== '0008_auth_session_version/migration.sql' && file !== '0009_p0_internal_loop/migration.sql' && file !== '0010_username_case_phone/migration.sql' && file !== '0011_phone_unique/migration.sql'))
+  const repeatableMigration = readMigrations(migrationFiles.filter((file) => file !== '0008_auth_session_version/migration.sql' && file !== '0009_p0_internal_loop/migration.sql' && file !== '0010_username_case_phone/migration.sql' && file !== '0011_phone_unique/migration.sql' && file !== '0013_course_held_seats/migration.sql' && file !== '0014_registration_holds/migration.sql'))
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${rebuildTemplateTable} ${repeatableMigration}`)
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-    db.exec('PRAGMA user_version=13; COMMIT; PRAGMA foreign_keys=ON;')
+    db.exec('PRAGMA user_version=15; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite schema already current: ${dbPath}`)
   db.close()
   process.exit(0)
@@ -161,7 +163,7 @@ try {
 
   for (const name of [...tables].reverse()) { const backup = `__backup_${name}`; if (exists(backup)) db.exec(`DROP TABLE "${backup}"`) }
   for (const name of legacyTables) if (exists(name)) db.exec(`DROP TABLE "${name}"`)
-  db.exec('PRAGMA user_version=13; COMMIT; PRAGMA foreign_keys=ON;')
+  db.exec('PRAGMA user_version=15; COMMIT; PRAGMA foreign_keys=ON;')
   console.log(`SQLite legacy data migrated: ${dbPath}`)
 } catch (error) {
   db.exec('ROLLBACK')

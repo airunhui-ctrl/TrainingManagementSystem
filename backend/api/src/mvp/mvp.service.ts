@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common'
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, extname, join, resolve } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -59,6 +59,7 @@ const stripRichText = (value: unknown) => String(value || '')
 const COURSE_PUBLISH_STATUSES = new Set(['待发布', '已发布', '已下架'])
 const LEGACY_PUBLISHED_COURSE_STATUSES = new Set(['报名中', '名额紧张', '已结束'])
 const PUBLIC_HIDDEN_COURSE_STATUSES = new Set(['待发布', '已下架'])
+const REGISTRATION_HOLD_TTL_MS = 15 * 60 * 1000
 const COURSE_TIMEZONE_SUFFIX = '+08:00'
 // 管理端提交的是北京时间墙钟时间（datetime-local）。SQLite 将它保存为不带时区的
 // 字符串；如果不显式补齐时区，部署在 UTC 的服务端会把它当作 UTC 时间，导致
@@ -110,8 +111,22 @@ const SQLITE_INT_MIN = -2_147_483_648
 const SQLITE_INT_MAX = 2_147_483_647
 
 @Injectable()
-export class MvpService {
+export class MvpService implements OnModuleInit, OnModuleDestroy {
+  private holdCleanupTimer: ReturnType<typeof setInterval> | null = null
+
   constructor(private readonly db: PrismaService) {}
+
+  onModuleInit() {
+    this.holdCleanupTimer = setInterval(() => {
+      void this.sweepExpiredRegistrationHolds().catch(() => undefined)
+    }, 60_000)
+    this.holdCleanupTimer.unref?.()
+  }
+
+  onModuleDestroy() {
+    if (this.holdCleanupTimer) clearInterval(this.holdCleanupTimer)
+    this.holdCleanupTimer = null
+  }
 
   async health() {
     await this.db.$queryRaw`SELECT 1`
@@ -129,8 +144,9 @@ export class MvpService {
     const sessionEndAt = parseCourseSessionEnd(course.date)
     const sessionEnded = sessionEndAt !== null && sessionEndAt <= Date.now()
     const ended = sessionEnded || (endAt !== null && endAt <= Date.now())
-    const seatsAvailable = Number(course.enrolled || 0) < Number(course.capacity || 0)
-    const seatsLeft = Math.max(Number(course.capacity || 0) - Number(course.enrolled || 0), 0)
+    const heldSeats = Number(course.heldSeats || 0)
+    const seatsAvailable = Number(course.enrolled || 0) + heldSeats < Number(course.capacity || 0)
+    const seatsLeft = Math.max(Number(course.capacity || 0) - Number(course.enrolled || 0) - heldSeats, 0)
     const tightThreshold = Math.max(1, Math.ceil(Number(course.capacity || 0) * 0.2))
     const displayStatus = publishStatus !== '已发布'
       ? publishStatus
@@ -169,6 +185,73 @@ export class MvpService {
 
   private adminCourseView(course: any) {
     return this.courseView(course)
+  }
+
+  private async sweepExpiredRegistrationHolds(db: any = this.db, courseId?: string) {
+    const expired = await db.registrationHold.findMany({
+      where: {
+        status: 'active',
+        expiresAt: { lte: new Date() },
+        ...(courseId ? { courseId } : {}),
+      },
+      select: { id: true, courseId: true, participantCount: true },
+    })
+    for (const hold of expired) {
+      const claimed = await db.registrationHold.updateMany({
+        where: { id: hold.id, status: 'active' },
+        data: { status: 'expired', activeKey: null },
+      })
+      if (!claimed.count) continue
+      await db.course.updateMany({
+        where: { id: hold.courseId, heldSeats: { gte: hold.participantCount } },
+        data: { heldSeats: { decrement: hold.participantCount } },
+      })
+    }
+  }
+
+  private async reserveCourseSeats(db: any, courseId: string, participantCount: number) {
+    const updated = await db.$executeRaw`
+      UPDATE "Course"
+      SET "heldSeats" = "heldSeats" + ${participantCount}
+      WHERE "id" = ${courseId}
+        AND "enrolled" + "heldSeats" + ${participantCount} <= "capacity"
+    `
+    if (Number(updated) !== 1) throw new BadRequestException('课程剩余名额不足')
+  }
+
+  private async releaseCourseSeats(db: any, courseId: string, participantCount: number) {
+    await db.$executeRaw`
+      UPDATE "Course"
+      SET "heldSeats" = "heldSeats" - ${participantCount}
+      WHERE "id" = ${courseId}
+        AND "heldSeats" >= ${participantCount}
+    `
+  }
+
+  private async consumeCourseSeats(db: any, courseId: string, reservedCount: number, consumedCount: number) {
+    const updated = await db.$executeRaw`
+      UPDATE "Course"
+      SET "heldSeats" = "heldSeats" - ${reservedCount},
+          "enrolled" = "enrolled" + ${consumedCount}
+      WHERE "id" = ${courseId}
+        AND "heldSeats" >= ${reservedCount}
+    `
+    if (Number(updated) !== 1) throw new BadRequestException('名额保留已失效，请重新报名')
+  }
+
+  private holdView(hold: any, course: any) {
+    const remainingSeconds = Math.max(0, Math.ceil((new Date(hold.expiresAt).getTime() - Date.now()) / 1000))
+    return {
+      id: hold.id,
+      courseId: hold.courseId,
+      participantCount: hold.participantCount,
+      consumedCount: hold.consumedCount ?? null,
+      status: hold.status,
+      expiresAt: new Date(hold.expiresAt).toISOString(),
+      valid: hold.status === 'active' && remainingSeconds > 0,
+      remainingSeconds,
+      course: this.courseView(course),
+    }
   }
 
   private assertCourseRegistrationOpen(course: any) {
@@ -234,6 +317,7 @@ export class MvpService {
   }
 
   async listCoursesPage(keyword?: string, category?: string, page = 1, pageSize = 20, status?: string) {
+    await this.sweepExpiredRegistrationHolds()
     const args = pageArgs(page, pageSize)
     const normalizedCategory = category ? (normalizeCourseCategory(category) || category) : category
     // C 端只允许看到已经发布且未下架的课程；管理端使用
@@ -257,6 +341,7 @@ export class MvpService {
   }
 
   async listAdminCoursesPage(keyword?: string, category?: string, page = 1, pageSize = 20, status?: string) {
+    await this.sweepExpiredRegistrationHolds()
     const args = pageArgs(page, pageSize)
     const normalizedCategory = category ? (normalizeCourseCategory(category) || category) : category
     const normalizedStatus = status ? normalizeCoursePublishStatus(status) : ''
@@ -296,6 +381,7 @@ export class MvpService {
   }
 
   async getCourse(courseId: string) {
+    await this.sweepExpiredRegistrationHolds(this.db, courseId)
     const course = await this.db.course.findUnique({ where: { id: courseId }, include: { registrationTemplate: { select: { id: true, name: true } } } })
     if (!course || PUBLIC_HIDDEN_COURSE_STATUSES.has(String(course.status))) throw new NotFoundException('课程不存在')
     return this.courseView(course)
@@ -311,22 +397,121 @@ export class MvpService {
     return { courseId, templateId: item?.id, templateName: item?.name, version: item?.version || 1, fields: json<RegistrationField[]>(item?.payload, []) }
   }
 
-  async quote(courseId: string, participantCount: number) {
-    if (!Number.isInteger(participantCount) || participantCount < 1) throw new BadRequestException('报名人数必须大于 0')
-    const course = await this.db.course.findUnique({ where: { id: courseId } })
-    if (!course) throw new NotFoundException('课程不存在')
-    this.assertCourseRegistrationOpen(course)
-    if (course.maxParticipantsPerOrder && participantCount > course.maxParticipantsPerOrder) throw new BadRequestException(`该课程单次最多报名 ${course.maxParticipantsPerOrder} 人`)
-    const rule = await this.applicableDiscountRule(this.db, courseId, participantCount)
+  private async quoteFromCourse(db: any, course: any, participantCount: number) {
+    const rule = await this.applicableDiscountRule(db, course.id, participantCount)
     const specialActive = course.specialPrice != null && (parseDateValue(course.specialPriceEndsAt) ?? Number.POSITIVE_INFINITY) > Date.now()
     const unitPrice = specialActive && course.specialPrice != null ? course.specialPrice : course.price
     const originalAmount = unitPrice * participantCount
     const discountRate = rule ? Number(Math.max(0, Math.min(1, 1 - rule.discountRate)).toFixed(2)) : 0
     const discount = Math.round(originalAmount * discountRate)
-    return { courseId, participantCount, unitPrice, originalAmount, discount, amount: originalAmount - discount, discountRate }
+    return { courseId: course.id, participantCount, unitPrice, originalAmount, discount, amount: originalAmount - discount, discountRate }
   }
 
-  async createOrder(userId: string, courseId: string, participants: Array<Record<string, string> & { studentId?: string }>, paymentMethod: 'online' | 'offline' = 'online') {
+  async quote(courseId: string, participantCount: number) {
+    if (!Number.isInteger(participantCount) || participantCount < 1) throw new BadRequestException('报名人数必须大于 0')
+    await this.sweepExpiredRegistrationHolds(this.db, courseId)
+    const course = await this.db.course.findUnique({ where: { id: courseId } })
+    if (!course) throw new NotFoundException('课程不存在')
+    this.assertCourseRegistrationOpen(course)
+    if (course.maxParticipantsPerOrder && participantCount > course.maxParticipantsPerOrder) throw new BadRequestException(`该课程单次最多报名 ${course.maxParticipantsPerOrder} 人`)
+    return this.quoteFromCourse(this.db, course, participantCount)
+  }
+
+  async quoteRegistrationHold(userId: string, holdId: string, participantCount: number) {
+    if (!Number.isInteger(participantCount) || participantCount < 1) throw new BadRequestException('报名人数必须大于 0')
+    await this.sweepExpiredRegistrationHolds()
+    const hold = await this.db.registrationHold.findUnique({ where: { id: holdId }, include: { course: true } })
+    if (!hold || hold.userId !== userId) throw new NotFoundException('报名占位不存在')
+    if (hold.status !== 'active' || hold.expiresAt.getTime() <= Date.now()) throw new BadRequestException('名额保留已失效，请重新报名')
+    if (participantCount > hold.participantCount) throw new BadRequestException('报价人数不能超过已保留名额')
+    if (normalizeCoursePublishStatus(hold.course.status) !== '已发布') throw new BadRequestException('课程当前未开放报名')
+    return this.quoteFromCourse(this.db, hold.course, participantCount)
+  }
+
+  async createRegistrationHold(userId: string, courseId: string, participantCount: number) {
+    if (!Number.isInteger(participantCount) || participantCount < 1) throw new BadRequestException('报名人数必须大于 0')
+    try {
+      return await this.db.$transaction(async (tx) => {
+        await this.sweepExpiredRegistrationHolds(tx, courseId)
+        const course = await tx.course.findUnique({ where: { id: courseId } })
+        if (!course) throw new NotFoundException('课程不存在')
+        this.assertCourseRegistrationOpen(course)
+        if (!course.allowMultiParticipant && participantCount > 1) throw new BadRequestException('该课程不支持多人报名')
+        if (course.maxParticipantsPerOrder && participantCount > course.maxParticipantsPerOrder) throw new BadRequestException(`该课程单次最多报名 ${course.maxParticipantsPerOrder} 人`)
+        const existing = await tx.registrationHold.findFirst({
+          where: { userId, courseId, status: 'active', expiresAt: { gt: new Date() } },
+          include: { course: true },
+        })
+        if (existing) {
+          const difference = participantCount - existing.participantCount
+          if (difference > 0) await this.reserveCourseSeats(tx, courseId, difference)
+          if (difference < 0) await this.releaseCourseSeats(tx, courseId, -difference)
+          const updated = await tx.registrationHold.update({ where: { id: existing.id }, data: { participantCount } })
+          const updatedCourse = await tx.course.findUniqueOrThrow({ where: { id: courseId } })
+          return this.holdView(updated, updatedCourse)
+        }
+        await this.reserveCourseSeats(tx, courseId, participantCount)
+        const hold = await tx.registrationHold.create({
+          data: {
+            id: id('hold'),
+            userId,
+            courseId,
+            participantCount,
+            status: 'active',
+            activeKey: `${userId}:${courseId}`,
+            expiresAt: new Date(Date.now() + REGISTRATION_HOLD_TTL_MS),
+          },
+        })
+        const updatedCourse = await tx.course.findUniqueOrThrow({ where: { id: courseId } })
+        return this.holdView(hold, updatedCourse)
+      })
+    } catch (error: any) {
+      if (error?.code !== 'P2002') throw error
+      const existing = await this.db.registrationHold.findFirst({ where: { userId, courseId, status: 'active', expiresAt: { gt: new Date() } }, include: { course: true } })
+      if (!existing) throw error
+      return this.holdView(existing, existing.course)
+    }
+  }
+
+  async getRegistrationHold(userId: string, holdId: string) {
+    await this.sweepExpiredRegistrationHolds()
+    const hold = await this.db.registrationHold.findUnique({ where: { id: holdId }, include: { course: true } })
+    if (!hold || hold.userId !== userId) throw new NotFoundException('报名占位不存在')
+    return this.holdView(hold, hold.course)
+  }
+
+  async resizeRegistrationHold(userId: string, holdId: string, participantCount: number) {
+    if (!Number.isInteger(participantCount) || participantCount < 1) throw new BadRequestException('报名人数必须大于 0')
+    return this.db.$transaction(async (tx) => {
+      await this.sweepExpiredRegistrationHolds(tx)
+      const hold = await tx.registrationHold.findUnique({ where: { id: holdId }, include: { course: true } })
+      if (!hold || hold.userId !== userId) throw new NotFoundException('报名占位不存在')
+      if (hold.status !== 'active' || hold.expiresAt.getTime() <= Date.now()) throw new BadRequestException('名额保留已失效，请重新报名')
+      if (!hold.course.allowMultiParticipant && participantCount > 1) throw new BadRequestException('该课程不支持多人报名')
+      if (hold.course.maxParticipantsPerOrder && participantCount > hold.course.maxParticipantsPerOrder) throw new BadRequestException(`该课程单次最多报名 ${hold.course.maxParticipantsPerOrder} 人`)
+      const difference = participantCount - hold.participantCount
+      if (difference > 0) await this.reserveCourseSeats(tx, hold.courseId, difference)
+      if (difference < 0) await this.releaseCourseSeats(tx, hold.courseId, -difference)
+      const updated = await tx.registrationHold.update({ where: { id: hold.id }, data: { participantCount } })
+      const updatedCourse = await tx.course.findUniqueOrThrow({ where: { id: hold.courseId } })
+      return this.holdView(updated, updatedCourse)
+    })
+  }
+
+  async cancelRegistrationHold(userId: string, holdId: string) {
+    return this.db.$transaction(async (tx) => {
+      await this.sweepExpiredRegistrationHolds(tx)
+      const hold = await tx.registrationHold.findUnique({ where: { id: holdId }, include: { course: true } })
+      if (!hold || hold.userId !== userId) throw new NotFoundException('报名占位不存在')
+      if (hold.status === 'active') {
+        await this.releaseCourseSeats(tx, hold.courseId, hold.participantCount)
+        await tx.registrationHold.update({ where: { id: hold.id }, data: { status: 'cancelled', activeKey: null } })
+      }
+      return { id: hold.id, status: 'cancelled' as const }
+    })
+  }
+
+  async createOrder(userId: string, courseId: string, participants: Array<Record<string, string> & { studentId?: string }>, paymentMethod: 'online' | 'offline' = 'online', holdId?: string) {
     if (!participants.length) throw new BadRequestException('至少需要一名报名人')
     const template = await this.getTemplate(courseId)
     for (const [index, participant] of participants.entries()) {
@@ -342,12 +527,37 @@ export class MvpService {
       if (phone && !/^1\d{10}$/.test(phone)) throw new BadRequestException(`第 ${index + 1} 位报名人的手机号格式不正确`)
     }
     return this.db.$transaction(async (tx) => {
+      await this.sweepExpiredRegistrationHolds(tx, courseId)
       const course = await tx.course.findUnique({ where: { id: courseId } })
       if (!course) throw new NotFoundException('课程不存在')
-      this.assertCourseRegistrationOpen(course)
+      let reservedCount = participants.length
+      let registrationHold: any = null
+      if (holdId) {
+        registrationHold = await tx.registrationHold.findUnique({ where: { id: holdId } })
+        if (!registrationHold || registrationHold.userId !== userId) throw new NotFoundException('报名占位不存在')
+        if (registrationHold.status === 'consumed' && registrationHold.orderId) {
+          const existingOrder = await tx.order.findUnique({
+            where: { id: registrationHold.orderId },
+            include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } },
+          })
+          if (existingOrder) return this.orderView(existingOrder)
+        }
+        if (registrationHold.courseId !== courseId) throw new BadRequestException('报名占位与课程不匹配')
+        if (registrationHold.status !== 'active' || registrationHold.expiresAt.getTime() <= Date.now()) throw new BadRequestException('名额保留已失效，请重新报名')
+        if (participants.length > registrationHold.participantCount) throw new BadRequestException('提交人数不能超过已保留名额')
+        if (normalizeCoursePublishStatus(course.status) !== '已发布') throw new BadRequestException('课程当前未开放报名')
+        const claimed = await tx.registrationHold.updateMany({
+          where: { id: registrationHold.id, status: 'active', expiresAt: { gt: new Date() } },
+          data: { status: 'processing', activeKey: null },
+        })
+        if (!claimed.count) throw new BadRequestException('名额保留已失效，请重新报名')
+        reservedCount = registrationHold.participantCount
+      } else {
+        this.assertCourseRegistrationOpen(course)
+        await this.reserveCourseSeats(tx, courseId, participants.length)
+      }
       if (!course.allowMultiParticipant && participants.length > 1) throw new BadRequestException('该课程不支持多人报名')
       if (course.maxParticipantsPerOrder && participants.length > course.maxParticipantsPerOrder) throw new BadRequestException(`该课程单次最多报名 ${course.maxParticipantsPerOrder} 人`)
-      if (course.enrolled + participants.length > course.capacity) throw new BadRequestException('课程剩余名额不足')
       const activeOrders = await tx.order.findMany({ where: { courseId, status: { not: '已取消' } }, select: { participants: true } })
       const registeredPhones = new Set(activeOrders.flatMap((order) => json<Array<Record<string, string>>>(order.participants, []).map((item) => normalizedPhone(item.phone)).filter(Boolean)))
       const duplicated = participants.find((item) => {
@@ -355,13 +565,10 @@ export class MvpService {
         return Boolean(phone && registeredPhones.has(phone))
       })
       if (duplicated) throw new BadRequestException(`手机号 ${normalizedPhone(duplicated.phone)} 已报名本课程`)
-      const rule = await this.applicableDiscountRule(tx, courseId, participants.length)
-      const specialActive = course.specialPrice != null && (parseDateValue(course.specialPriceEndsAt) ?? Number.POSITIVE_INFINITY) > Date.now()
-      const unitPrice = specialActive && course.specialPrice != null ? course.specialPrice : course.price
-      const originalAmount = unitPrice * participants.length
-      const discountRate = rule ? Math.max(0, Math.min(1, 1 - rule.discountRate)) : 0
-      const discount = Math.round(originalAmount * discountRate)
-      const totalAmount = originalAmount - discount
+      const pricing = await this.quoteFromCourse(tx, course, participants.length)
+      const originalAmount = pricing.originalAmount
+      const discount = pricing.discount
+      const totalAmount = pricing.amount
       // 0 元订单（免费课程或优惠后应付为 0）走免费通道：跳过支付环节，订单直接进入已支付状态。
       const isFreeOrder = totalAmount <= 0
       const snapshots = participants.map((participant) => { const snapshot = { ...participant }; delete snapshot.studentId; return snapshot })
@@ -372,6 +579,14 @@ export class MvpService {
       }, include: { course: true, paymentProofs: { orderBy: { createdAt: 'desc' }, take: 1 } } })
       if (isFreeOrder) {
         await tx.paymentTransaction.create({ data: { id: id('PAY'), orderId: order.id, channel: 'wechat', provider: 'free', outTradeNo: `${order.id}-free`, amount: 0, status: 'paid', paidAt: new Date() } })
+      }
+      await this.consumeCourseSeats(tx, courseId, reservedCount, participants.length)
+      if (registrationHold) {
+        const consumed = await tx.registrationHold.updateMany({
+          where: { id: registrationHold.id, status: 'processing' },
+          data: { status: 'consumed', activeKey: null, orderId: order.id, consumedCount: participants.length },
+        })
+        if (!consumed.count) throw new ConflictException('报名占位正在处理，请勿重复提交')
       }
       const templateVersion = await tx.registrationTemplateVersion.upsert({
         where: { templateId_version: { templateId: template.templateId, version: template.version || 1 } },
@@ -409,7 +624,6 @@ export class MvpService {
           id: stableId('enr', `${order.id}:${index}`), studentId: student.id, courseId, orderId: order.id, accountUserId: userId, sourceParticipantIndex: index, templateVersionId: templateVersion.id, templateVersion: templateVersion.version, formPayload: JSON.stringify(snapshot), status: 'registered', registeredAt: order.createdAt,
         } })
       }
-      await tx.course.update({ where: { id: courseId }, data: { enrolled: { increment: participants.length } } })
       return this.orderView(order)
     })
   }
@@ -778,7 +992,8 @@ export class MvpService {
     if (requestedEnrolled > capacity) throw new BadRequestException('已报名人数不能超过名额')
     if (!existing && requestedEnrolled !== 0) throw new BadRequestException('新课程的已报名人数必须为 0')
     const enrolled = existing ? Number(existing.enrolled || 0) : 0
-    if (enrolled > capacity) throw new BadRequestException('课程名额不能小于当前已报名人数')
+    const heldSeats = existing ? Number(existing.heldSeats || 0) : 0
+    if (enrolled + heldSeats > capacity) throw new BadRequestException('课程名额不能小于当前已报名人数和已保留名额之和')
     const richDescription = sanitizeRichText(source.descriptionRichText || source.description)
     const registrationStartAt = source.registrationStartAt ? String(source.registrationStartAt).trim() : null
     const registrationEndAt = source.registrationEndAt ? String(source.registrationEndAt).trim() : null

@@ -37,6 +37,7 @@ model User {
   pointLedgers         PointLedger[]
   messageReads         MessageRead[]
   accountStudents      AccountStudent[]
+  registrationHolds    RegistrationHold[]
   enrollmentsAsAccount Enrollment[]     @relation("EnrollmentAccountUser")
   handledMigrationIssues StudentMigrationIssue[] @relation("MigrationIssueHandler")
   passwordResetChallenges PasswordResetChallenge[]
@@ -103,6 +104,7 @@ model Course {
   registrationDeadline   String?
   capacity               Int
   enrolled               Int                   @default(0)
+  heldSeats              Int                   @default(0)
   status                 String
   description            String
   registrationTemplateId String?
@@ -112,8 +114,28 @@ model Course {
   orders                 Order[]
   previews               Preview[]
   enrollments            Enrollment[]
+  registrationHolds      RegistrationHold[]
 
   @@index([registrationTemplateId])
+}
+
+model RegistrationHold {
+  id               String   @id
+  userId           String
+  courseId         String
+  participantCount Int
+  consumedCount    Int?
+  status           String   @default("active")
+  activeKey        String?  @unique
+  orderId          String?  @unique
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course           Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([userId, courseId, status])
+  @@index([status, expiresAt])
 }
 
 model RegistrationTemplate {

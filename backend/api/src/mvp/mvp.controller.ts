@@ -12,8 +12,10 @@ import { getPasswordResetReadiness } from '../auth/password-reset-delivery'
 import { getPhoneRegistrationReadiness } from '../auth/phone-registration-delivery'
 
 class QuoteDto { @IsString() courseId!: string; @IsInt() @Min(1) participantCount!: number }
+class CreateHoldDto { @IsString() courseId!: string; @IsInt() @Min(1) participantCount!: number }
+class ResizeHoldDto { @IsInt() @Min(1) participantCount!: number }
 class ParticipantDto { @IsObject() data!: Record<string, string>; @IsOptional() @IsString() studentId?: string }
-class CreateOrderDto { @IsString() courseId!: string; @IsArray() @ValidateNested({ each: true }) @Type(() => ParticipantDto) participants!: ParticipantDto[]; @IsOptional() @IsIn(['online', 'offline']) paymentMethod?: 'online' | 'offline' }
+class CreateOrderDto { @IsString() courseId!: string; @IsArray() @ValidateNested({ each: true }) @Type(() => ParticipantDto) participants!: ParticipantDto[]; @IsOptional() @IsIn(['online', 'offline']) paymentMethod?: 'online' | 'offline'; @IsOptional() @IsString() holdId?: string }
 class PayDto { @IsIn(['online', 'offline']) method!: 'online' | 'offline'; @IsOptional() @IsString() proof?: string; @IsOptional() @IsIn(['wechat', 'alipay']) channel?: 'wechat' | 'alipay' }
 class PaymentIntentDto { @IsIn(['wechat', 'alipay']) channel!: 'wechat' | 'alipay' }
 class InvoiceDto { @IsString() title!: string; @IsString() taxNo!: string; @IsEmail({}, { message: '邮箱格式不正确' }) email!: string; @IsOptional() @IsString() remark?: string; @IsArray() @IsString({ each: true }) orderIds!: string[] }
@@ -55,7 +57,17 @@ export class MvpController {
   @Get('media/feedback-attachments/:name') async feedbackAttachmentFile(@Param('name') name: string) { const result = await this.mvp.readFeedbackAttachmentFile(name); return new StreamableFile(result.buffer, { type: result.mimeType, disposition: `inline; filename="${encodeURIComponent(result.originalName)}"` }) }
 
   @UseGuards(JwtGuard)
-  @Post('orders') createOrder(@Req() request: any, @Body() dto: CreateOrderDto) { return this.mvp.createOrder(request.user.sub, dto.courseId, dto.participants.map((item) => ({ ...item.data, ...(item.studentId ? { studentId: item.studentId } : {}) })), dto.paymentMethod) }
+  @Post('registration-holds') createRegistrationHold(@Req() request: any, @Body() dto: CreateHoldDto) { return this.mvp.createRegistrationHold(request.user.sub, dto.courseId, dto.participantCount) }
+  @UseGuards(JwtGuard)
+  @Get('registration-holds/:id') registrationHold(@Req() request: any, @Param('id') id: string) { return this.mvp.getRegistrationHold(request.user.sub, id) }
+  @UseGuards(JwtGuard)
+  @Patch('registration-holds/:id') resizeRegistrationHold(@Req() request: any, @Param('id') id: string, @Body() dto: ResizeHoldDto) { return this.mvp.resizeRegistrationHold(request.user.sub, id, dto.participantCount) }
+  @UseGuards(JwtGuard)
+  @Delete('registration-holds/:id') cancelRegistrationHold(@Req() request: any, @Param('id') id: string) { return this.mvp.cancelRegistrationHold(request.user.sub, id) }
+  @UseGuards(JwtGuard)
+  @Post('registration-holds/:id/quote') quoteRegistrationHold(@Req() request: any, @Param('id') id: string, @Body() dto: ResizeHoldDto) { return this.mvp.quoteRegistrationHold(request.user.sub, id, dto.participantCount) }
+  @UseGuards(JwtGuard)
+  @Post('orders') createOrder(@Req() request: any, @Body() dto: CreateOrderDto) { return this.mvp.createOrder(request.user.sub, dto.courseId, dto.participants.map((item) => ({ ...item.data, ...(item.studentId ? { studentId: item.studentId } : {}) })), dto.paymentMethod, dto.holdId) }
   @UseGuards(JwtGuard)
   @Get('orders') orders(@Req() request: any, @Query('keyword') keyword?: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) { return this.mvp.listOrdersPage(request.user.role === 'user' ? request.user.sub : undefined, keyword, Number(page || 1), Number(pageSize || 20)) }
   @UseGuards(JwtGuard)

@@ -119,6 +119,28 @@ describe('Prisma 业务仓储', () => {
     await mvp.saveCourse({ id: 'course-6', status: '已发布' }, 'admin')
   })
 
+  test('报名占位可预占多人名额，提交较少人数时释放差额，过期自动释放', async () => {
+    const before = await db.course.findUniqueOrThrow({ where: { id: 'course-6' }, select: { enrolled: true, heldSeats: true } })
+    const hold = await mvp.createRegistrationHold('u-demo', 'course-6', 3)
+    expect(hold).toMatchObject({ participantCount: 3, status: 'active', valid: true })
+    expect((await db.course.findUniqueOrThrow({ where: { id: 'course-6' }, select: { heldSeats: true } })).heldSeats).toBe(before.heldSeats + 3)
+
+    await expect(mvp.quoteRegistrationHold('u-demo', hold.id, 2)).resolves.toMatchObject({ participantCount: 2 })
+    const order = await mvp.createOrder('u-demo', 'course-6', [
+      { name: '占位学员甲', phone: '13900000101', company: '占位测试企业' },
+      { name: '占位学员乙', phone: '13900000102', company: '占位测试企业' },
+    ], 'offline', hold.id)
+    expect(order.participantCount).toBe(2)
+    expect((await db.course.findUniqueOrThrow({ where: { id: 'course-6' }, select: { enrolled: true, heldSeats: true } }))).toMatchObject({ enrolled: before.enrolled + 2, heldSeats: before.heldSeats })
+    expect(await db.registrationHold.findUniqueOrThrow({ where: { id: hold.id } })).toMatchObject({ status: 'consumed', consumedCount: 2 })
+    await mvp.closeUnpaidOrder(order.id, 'operator')
+
+    const expiring = await mvp.createRegistrationHold('u-demo', 'course-6', 1)
+    await db.registrationHold.update({ where: { id: expiring.id }, data: { expiresAt: new Date(Date.now() - 1000) } })
+    await expect(mvp.getRegistrationHold('u-demo', expiring.id)).resolves.toMatchObject({ status: 'expired', valid: false })
+    expect((await db.course.findUniqueOrThrow({ where: { id: 'course-6' }, select: { heldSeats: true } })).heldSeats).toBe(before.heldSeats)
+  })
+
   test('课程结束后保留发布状态，C 端显示已结束，报名窗口不能越过课程结束时间', async () => {
     await mvp.saveCourse({
       id: 'course-session-edge',

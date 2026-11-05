@@ -2,18 +2,22 @@
   <view :class="['page', { 'payment-modal-open': paymentModalOpen }]">
     <view class="register-topbar" :style="{ height: nav.totalHeight + 'px', paddingTop: nav.statusBarHeight + 'px', paddingRight: (nav.capsuleRight + nav.capsuleWidth + 8) + 'px' }"><text class="topbar-back" @tap="backToRegister">‹</text><text class="topbar-title">填写报名信息</text><text class="topbar-side"></text></view>
     <view class="page-content">
+    <view v-if="hold" :class="['hold-banner', { expired: !holdActive }]">
+      <view><text class="hold-banner-title">{{ holdActive ? '名额已为你保留' : '名额保留已失效' }}</text><text class="hold-banner-desc">{{ holdActive ? `已保留 ${hold.participantCount} 个名额，提交时可按实际人数占用` : '已填写内容会继续保留，请返回课程页重新获取名额' }}</text></view>
+      <text v-if="holdActive" class="hold-countdown">{{ holdRemainingText }}</text>
+    </view>
     <view v-if="loadError" class="page-state error-state">
       <text class="state-title">报名模板加载失败</text>
       <text class="state-hint">{{ loadError }}</text>
       <button class="state-retry" @tap="load">重新加载</button>
     </view>
     <template v-else>
-    <view v-if="course && !registrationOpen" class="page-state registration-state">
+    <view v-if="course && !registrationAvailable" class="page-state registration-state">
       <text class="state-title">{{ registrationDisplay }}</text>
       <text class="state-hint">{{ registrationHint }}</text>
       <button class="state-retry" @tap="backToRegister">返回</button>
     </view>
-    <template v-if="registrationOpen">
+    <template v-if="registrationAvailable">
     <view v-for="(participant,index) in participants" :key="index" class="card form-card">
       <view class="form-head"><text>报名人员 {{ index + 1 }}</text><text v-if="index" class="remove" @tap="remove(index)">删除</text></view>
       <view v-if="students.length" class="student-source">
@@ -29,10 +33,11 @@
         <input v-else v-model="participant[field.key]" :type="field.type==='phone'?'number':'text'" :maxlength="field.maxLength || (field.type==='phone' ? 11 : 140)" :placeholder="`请输入${field.label}`" />
       </view>
     </view>
-    <view class="add card" @tap="add">＋ 添加报名人员</view>
+    <view v-if="course?.allowMultiParticipant !== false" class="add card" @tap="add">＋ 添加报名人员</view>
     <view class="card total-card"><view><text class="muted">{{participants.length}} 人报名</text><text class="discount">优惠 ¥{{quote.discount || 0}}</text></view><view><text class="muted">应付金额</text><text class="total">¥{{quote.amount || 0}}</text></view></view>
+    <view v-if="hold && hold.participantCount > participants.length" class="release-tip">已保留 {{ hold.participantCount }} 个名额，提交 {{ participants.length }} 人后将自动释放 {{ hold.participantCount - participants.length }} 个名额</view>
     <view v-if="quoteError" class="quote-error"><text>{{ quoteError }}</text><button class="quote-retry" @tap="refreshQuote">重试</button></view>
-    <button class="primary-btn submit" :loading="loading" @tap="submit">{{ isFreeQuote ? '免费报名' : '确认报名并生成账单' }}</button>
+    <button class="primary-btn submit" :loading="loading" :disabled="!canSubmit || loading" @tap="submit">{{ holdActive || !hold ? (isFreeQuote ? '免费报名' : '确认报名并生成账单') : '名额保留已失效' }}</button>
     </template>
     </template>
     </view>
@@ -71,7 +76,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { onLoad, onShareAppMessage, onUnload } from '@dcloudio/uni-app'
-import { api, apiAssetUrl, type ApiCourse } from '../../common/api'
+import { api, apiAssetUrl, type ApiCourse, type ApiRegistrationHold } from '../../common/api'
 import { getCourseRegistrationState } from '../../common/course-registration'
 import { showClientConfirm } from '../../common/confirm'
 import { useNavLayout } from '../../common/nav-layout'
@@ -79,8 +84,9 @@ import { requestNativePayment } from '../../common/payment'
 import { bindWechatOpenIdSilently, isWeixinMiniProgram } from '../../common/wechat-bind'
 type Field={key:string;label:string;type:'text'|'phone'|'select'|'radio'|'checkbox';required:boolean;options?:string[];maxLength?:number;maxSelect?:number}
 type StudentOption={id:string;name:string;phone?:string|null;gender?:string|null;email?:string|null;company?:string|null;department?:string|null;position?:string|null;isDefault?:boolean}
-const courseId=ref('course-1'), fields=ref<Field[]>([]), loading=ref(false), quote=reactive({amount:0,discount:0})
+const courseId=ref('course-1'), holdId=ref(''), fields=ref<Field[]>([]), loading=ref(false), quote=reactive({amount:0,discount:0})
 const course=ref<ApiCourse | null>(null)
+const hold=ref<ApiRegistrationHold | null>(null)
 const nowTick=ref(Date.now())
 let registrationTicker: ReturnType<typeof setInterval> | null = null
 registrationTicker = setInterval(() => { nowTick.value = Date.now() }, 1000)
@@ -93,8 +99,14 @@ const paymentModalOpen=ref(false), paying=ref(false), nativePaymentLoading=ref(f
 const paymentOptions=[{key:'wechat' as const,label:'微信支付',hint:'优先打开微信支付',icon:'微'},{key:'alipay' as const,label:'支付宝支付',hint:'优先打开支付宝支付',icon:'支'},{key:'offline' as const,label:'线下对公转账',hint:'转账后上传凭证审核',icon:'公'}]
 let pageUnloaded=false
 let paymentRedirectTimer: ReturnType<typeof setTimeout> | null = null
+let registrationWatcherReady=false
 const registrationState=computed(()=>course.value?getCourseRegistrationState(course.value,nowTick.value):null)
 const registrationOpen=computed(()=>Boolean(registrationState.value?.isOpen))
+const holdRemainingSeconds=computed(()=>hold.value ? Math.max(0,Math.ceil((Date.parse(hold.value.expiresAt)-nowTick.value)/1000)) : 0)
+const holdActive=computed(()=>Boolean(hold.value?.status==='active'&&holdRemainingSeconds.value>0))
+const registrationAvailable=computed(()=>registrationOpen.value||Boolean(hold.value))
+const canSubmit=computed(()=>hold.value?holdActive.value:registrationOpen.value)
+const holdRemainingText=computed(()=>{const seconds=holdRemainingSeconds.value;return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`})
 const registrationDisplay=computed(()=>registrationState.value?.displayStatus||'暂不可报名')
 const registrationHint=computed(()=>registrationState.value?.reason||'当前课程暂不可报名')
 const availablePaymentOptions = computed(() => paymentOptions.filter((option) => option.key === 'offline' || (option.key === 'wechat' ? isWeixinMiniProgram() && paymentInfo.onlineWechatEnabled !== false : paymentInfo.onlineAlipayEnabled !== false)))
@@ -113,12 +125,59 @@ const selectStudent=(index:number, optionIndex:number)=>{
   const student=students.value[optionIndex-1]; if(!student)return
   participant.studentId=student.id; setMappedStudentFields(participant,student)
 }
-const load=async()=>{loadError.value='';try{const [result, courseResult]=await Promise.all([api.getRegistrationTemplate(courseId.value), api.getCourse(courseId.value)]);fields.value=result.fields as Field[];course.value=courseResult as Record<string, any>;try{students.value=(await api.listStudents()).items as StudentOption[]}catch(error:any){students.value=[];uni.showToast({title:error?.message||'学员档案加载失败，将使用临时填写',icon:'none'})};participants.splice(0,participants.length,blank());const defaultStudent=students.value.find((student)=>student.isDefault);if(defaultStudent){participants[0].studentId=defaultStudent.id;setMappedStudentFields(participants[0],defaultStudent)}if(registrationOpen.value)await refreshQuote();else{quote.amount=0;quote.discount=0;quoteLoaded.value=false;quoteError.value="";registrationWatcherReady=true}}catch(error:any){fields.value=[];participants.splice(0,participants.length);loadError.value=error?.message||'网络异常，请检查网络后重试';uni.showToast({title:'报名模板加载失败，请点击重试',icon:'none'})}}
+const draftStorageKey=()=>`tms-registration-draft:${courseId.value}:${holdId.value||'direct'}`
+const readDraftParticipants=()=>{try{const value=uni.getStorageSync(draftStorageKey());const parsed=typeof value==='string'?JSON.parse(value):value;return Array.isArray(parsed?.participants)?parsed.participants.map((item:any)=>({...item})):[]}catch{return[]}}
+const saveDraft=()=>{if(!participants.length)return;try{uni.setStorageSync(draftStorageKey(),JSON.stringify({participants:participants.map((item)=>({...item})),savedAt:Date.now()}))}catch{}}
+const clearDraft=()=>{try{uni.removeStorageSync(draftStorageKey())}catch{}}
+const initializeParticipants=()=>{
+  const stored=readDraftParticipants()
+  const targetCount=hold.value?.participantCount||1
+  const restored=stored.slice(0,targetCount)
+  participants.splice(0,participants.length,...(restored.length?restored:[blank()]))
+  if(!stored.length){const defaultStudent=students.value.find((student)=>student.isDefault);if(defaultStudent&&participants[0]){participants[0].studentId=defaultStudent.id;setMappedStudentFields(participants[0],defaultStudent)}}
+  while(hold.value&&participants.length<targetCount)participants.push(blank())
+}
+const load=async()=>{
+  loadError.value=''
+  try{
+    const [result,courseResult]=await Promise.all([api.getRegistrationTemplate(courseId.value),api.getCourse(courseId.value)])
+    fields.value=result.fields as Field[]
+    course.value=courseResult as Record<string,any>
+    if(holdId.value){
+      try{hold.value=await api.getRegistrationHold(holdId.value)}catch(error:any){throw new Error(error?.message||'名额保留已失效，请返回课程页重新报名')}
+    }
+    try{students.value=(await api.listStudents()).items as StudentOption[]}catch(error:any){students.value=[];uni.showToast({title:error?.message||'学员档案加载失败，将使用临时填写',icon:'none'})}
+    initializeParticipants()
+    if(canSubmit.value)await refreshQuote()
+    else{quote.amount=0;quote.discount=0;quoteLoaded.value=false;quoteError.value=hold.value?'名额保留已失效，请返回课程页重新报名':'';registrationWatcherReady=true}
+  }catch(error:any){
+    fields.value=[]
+    participants.splice(0,participants.length)
+    loadError.value=error?.message||'网络异常，请检查网络后重试'
+    uni.showToast({title:error?.message||'报名信息加载失败，请点击重试',icon:'none'})
+  }
+}
 const quoteLoaded=ref(false)
 const isFreeQuote=computed(()=>quoteLoaded.value&&!quoteError.value&&Number(quote.amount)<=0)
-const refreshQuote=async()=>{if(!participants.length)return;if(!registrationOpen.value){quoteError.value=registrationHint.value;return}quoteError.value='';try{const result=await api.quoteOrder(courseId.value,participants.length);quote.amount=result.amount;quote.discount=result.discount;quoteLoaded.value=true}catch(error:any){quoteError.value=error?.message||'报价暂时无法获取，请重试'}}
+const refreshQuote=async()=>{if(!participants.length)return;if(!canSubmit.value){quoteError.value=hold.value?'名额保留已失效，请返回课程页重新报名':registrationHint.value;return}quoteError.value='';try{const result=hold.value?await api.quoteRegistrationHold(hold.value.id,participants.length):await api.quoteOrder(courseId.value,participants.length);quote.amount=result.amount;quote.discount=result.discount;quoteLoaded.value=true}catch(error:any){quoteError.value=error?.message||'报价暂时无法获取，请重试'}}
 const confirmRegisterAction=async(options:{title:string;content:string})=>{try{return await showClientConfirm(options)}catch{uni.showToast({title:'确认弹窗打开失败，请重试',icon:'none'});return false}}
-const add=()=>{if(!registrationOpen.value){uni.showToast({title:registrationHint.value,icon:'none'});return}const max=Number(course.value?.maxParticipantsPerOrder||0);if(max&&participants.length>=max){uni.showToast({title:`该课程单次最多报名 ${max} 人`,icon:'none'});return}participants.push(blank());refreshQuote()};const remove=async(index:number)=>{const result=await confirmRegisterAction({title:'确认删除报名人员',content:'删除后该报名人员的填写内容将丢失，确定继续吗？'});if(!result)return;participants.splice(index,1);refreshQuote()}
+const add=async()=>{
+  if(!canSubmit.value){uni.showToast({title:hold.value?'名额保留已失效':'当前课程暂不可报名',icon:'none'});return}
+  const max=Number(course.value?.maxParticipantsPerOrder||0)
+  if(max&&participants.length>=max){uni.showToast({title:`该课程单次最多报名 ${max} 人`,icon:'none'});return}
+  if(hold.value&&participants.length>=hold.value.participantCount){
+    try{hold.value=await api.resizeRegistrationHold(hold.value.id,participants.length+1);uni.showToast({title:'已增加保留名额',icon:'none'})}catch(error:any){uni.showToast({title:error?.message||'增加保留名额失败',icon:'none'});return}
+  }
+  participants.push(blank())
+  await refreshQuote()
+}
+const remove=async(index:number)=>{
+  if(participants.length<=1){uni.showToast({title:'至少保留一名报名人员',icon:'none'});return}
+  const result=await confirmRegisterAction({title:'确认删除报名人员',content:'删除后该报名人员的填写内容将丢失，确定继续吗？'})
+  if(!result)return
+  participants.splice(index,1)
+  await refreshQuote()
+}
 const onCheckboxChange=(index:number,field:Field,event:any)=>{const selected=Array.isArray(event?.detail?.value)?event.detail.value.map(String):[];const max=Number(field.maxSelect||0);if(max&&selected.length>max){uni.showToast({title:`${field.label}最多选择 ${max} 项`,icon:'none'});const previous=String(participants[index][field.key]||'').split(',').filter(Boolean);participants[index][field.key]=previous.join(',');return}participants[index][field.key]=selected.join(',')}
 const validateParticipants=()=>{
   for(const [index, participant] of participants.entries()){
@@ -170,15 +229,39 @@ const copyPaymentCode=()=>{if(paymentCodeUrl.value)uni.setClipboardData({data:pa
 const goToBusiness=()=>{closePaymentModal();uni.switchTab({url:'/pages/business/business'})}
 const backToRegister=()=>uni.navigateBack()
 const confirmOnlinePayment=async()=>{if(!selectedPaymentMethod.value||selectedPaymentMethod.value==='offline'||paying.value)return;paying.value=true;try{for(let attempt=0;attempt<10;attempt+=1){if(pageUnloaded)return;const status=await api.paymentStatus(paymentOrder.id);if(pageUnloaded)return;if(status.paid){uni.showToast({title:'支付成功',icon:'none'});paymentModalOpen.value=false;paymentRedirectTimer=setTimeout(()=>{if(!pageUnloaded)uni.switchTab({url:'/pages/business/business'})},450);return}if(attempt<9)await new Promise((resolve)=>setTimeout(resolve,2000))}if(pageUnloaded)return;uni.showToast({title:'暂未收到支付平台回调，请稍后在订单页刷新',icon:'none'})}catch(error:any){if(!pageUnloaded)uni.showToast({title:error?.message||'支付状态查询失败',icon:'none'})}finally{paying.value=false}}
-const submit=async()=>{if(!registrationOpen.value){uni.showToast({title:registrationHint.value,icon:'none'});return}if(!validateParticipants())return;const isFreeOrder=isFreeQuote.value;const confirmed=await confirmRegisterAction(isFreeOrder?{title:'确认免费报名',content:`将为 ${participants.length} 位报名人员免费生成订单，无需支付，确定继续吗？`}:{title:'确认报名并生成账单',content:`将为 ${participants.length} 位报名人员生成订单，确定继续吗？`});if(!confirmed)return;loading.value=true;try{const order=await api.createOrder(courseId.value,participants);if(String(order.status)==='已支付'){paymentModalOpen.value=false;uni.showToast({title:'报名成功',icon:'none'});paymentRedirectTimer=setTimeout(()=>{if(!pageUnloaded)uni.switchTab({url:'/pages/business/business'})},600);return}await openPaymentModal(order);uni.showToast({title:'账单已生成，请选择支付方式',icon:'none'})}catch(error:any){uni.showToast({title:error?.message||'提交失败，请先登录',icon:'none'})}finally{loading.value=false}}
+const submit=async()=>{
+  if(!canSubmit.value){uni.showToast({title:hold.value?'名额保留已失效，请返回课程页重新报名':registrationHint.value,icon:'none'});return}
+  if(!validateParticipants())return
+  const isFreeOrder=isFreeQuote.value
+  const confirmed=await confirmRegisterAction(isFreeOrder?{title:'确认免费报名',content:`将为 ${participants.length} 位报名人员免费生成订单，无需支付，确定继续吗？`}:{title:'确认报名并生成账单',content:`将为 ${participants.length} 位报名人员生成订单，确定继续吗？`})
+  if(!confirmed)return
+  loading.value=true
+  try{
+    const order=await api.createOrder(courseId.value,participants,'online',hold.value?.id)
+    clearDraft()
+    if(String(order.status)==='已支付'){paymentModalOpen.value=false;uni.showToast({title:'报名成功',icon:'none'});paymentRedirectTimer=setTimeout(()=>{if(!pageUnloaded)uni.switchTab({url:'/pages/business/business'})},600);return}
+    await openPaymentModal(order)
+    uni.showToast({title:'账单已生成，请选择支付方式',icon:'none'})
+  }catch(error:any){
+    if(String(error?.message||'').includes('保留已失效')&&hold.value)hold.value={...hold.value,status:'expired'}
+    uni.showToast({title:error?.message||'提交失败，请先登录',icon:'none'})
+  }finally{loading.value=false}
+}
 const syncRegistrationWindow=async()=>{try{course.value=await api.getCourse(courseId.value);if(registrationOpen.value)await refreshQuote()}catch(error:any){uni.showToast({title:error?.message||'报名状态刷新失败，请重试',icon:'none'})}}
-watch(registrationOpen,(open,previous)=>{if(registrationWatcherReady&&open&&previous===false)void syncRegistrationWindow()});watch(()=>participants.length,refreshQuote);onLoad(query=>{if(query?.id)courseId.value=String(query.id);load()});onUnload(()=>{pageUnloaded=true;if(registrationTicker)clearInterval(registrationTicker);registrationTicker=null;if(paymentRedirectTimer)clearTimeout(paymentRedirectTimer);paymentRedirectTimer=null});onShareAppMessage(()=>({title:'填写报名信息',path:`/pages/register/register?id=${courseId.value}`}))
+watch(registrationOpen,(open,previous)=>{if(!hold.value&&registrationWatcherReady&&open&&previous===false)void syncRegistrationWindow()})
+watch(holdActive,(active,previous)=>{if(previous&&!active){quoteError.value='名额保留已失效，请返回课程页重新报名';quoteLoaded.value=false}})
+watch(()=>participants.length,refreshQuote)
+watch(participants,saveDraft,{deep:true})
+onLoad(query=>{if(query?.id)courseId.value=String(query.id);if(query?.holdId)holdId.value=String(query.holdId);load()})
+onUnload(()=>{saveDraft();pageUnloaded=true;if(registrationTicker)clearInterval(registrationTicker);registrationTicker=null;if(paymentRedirectTimer)clearTimeout(paymentRedirectTimer);paymentRedirectTimer=null})
+onShareAppMessage(()=>({title:course.value?.title||'课程详情',path:`/pages/detail/detail?id=${courseId.value}`}))
 </script>
 
 <style scoped lang="scss">
 .register-topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;height:calc(92rpx + var(--status-bar-height));margin:-28rpx -28rpx 24rpx;padding:var(--status-bar-height) 28rpx 0;color:#243956;background:rgba(255,255,255,.82);backdrop-filter:blur(18px);box-shadow:0 4rpx 16rpx rgba(21,70,158,.08)}.topbar-back{width:100rpx;margin-top:-36rpx;color:#243956;font-size:56rpx;line-height:1;font-weight:300}.register-topbar .topbar-title{position:absolute;left:0;right:0;top:calc(var(--status-bar-height) + 12rpx);bottom:-12rpx;display:flex;align-items:center;justify-content:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#243956;font-size:30rpx;font-weight:800;pointer-events:none}.topbar-side{width:100rpx}
 .page-content{visibility:visible;pointer-events:auto}.page.payment-modal-open .page-content{visibility:hidden;pointer-events:none}.page.payment-modal-open > .modal-mask{visibility:visible;pointer-events:auto}
 .page{min-height:100vh;padding:28rpx 28rpx 48rpx}.page-state{display:flex;flex-direction:column;align-items:center;box-sizing:border-box;min-height:calc(100vh - 56rpx);padding:180rpx 32rpx;color:$muted;text-align:center}.state-title{color:$navy;font-size:30rpx;font-weight:900}.state-hint{margin-top:12rpx;line-height:1.5}.state-retry,.quote-retry{height:60rpx;margin-top:20rpx;padding:0 24rpx;border:0;border-radius:999rpx;color:#17366d;background:$yellow;font-size:21rpx;line-height:60rpx;font-weight:800}.state-retry{width:220rpx}.state-retry::after,.quote-retry::after{border:0}.quote-error,.payment-info-error{display:flex;align-items:center;justify-content:space-between;gap:16rpx;margin:0 0 18rpx;padding:14rpx 18rpx;border-radius:12rpx;color:#a87318;background:#fff8e7;font-size:20rpx;line-height:1.4}.quote-retry{flex:0 0 auto;margin:0;padding:0 18rpx}.payment-info-error{margin-top:18rpx;text-align:left}
+.hold-banner{display:flex;align-items:center;justify-content:space-between;gap:18rpx;margin-bottom:22rpx;padding:20rpx 22rpx;border:1rpx solid #b9dcff;border-radius:16rpx;color:#174b8f;background:#eff8ff}.hold-banner.expired{border-color:#f0c9c9;color:#a74343;background:#fff3f3}.hold-banner-title,.hold-banner-desc{display:block}.hold-banner-title{font-size:24rpx;font-weight:900}.hold-banner-desc{margin-top:6rpx;font-size:19rpx;line-height:1.45}.hold-countdown{flex:0 0 auto;padding:8rpx 14rpx;border-radius:10rpx;color:#fff;background:#2f80ed;font-size:26rpx;font-weight:900}.hold-banner.expired .hold-countdown{display:none}.release-tip{margin-bottom:18rpx;padding:14rpx 18rpx;border-radius:12rpx;color:#8b641f;background:#fff8e7;font-size:20rpx;line-height:1.5}
 .form-card{box-sizing:border-box;padding:28rpx;margin-bottom:22rpx}.form-head{display:flex;justify-content:space-between;margin-bottom:18rpx;font-size:31rpx;font-weight:900}.remove{color:$danger;font-size:22rpx}.field{min-width:0;margin-top:20rpx}.label{display:block;margin-bottom:10rpx;color:#64748B;font-size:22rpx}.required{color:$danger}.field input,.picker{box-sizing:border-box;display:block;width:100%;max-width:100%;height:82rpx;padding:0 24rpx;border:1rpx solid #DCE4EE;border-radius:14rpx;background:#FBFCFE;color:$navy;font-size:24rpx}.field input{line-height:normal}.picker{display:flex;align-items:center;justify-content:space-between;line-height:82rpx}.option-group{display:flex;flex-wrap:wrap;gap:10rpx;box-sizing:border-box;width:100%;padding:16rpx 18rpx;border:1rpx solid #DCE4EE;border-radius:14rpx;background:#FBFCFE}.option{display:inline-flex;align-items:center;gap:8rpx;box-sizing:border-box;padding:8rpx 6rpx;color:$navy;font-size:22rpx}.add{box-sizing:border-box;width:100%;margin-bottom:22rpx;padding:26rpx;border:1rpx dashed #A9C6EC;color:$blue;background:#F5F9FF;text-align:center;font-weight:800}.total-card{box-sizing:border-box;display:flex;justify-content:space-between;width:100%;padding:28rpx;margin-bottom:22rpx}.muted,.discount,.total{display:block}.muted{color:$muted;font-size:21rpx}.discount{margin-top:8rpx;color:#C97900;font-size:23rpx}.total{margin-top:8rpx;font-size:42rpx;font-weight:900}.submit{box-sizing:border-box;width:100%;height:84rpx;line-height:84rpx}
 .student-source{margin-bottom:18rpx;padding:16rpx;border-radius:14rpx;background:#f5f9ff}.source-label{display:block;margin-bottom:8rpx;color:#64748B;font-size:21rpx}.source-picker{height:70rpx;line-height:70rpx;background:#fff;font-size:22rpx}
 .modal-mask{position:fixed;inset:0;z-index:1000;z-index:var(--client-business-modal-layer, 1000);display:flex;align-items:flex-end;justify-content:center;background:rgba(12,31,65,.48)}
