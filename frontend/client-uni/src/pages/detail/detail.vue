@@ -36,7 +36,7 @@
               <view v-else-if="block.type === 'list'" class="intro-block-list">
                 <view v-for="(item, itemIndex) in block.items" :key="itemIndex" class="intro-list-item"><text class="intro-list-dot">{{ String(itemIndex + 1).padStart(2, '0') }}</text><text class="intro-list-text">{{ item }}</text></view>
               </view>
-              <rich-text v-else-if="block.type === 'rich'" class="intro-rich-html" :nodes="block.html" />
+              <rich-text v-else-if="block.type === 'rich'" class="intro-rich-html" :nodes="block.html" @itemclick="openRichTextLink" />
             </template>
           </view>
           <view v-if="shouldCollapseIntro && !introExpanded" class="intro-fade"><text class="intro-fade-text">下方还有详细课程内容</text></view>
@@ -70,6 +70,7 @@ type IntroBlock =
   | { type: 'image'; src: string }
   | { type: 'list'; items: string[] }
   | { type: 'rich'; html: string }
+type RichTextItemClickEvent = { detail?: { href?: string } }
 const course = ref<DisplayCourse | null>(null)
 const nav = useNavLayout()
 const loading = ref(true)
@@ -156,6 +157,35 @@ onShareAppMessage(() => ({ title: course.value?.title || '课程详情', path: `
 const retryLoad = () => { if (!loading.value) void loadCourse(currentCourseId.value) }
 const back = () => uni.navigateBack()
 const toggleIntro = () => { if (shouldCollapseIntro.value) introExpanded.value = !introExpanded.value }
+const normalizeRichTextLink = (value?: string) => {
+  const href = String(value || '').trim()
+  if (!href) return ''
+  if (/^(https?:\/\/|\/|#|mailto:|tel:)/i.test(href)) return href
+  if (href.startsWith('//')) return `https:${href}`
+  if (/^[\w.-]+\.[a-z]{2,}(?:[/?#].*)?$/i.test(href)) return `https://${href}`
+  return ''
+}
+const openRichTextLink = (event: RichTextItemClickEvent) => {
+  const address = normalizeRichTextLink(event?.detail?.href)
+  if (!address) {
+    uni.showToast({ title: '链接地址无效', icon: 'none' })
+    return
+  }
+  // #ifdef H5
+  if (/^(mailto:|tel:)/i.test(address)) {
+    window.location.href = address
+    return
+  }
+  window.open(address, '_blank', 'noopener,noreferrer')
+  // #endif
+  // #ifndef H5
+  uni.setClipboardData({
+    data: address,
+    success: () => uni.showToast({ title: '链接已复制，请在浏览器打开', icon: 'none' }),
+    fail: () => uni.showToast({ title: '链接打开失败', icon: 'none' }),
+  })
+  // #endif
+}
 const register = () => {
   if (!course.value) return
   if (!canRegister.value) {
@@ -209,6 +239,7 @@ const register = () => {
 .intro-rich-html { display: block; color: #52647a; font-size: 25rpx; line-height: 1.8; }
 .intro-rich-html :deep(h1), .intro-rich-html :deep(h2), .intro-rich-html :deep(h3) { margin: 18rpx 0 12rpx; color: #172e51; font-weight: 900; }
 .intro-rich-html :deep(p), .intro-rich-html :deep(div) { margin: 0 0 18rpx; color: #52647a; line-height: 1.85; }
+.intro-rich-html :deep(a) { color: #2f80ed; text-decoration: underline; text-underline-offset: 3rpx; word-break: break-all; }
 .intro-rich-html :deep(img) { display: block; width: 100%; max-width: 100%; height: auto; max-height: 420rpx; margin: 20rpx 0; border-radius: 18rpx; object-fit: cover; }
 .intro-rich-html :deep(ul), .intro-rich-html :deep(ol) { margin: 10rpx 0 20rpx; padding-left: 36rpx; }
 .intro-rich-html :deep(li) { margin: 8rpx 0; line-height: 1.7; }
