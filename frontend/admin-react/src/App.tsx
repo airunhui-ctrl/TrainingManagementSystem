@@ -406,6 +406,7 @@ function App() {
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('')
   const [resetPasswordSubmitting, setResetPasswordSubmitting] = useState(false)
   const [courseForm, setCourseForm] = useState<CourseForm>(emptyCourseForm)
+  const [courseFormError, setCourseFormError] = useState('')
   const [courseSubmitting, setCourseSubmitting] = useState(false)
   const courseInitialFormRef = useRef<CourseForm>(emptyCourseForm())
   const [operationKey, setOperationKey] = useState('')
@@ -485,14 +486,14 @@ function App() {
     loadVersion.current += 1
     setData(null); setListLoading(false); setListError(''); setCourseModalOpen(false); setTemplateModalOpen(false); setBannerModalOpen(false); setPaymentModalOpen(false); setRuleModalOpen(false); setMessageModalOpen(false); setConfigModalOpen(false); setPointsModalOpen(false); setFeedbackModalOpen(false); setFeedbackItem(null); setStudentEditModalOpen(false); setUserEditModalOpen(false)
     setInvoiceUploadOpen(false); setInvoiceUploadItem(null); setInvoiceUploadFile(null); setInvoiceUploading(false); setInvoicePreview((current: any) => { if (current) URL.revokeObjectURL(current.url); return null }); setResetPasswordUser(null); setResetPasswordValue(''); setResetPasswordConfirm(''); setResetPasswordSubmitting(false)
-    setCourseForm(emptyCourseForm()); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setStudentProfileForm(emptyStudentProfileForm()); setUserProfileForm(emptyUserProfileForm())
+    setCourseForm(emptyCourseForm()); setCourseFormError(''); setTemplateForm(emptyTemplateForm()); setBannerForm(emptyBannerForm()); setPaymentForm(emptyPaymentForm()); setRuleForm(emptyRuleForm()); setMessageForm(emptyMessageForm()); setConfigForm(emptyConfigForm()); setPointsForm(emptyPointsForm()); setFeedbackForm(emptyFeedbackForm()); setStudentProfileForm(emptyStudentProfileForm()); setUserProfileForm(emptyUserProfileForm())
     setSelectedDetail(null); setEnrollmentSummaryDetail(null); setPointLedgerDetail(null); setReviewState(null); setReviewRemark(''); setSelectedRows([]); setTableKeyword(''); setQueryKeyword(''); setStatusFilter(''); setAuditActionFilter(''); setAuditActorFilter(''); setAuditFrom(''); setAuditTo(''); setPage(1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
   const restoreTabState = (snapshot?: TabSnapshot) => {
     if (!snapshot) { resetTabState(); return }
     loadVersion.current += 1
     setData(snapshot.data ?? null); setListLoading(false); setListError(''); setCourseModalOpen(Boolean(snapshot.courseModalOpen)); setTemplateModalOpen(Boolean(snapshot.templateModalOpen)); setBannerModalOpen(Boolean(snapshot.bannerModalOpen)); setPaymentModalOpen(Boolean(snapshot.paymentModalOpen)); setRuleModalOpen(Boolean(snapshot.ruleModalOpen)); setMessageModalOpen(Boolean(snapshot.messageModalOpen)); setConfigModalOpen(Boolean(snapshot.configModalOpen)); setPointsModalOpen(Boolean(snapshot.pointsModalOpen)); setFeedbackModalOpen(Boolean(snapshot.feedbackModalOpen)); setStudentEditModalOpen(Boolean(snapshot.studentEditModalOpen)); setUserEditModalOpen(false)
-    setCourseForm({ ...emptyCourseForm(), ...(snapshot.courseForm || {}) }); setTemplateForm({ ...emptyTemplateForm(), ...(snapshot.templateForm || {}) }); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm({ ...emptyMessageForm(), ...(snapshot.messageForm || {}), targetUserIds: listFieldToValues(snapshot.messageForm?.targetUserIds), targetCourseIds: listFieldToValues(snapshot.messageForm?.targetCourseIds) }); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm()); setUserProfileForm(emptyUserProfileForm())
+    setCourseForm({ ...emptyCourseForm(), ...(snapshot.courseForm || {}) }); setCourseFormError(''); setTemplateForm({ ...emptyTemplateForm(), ...(snapshot.templateForm || {}) }); setBannerForm(snapshot.bannerForm || emptyBannerForm()); setPaymentForm(snapshot.paymentForm || emptyPaymentForm()); setRuleForm(snapshot.ruleForm || emptyRuleForm()); setMessageForm({ ...emptyMessageForm(), ...(snapshot.messageForm || {}), targetUserIds: listFieldToValues(snapshot.messageForm?.targetUserIds), targetCourseIds: listFieldToValues(snapshot.messageForm?.targetCourseIds) }); setConfigForm(snapshot.configForm || emptyConfigForm()); setPointsForm(snapshot.pointsForm || emptyPointsForm()); setFeedbackForm(snapshot.feedbackForm || emptyFeedbackForm()); setStudentProfileForm(snapshot.studentProfileForm || emptyStudentProfileForm()); setUserProfileForm(emptyUserProfileForm())
     setSelectedDetail(snapshot.selectedDetail ?? null); setEnrollmentSummaryDetail(snapshot.enrollmentSummaryDetail ?? null); setPointLedgerDetail(snapshot.pointLedgerDetail ?? null); setReviewState(snapshot.reviewState ?? null); setReviewRemark(snapshot.reviewRemark || ''); setSelectedRows(Array.isArray(snapshot.selectedRows) ? snapshot.selectedRows : []); setTableKeyword(snapshot.tableKeyword || ''); setQueryKeyword(snapshot.queryKeyword || ''); setStatusFilter(snapshot.statusFilter || ''); setAuditActionFilter(snapshot.auditActionFilter || ''); setAuditActorFilter(snapshot.auditActorFilter || ''); setAuditFrom(snapshot.auditFrom || ''); setAuditTo(snapshot.auditTo || ''); setPage(Number(snapshot.page) || 1); setReviewSubmitting(false); setCourseSubmitting(false); setOperationKey('')
   }
   const navigate = (moduleKey: string) => {
@@ -706,11 +707,15 @@ function App() {
       }
     })()
     courseInitialFormRef.current = { ...nextForm }
+    setCourseFormError('')
     setCourseForm(nextForm)
     setCourseModalOpen(true)
   }
 
-  const updateCourseField = <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => setCourseForm(currentForm => ({ ...currentForm, [key]: value }))
+  const updateCourseField = <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => {
+    setCourseFormError('')
+    setCourseForm(currentForm => ({ ...currentForm, [key]: value }))
+  }
   const saveCourseDraft = () => {
     if (courseForm.id) return flash('编辑中的课程无需保存草稿；请直接保存课程或取消关闭')
     try {
@@ -722,6 +727,7 @@ function App() {
     const hasContent = Object.entries(courseForm).some(([key, value]) => key !== 'category' && key !== 'status' && key !== 'capacity' && key !== 'enrolled' && Boolean(String(value || '').trim()))
     if (hasContent && !await confirmAction('确定清空当前课程表单吗？已填写但未保存的内容将被清除。', '重置课程表单', true)) return
     const nextForm = courseForm.id ? { ...courseInitialFormRef.current } : { ...emptyCourseForm(), registrationTemplateId: templateOptions[0]?.id || '' }
+    setCourseFormError('')
     setCourseForm(nextForm)
     if (!courseForm.id) removeCourseDraft()
     flash('课程表单已重置')
@@ -944,18 +950,23 @@ function App() {
   }
 
   const saveCourse = async () => {
-    if (courseSubmitting || operationKey) return
+    const failCourse = (message: string) => {
+      setCourseFormError(message)
+      flash(message)
+    }
+    if (courseSubmitting || operationKey) return failCourse('另一个操作正在处理中，请稍候再保存')
     const form = courseForm
     const numericFields = { price: Number(form.price), originalPrice: Number(form.originalPrice), specialPrice: form.specialPrice === '' ? null : Number(form.specialPrice), capacity: Number(form.capacity), enrolled: Number(form.enrolled) }
     const scheduleDate = formatCourseSchedule(form.courseStartAt, form.courseEndAt)
-    if (!form.title.trim() || !form.category.trim() || !form.courseStartAt.trim() || !form.courseEndAt.trim() || !form.location.trim() || !form.instructor.trim()) return flash('请完整填写课程标题、开始/结束时间、地点和讲师')
-    if (new Date(form.courseStartAt).getTime() >= new Date(form.courseEndAt).getTime()) return flash('课程结束时间必须晚于开始时间')
-    if (!form.registrationTemplateId.trim()) return flash('请先选择报名模板；没有模板时请先到“报名模板”创建')
-    if ([numericFields.price, numericFields.originalPrice, numericFields.capacity, numericFields.enrolled].some(value => !Number.isFinite(value)) || (numericFields.specialPrice !== null && !Number.isFinite(numericFields.specialPrice))) return flash('请填写有效的价格、名额和报名人数')
-    if (numericFields.capacity < numericFields.enrolled) return flash('课程名额不能少于已报名人数')
-    if (form.maxParticipantsPerOrder.trim() && (!Number.isInteger(Number(form.maxParticipantsPerOrder)) || Number(form.maxParticipantsPerOrder) < 1)) return flash('单次报名人数上限必须是不小于 1 的整数')
-    if (form.registrationStartAt && form.registrationEndAt && new Date(form.registrationStartAt).getTime() >= new Date(form.registrationEndAt).getTime()) return flash('报名开始时间必须早于结束时间')
-    if (form.registrationEndAt && new Date(form.registrationEndAt).getTime() > new Date(form.courseEndAt).getTime()) return flash('报名结束时间不能晚于课程结束时间')
+    if (!form.title.trim() || !form.category.trim() || !form.courseStartAt.trim() || !form.courseEndAt.trim() || !form.location.trim() || !form.instructor.trim()) return failCourse('请完整填写课程标题、开始/结束时间、地点和讲师')
+    if (new Date(form.courseStartAt).getTime() >= new Date(form.courseEndAt).getTime()) return failCourse('课程结束时间必须晚于开始时间')
+    if (!form.registrationTemplateId.trim()) return failCourse('请先选择报名模板；没有模板时请先到“报名模板”创建')
+    if ([numericFields.price, numericFields.originalPrice, numericFields.capacity, numericFields.enrolled].some(value => !Number.isFinite(value)) || (numericFields.specialPrice !== null && !Number.isFinite(numericFields.specialPrice))) return failCourse('请填写有效的价格、名额和报名人数')
+    if (numericFields.capacity < numericFields.enrolled) return failCourse('课程名额不能少于已报名人数')
+    if (form.maxParticipantsPerOrder.trim() && (!Number.isInteger(Number(form.maxParticipantsPerOrder)) || Number(form.maxParticipantsPerOrder) < 1)) return failCourse('单次报名人数上限必须是不小于 1 的整数')
+    if (form.registrationStartAt && form.registrationEndAt && new Date(form.registrationStartAt).getTime() >= new Date(form.registrationEndAt).getTime()) return failCourse('报名开始时间必须早于结束时间')
+    if (form.registrationEndAt && new Date(form.registrationEndAt).getTime() > new Date(form.courseEndAt).getTime()) return failCourse('报名结束时间不能晚于课程结束时间')
+    setCourseFormError('')
     if (!await confirmAction(`${form.id ? '确认保存对课程的修改' : '确认创建课程'}“${form.title.trim()}”吗？`)) return
     setCourseSubmitting(true)
     try {
@@ -966,7 +977,7 @@ function App() {
         () => apiFetch(form.id ? `/admin/courses/${form.id}` : '/admin/courses', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(payload) }),
         form.id ? '课程已更新' : '课程已创建',
       )
-      if (saved) { removeCourseDraft(); setCourseModalOpen(false); setCourseForm(emptyCourseForm()) }
+      if (saved) { removeCourseDraft(); setCourseModalOpen(false); setCourseForm(emptyCourseForm()); setCourseFormError('') }
     } finally { setCourseSubmitting(false) }
   }
 
@@ -1440,7 +1451,7 @@ function App() {
          {active === 'enrollments' && !listLoading && !listError && <EnrollmentSummaryChart items={items} />}
          </>}
        </section>}
-      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} categories={courseCategoryOptions} submitting={courseSubmitting} onChange={updateCourseField} onUploadImage={uploadCourseImage} onPrompt={promptAction} onNotify={flash} onClose={() => setCourseModalOpen(false)} onSaveDraft={saveCourseDraft} onReset={resetCourse} onSave={saveCourse} onDelete={deleteCourse} />}
+      {courseModalOpen && <CourseModal form={courseForm} templates={templateOptions} categories={courseCategoryOptions} submitting={courseSubmitting} error={courseFormError} onChange={updateCourseField} onUploadImage={uploadCourseImage} onPrompt={promptAction} onNotify={flash} onClose={() => { setCourseModalOpen(false); setCourseFormError('') }} onSaveDraft={saveCourseDraft} onReset={resetCourse} onSave={saveCourse} onDelete={deleteCourse} />}
       {templateModalOpen && <TemplateModal form={templateForm} onChange={setTemplateForm} onFieldChange={updateTemplateField} onFieldRemove={removeTemplateField} onClose={() => setTemplateModalOpen(false)} onSave={saveTemplate} onCopy={copyTemplate} onDelete={deleteTemplate} busy={Boolean(operationKey)} locked={templateLocked} />}
       {bannerModalOpen && <BannerModal form={bannerForm} courses={courseOptions} onChange={setBannerForm} onClose={() => setBannerModalOpen(false)} onSave={saveBanner} onDelete={deleteBanner} busy={Boolean(operationKey)} />}
       {paymentModalOpen && <PaymentModal form={paymentForm} onChange={setPaymentForm} onUploadQr={uploadPaymentQr} onClose={() => setPaymentModalOpen(false)} onSave={savePayment} busy={Boolean(operationKey)} />}
@@ -1604,7 +1615,7 @@ function UploadButton({ label, accept, disabled, onFile }: { label: string; acce
   </>
 }
 
-function CourseModal({ form, templates, categories, submitting, onChange, onUploadImage, onPrompt, onNotify, onClose, onSaveDraft, onReset, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; categories: FilterOption[]; submitting: boolean; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSaveDraft: () => void; onReset: () => void; onSave: () => void; onDelete: () => void }) {
+function CourseModal({ form, templates, categories, submitting, error = '', onChange, onUploadImage, onPrompt, onNotify, onClose, onSaveDraft, onReset, onSave, onDelete }: { form: CourseForm; templates: TemplateOption[]; categories: FilterOption[]; submitting: boolean; error?: string; onChange: <K extends keyof CourseForm>(key: K, value: CourseForm[K]) => void; onUploadImage: (file: File) => Promise<void>; onPrompt: (message: string, defaultValue?: string, title?: string) => Promise<string | null>; onNotify: (message: string) => void; onClose: () => void; onSaveDraft: () => void; onReset: () => void; onSave: () => void; onDelete: () => void }) {
   const [imageFileName, setImageFileName] = useState(() => fileNameFromUrl(form.image))
   const [lastImage, setLastImage] = useState(form.image)
   useEffect(() => {
@@ -1643,6 +1654,7 @@ function CourseModal({ form, templates, categories, submitting, onChange, onUplo
         <label className="checkbox-field modal-checkbox"><input type="checkbox" checked={form.allowMultiParticipant} onChange={event => onChange('allowMultiParticipant', event.target.checked)} /><span>支持多人报名</span></label>
         <div className="wide-field rich-text-field"><label>课程简介</label><RichTextEditor value={form.descriptionRichText} onChange={value => onChange('descriptionRichText', value)} onPrompt={onPrompt} onNotify={onNotify} /></div>
       </div>
+      {error && <div className="course-form-error" role="alert">{error}</div>}
       <div className="modal-actions"><button type="button" onClick={onClose} disabled={submitting}>取消</button><button type="button" onClick={onReset} disabled={submitting}>重置</button>{!form.id && <button type="button" onClick={onSaveDraft} disabled={submitting}>保存草稿</button>}{form.id && <button type="button" className="danger-button" onClick={onDelete} disabled={submitting}>删除课程</button>}<button type="button" className="primary" onClick={onSave} disabled={submitting}>{submitting ? '保存中…' : '保存课程'}</button></div>
     </section>
   </div>

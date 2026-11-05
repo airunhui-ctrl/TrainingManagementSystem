@@ -729,3 +729,4 @@ tbody tr:hover .action-cell { background: #fbfcfe; }
 .app-dialog-required-label { display:block; margin-bottom:8px; color:#52677f; font-size:13px; font-weight:700; }
 .app-dialog-required-field .required-mark { margin-left:4px; }
 .app-dialog-required-field .app-dialog-input { margin-top:0; }
+.course-form-error { display:block; margin:14px 0 0; padding:12px 16px; border:1px solid #f1c6c1; border-radius:10px; color:#b42318; background:#fff5f3; font-size:13px; line-height:1.45; }
