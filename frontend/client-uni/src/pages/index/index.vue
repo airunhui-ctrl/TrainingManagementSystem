@@ -14,7 +14,7 @@
             <text class="banner-kicker">{{ slide.kicker }}</text>
             <text class="banner-title">{{ slide.title }}</text>
             <text class="banner-subtitle">{{ slide.subtitle }}</text>
-          <button class="banner-btn" @tap.stop="handleBannerTap(slide.courseId)">立即学习 <text>→</text></button>
+          <button class="banner-btn" @tap.stop="handleBannerTap(slide.courseId)">{{ slide.buttonText }} <text>→</text></button>
           </view>
         </view>
       </swiper-item>
@@ -100,14 +100,24 @@ const bannerSlides = computed(() => {
     .map((id) => courses.value.find((course) => course.id === id))
     .filter((course): course is DisplayCourse => Boolean(course))
     .filter((course) => courseOpen(course) || courseStatus(course) === '等待开始报名')
-  return candidates.slice(0, BANNER_SLIDE_LIMIT).map((course) => ({
+  const slides = candidates.slice(0, BANNER_SLIDE_LIMIT).map((course) => ({
     id: `banner-${course.id}`,
     courseId: course.id,
     image: apiAssetUrl(course.image) || bannerImage,
     kicker: `${course.category} · 名师公开课`,
     title: course.title,
     subtitle: course.subtitle,
+    buttonText: '立即学习',
   }))
+  return slides.length ? slides : [{
+    id: 'banner-default',
+    courseId: '',
+    image: bannerImage,
+    kicker: '六边形培训 · 精选课程',
+    title: '持续学习，持续成长',
+    subtitle: '查看最新开放课程',
+    buttonText: '浏览课程',
+  }]
 })
 
 const toDisplayCourse = (course: ApiCourse): DisplayCourse => ({ ...course, image: apiAssetUrl(course.image) || imageByCourseId[course.id] || bannerImage })
@@ -162,6 +172,10 @@ const handleBannerTouchEnd = (event: any) => {
 }
 const handleBannerTap = (id: string) => {
   if (Date.now() < bannerSuppressTapUntil.value) return
+  if (!id) {
+    uni.pageScrollTo({ scrollTop: 420, duration: 300 })
+    return
+  }
   openDetail(id)
 }
 
